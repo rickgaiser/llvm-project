@@ -114,6 +114,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // CPU supports cnMIPSP (Cavium Networks Octeon+ CPU).
   bool HasCnMipsP;
 
+  // IsR5900 - CPU is R5900 (PlayStation 2 Emotion Engine).
+  bool IsR5900 = false;
+
   // isLinux - Target system is Linux. Is false we consider ELFOS for now.
   bool IsLinux;
 
@@ -284,6 +287,7 @@ public:
 
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
+  bool isR5900() const { return IsR5900; }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }
