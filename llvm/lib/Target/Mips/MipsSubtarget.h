@@ -117,6 +117,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // IsR5900 - CPU is R5900 (PlayStation 2 Emotion Engine).
   bool IsR5900 = false;
 
+  // FixR5900 - Work around R5900 short loop erratum (NOP in delay slot)
+  bool FixR5900 = false;
+
   // isLinux - Target system is Linux. Is false we consider ELFOS for now.
   bool IsLinux;
 
@@ -288,6 +291,7 @@ public:
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
   bool isR5900() const { return IsR5900; }
+  bool fixR5900() const { return FixR5900; }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }

@@ -186,11 +186,15 @@ def FeatureCnMipsP : SubtargetFeature<"cnmipsp", "HasCnMipsP",
                                       "true", "Octeon+ cnMIPS Support",
                                       [FeatureCnMips]>;
 
+// R5900 short loop erratum fix - ensures NOP in delay slot for short loops
+def FeatureFixR5900 : SubtargetFeature<"fix-r5900", "FixR5900", "true",
+                                        "Work around R5900 short loop erratum">;
+
 // R5900 (PlayStation 2 Emotion Engine) - MIPS III based with extensions
 // Note: R5900 has no LL/SC (atomic), no FPU double precision
 def FeatureR5900  : SubtargetFeature<"r5900", "IsR5900", "true",
                                      "R5900 (PS2 Emotion Engine) Support",
-                                     [FeatureMips3, FeatureSingleFloat]>;
+                                     [FeatureMips3, FeatureSingleFloat, FeatureFixR5900]>;
 
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",

@@ -32,7 +32,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 |------|-------------|-------------|
 | `-mcpu=r5900` | Target R5900 processor | **Implemented** |
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
-| `-mfix-r5900` | Enable R5900 short loop erratum workaround | Not Implemented |
+| `-mfix-r5900` | Enable R5900 short loop erratum workaround | **Implemented** (default on) |
 
 ---
 
@@ -433,7 +433,7 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [ ] Conversion operations
 
 ### Phase 8: R5900 Errata
-- [ ] Short loop bug workaround (`-mfix-r5900`)
+- [x] Short loop bug workaround (`-mfix-r5900`)
 
 ---
 
