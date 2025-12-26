@@ -693,6 +693,10 @@ public:
     return (getSTI().hasFeature(Mips::FeatureCnMipsP));
   }
 
+  bool isR5900() const {
+    return (getSTI().hasFeature(Mips::FeatureR5900));
+  }
+
   bool inPicMode() {
     return IsPicEnabled;
   }
