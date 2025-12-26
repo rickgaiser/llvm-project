@@ -3328,7 +3328,6 @@ const EnumEntry<unsigned> ElfMipsISAExtType[] = {
   {"Loongson 2F",             Mips::AFL_EXT_LOONGSON_2F},
   {"Loongson 3A",             Mips::AFL_EXT_LOONGSON_3A},
   {"MIPS R4650",              Mips::AFL_EXT_4650},
-  {"MIPS R5900",              Mips::AFL_EXT_5900},
   {"MIPS R10000",             Mips::AFL_EXT_10000},
   {"NEC VR4100",              Mips::AFL_EXT_4100},
   {"NEC VR4111/VR4181",       Mips::AFL_EXT_4111},
@@ -3336,7 +3335,8 @@ const EnumEntry<unsigned> ElfMipsISAExtType[] = {
   {"NEC VR5400",              Mips::AFL_EXT_5400},
   {"NEC VR5500",              Mips::AFL_EXT_5500},
   {"RMI Xlr",                 Mips::AFL_EXT_XLR},
-  {"Toshiba R3900",           Mips::AFL_EXT_3900}
+  {"Toshiba R3900",           Mips::AFL_EXT_3900},
+  {"Toshiba R5900",           Mips::AFL_EXT_5900}
 };
 
 const EnumEntry<unsigned> ElfMipsASEFlags[] = {
