@@ -74,6 +74,8 @@ def IsNotSoftFloat   : Predicate<"!Subtarget->useSoftFloat()">,
                        AssemblerPredicate<(all_of (not FeatureSoftFloat))>;
 def HasMips3D        : Predicate<"Subtarget->has3D()">,
                        AssemblerPredicate<(all_of FeatureMips3D)>;
+def IsR5900          : Predicate<"Subtarget->isR5900()">,
+                       AssemblerPredicate<(all_of FeatureR5900)>;
 
 //===----------------------------------------------------------------------===//
 // Mips FGR size adjectives.
@@ -1008,3 +1010,74 @@ let AdditionalPredicates = [NotInMicroMips] in {
     def : StoreRegImmPat<SDC1, f64>, ISA_MIPS1, FGR_32;
   }
 }
+
+//===----------------------------------------------------------------------===//
+// R5900 FPU Accumulator Instructions
+//===----------------------------------------------------------------------===//
+// The R5900 (PS2 Emotion Engine) FPU has a 32-bit accumulator register (ACC)
+// used for 3-operand fused multiply-add operations (not the 4-operand MADD4).
+//
+// ACC-writing instructions: ADDA.S, SUBA.S, MULA.S, MADDA.S, MSUBA.S
+// ACC-reading instructions: MADD.S, MSUB.S (write result to FPR)
+//===----------------------------------------------------------------------===//
+
+let Predicates = [IsR5900, IsNotSoftFloat] in {
+
+// ACC-writing instructions (implicitly define ACC)
+let Defs = [FPU_ACC], hasSideEffects = 0 in {
+  def ADDA_S : InstSE<(outs), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                      "adda.s\t$fs, $ft", [], II_ADD_S, FrmFR, "adda.s">,
+               R5900_FPUACC_FM<0x18>;
+
+  def SUBA_S : InstSE<(outs), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                      "suba.s\t$fs, $ft", [], II_SUB_S, FrmFR, "suba.s">,
+               R5900_FPUACC_FM<0x19>;
+
+  def MULA_S : InstSE<(outs), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                      "mula.s\t$fs, $ft", [], II_MUL_S, FrmFR, "mula.s">,
+               R5900_FPUACC_FM<0x1a>;
+}
+
+// ACC read+write instructions (implicitly use and define ACC)
+let Defs = [FPU_ACC], Uses = [FPU_ACC], hasSideEffects = 0 in {
+  def MADDA_S : InstSE<(outs), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                       "madda.s\t$fs, $ft", [], II_MADD_S, FrmFR, "madda.s">,
+                R5900_FPUACC_FM<0x1e>;
+
+  def MSUBA_S : InstSE<(outs), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                       "msuba.s\t$fs, $ft", [], II_MSUB_S, FrmFR, "msuba.s">,
+                R5900_FPUACC_FM<0x1f>;
+}
+
+// ACC-reading instructions (fd destination, implicitly use ACC)
+let Uses = [FPU_ACC], hasSideEffects = 0 in {
+  def R5900_MADD_S : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                            "madd.s\t$fd, $fs, $ft", [], II_MADD_S, FrmFR, "madd.s">,
+                     ADDS_FM<0x1c, 0x10>;
+
+  def R5900_MSUB_S : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                            "msub.s\t$fd, $fs, $ft", [], II_MSUB_S, FrmFR, "msub.s">,
+                     ADDS_FM<0x1d, 0x10>;
+}
+
+//===----------------------------------------------------------------------===//
+// R5900 Min/Max Instructions
+//===----------------------------------------------------------------------===//
+// MAX.S and MIN.S are R5900-specific floating-point min/max operations.
+
+def R5900_MAX_S : ADDS_FT<"max.s", FGR32Opnd, II_MAX_S, 1, fmaxnum>,
+                  ADDS_FM<0x28, 16>;
+def R5900_MIN_S : ADDS_FT<"min.s", FGR32Opnd, II_MIN_S, 1, fminnum>,
+                  ADDS_FM<0x29, 16>;
+
+//===----------------------------------------------------------------------===//
+// R5900 RSQRT.S (Reciprocal Square Root)
+//===----------------------------------------------------------------------===//
+// R5900 RSQRT.S is 3-operand: fd = fs / sqrt(ft)
+// This differs from MIPS IV RSQRT.S which is 2-operand: fd = 1/sqrt(fs)
+
+def R5900_RSQRT_S : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                           "rsqrt.s\t$fd, $fs, $ft", [], II_RSQRT_S, FrmFR, "rsqrt.s">,
+                    ADDS_FM<0x16, 16>;
+
+} // Predicates = [IsR5900, IsNotSoftFloat]

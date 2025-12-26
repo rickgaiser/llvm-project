@@ -279,6 +279,25 @@ def : InstRW<[R5900WriteFPUMove], (instrs MOVN_I_S, MOVZ_I_S, MOVF_S, MOVT_S,
                                    MOVF_I, MOVT_I)>;
 
 //===----------------------------------------------------------------------===//
+// R5900 FPU Accumulator Instructions
+//===----------------------------------------------------------------------===//
+// The R5900 has a dedicated FPU accumulator register (ACC) for multiply-add
+// chains. These instructions have the same 4-cycle latency as regular FPU
+// arithmetic operations.
+
+// FPU Accumulator operations: 4 cycles (same as mul.s)
+def R5900WriteFPUAcc : SchedWriteRes<[R5900IssueFPU]> {
+  let Latency = 4;
+}
+
+// adda.s, suba.s, mula.s (write ACC only)
+// madda.s, msuba.s (read and write ACC)
+// madd.s, msub.s (read ACC, write FPR)
+def : InstRW<[R5900WriteFPUAcc], (instrs ADDA_S, SUBA_S, MULA_S,
+                                         MADDA_S, MSUBA_S,
+                                         R5900_MADD_S, R5900_MSUB_S)>;
+
+//===----------------------------------------------------------------------===//
 // COP0 Instructions
 //===----------------------------------------------------------------------===//
 

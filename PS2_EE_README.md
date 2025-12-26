@@ -68,7 +68,7 @@ Standard MIPS uses 64-bit GP registers; R5900 extends these to 128-bit. Uses TIm
 | `$f0-$f31` | 32-bit | FP data registers (single-precision only) | **Implemented** (MIPS III) |
 | `FCR0` | 32-bit | FP Implementation/Revision (read-only) | **Implemented** (MIPS III) |
 | `FCR31` | 32-bit | FP Control/Status | **Implemented** (MIPS III) |
-| `ACC` | 32-bit | FP Accumulator (for ADDA.S, MULA.S, etc.) | Not Implemented |
+| `ACC` | 32-bit | FP Accumulator (for ADDA.S, MULA.S, etc.) | **Implemented** |
 
 Note: R5900 FPU is single-precision only. Double-precision is NOT supported.
 
@@ -285,21 +285,21 @@ R5900 FPU is single-precision only with additional operations. Double precision 
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `ADDA.S` | Add to Accumulator | Not Implemented |
-| `SUBA.S` | Subtract to Accumulator | Not Implemented |
-| `MULA.S` | Multiply to Accumulator | Not Implemented |
-| `MADD.S` | Multiply-Add (ACC + fs * ft) | Not Implemented |
-| `MADDA.S` | Multiply-Add to Accumulator | Not Implemented |
-| `MSUB.S` | Multiply-Subtract (ACC - fs * ft) | Not Implemented |
-| `MSUBA.S` | Multiply-Subtract to Accumulator | Not Implemented |
+| `ADDA.S` | Add to Accumulator | **Implemented** |
+| `SUBA.S` | Subtract to Accumulator | **Implemented** |
+| `MULA.S` | Multiply to Accumulator | **Implemented** |
+| `MADD.S` | Multiply-Add (ACC + fs * ft) | **Implemented** |
+| `MADDA.S` | Multiply-Add to Accumulator | **Implemented** |
+| `MSUB.S` | Multiply-Subtract (ACC - fs * ft) | **Implemented** |
+| `MSUBA.S` | Multiply-Subtract to Accumulator | **Implemented** |
 
 ### 4.2 Min/Max/Reciprocal
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `MIN.S` | Floating-Point Minimum | Not Implemented |
-| `MAX.S` | Floating-Point Maximum | Not Implemented |
-| `RSQRT.S` | Reciprocal Square Root (fd = fs / sqrt(ft)) | Not Implemented |
+| `MIN.S` | Floating-Point Minimum | **Implemented** |
+| `MAX.S` | Floating-Point Maximum | **Implemented** |
+| `RSQRT.S` | Reciprocal Square Root (fd = fs / sqrt(ft)) | **Implemented** |
 | `SQRT.S` | Square Root | **Implemented** (MIPS) |
 
 ---
@@ -407,10 +407,10 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [ ] Add autovectorization patterns
 
 ### Phase 4: FPU Extensions
-- [ ] FPU accumulator (ACC) register
-- [ ] ADDA.S, MULA.S, MADD.S, MSUB.S, etc.
-- [ ] MIN.S, MAX.S
-- [ ] RSQRT.S
+- [x] FPU accumulator (ACC) register
+- [x] ADDA.S, SUBA.S, MULA.S, MADDA.S, MSUBA.S, MADD.S, MSUB.S
+- [x] MIN.S, MAX.S
+- [x] RSQRT.S
 
 ### Phase 5: Dual Pipeline
 - [ ] HI1/LO1 registers

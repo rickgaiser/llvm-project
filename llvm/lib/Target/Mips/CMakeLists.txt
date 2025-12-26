@@ -66,6 +66,7 @@ add_llvm_target(MipsCodeGen
   MipsTargetTransformInfo.cpp
   MicroMipsSizeReduction.cpp
   MipsMulMulBugPass.cpp
+  MipsR5900FPUAccChain.cpp
 
   LINK_COMPONENTS
   Analysis

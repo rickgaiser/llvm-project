@@ -202,6 +202,9 @@ let Namespace = "Mips" in {
   foreach I = 0-7 in
   def FCC#I : MipsReg<I, "fcc"#I>;
 
+  // R5900 FPU Accumulator register
+  def FPU_ACC : MipsReg<0, "$acc">;
+
   // COP0 registers.
   foreach I = 0-31 in
   def COP0#I : MipsReg<I, ""#I>;
@@ -426,6 +429,9 @@ def CCR : RegisterClass<"Mips", [i32], 32, (sequence "FCR%u", 0, 31)>,
 // FP condition code registers.
 def FCC : RegisterClass<"Mips", [i32], 32, (sequence "FCC%u", 0, 7)>,
           Unallocatable;
+
+// R5900 FPU Accumulator register class
+def FPUACC : RegisterClass<"Mips", [f32], 32, (add FPU_ACC)>, Unallocatable;
 
 // MIPS32r6/MIPS64r6 store FPU condition codes in normal FGR registers.
 // This class allows us to represent this in codegen patterns.

@@ -68,6 +68,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPreLegalizerCombinerPass(*PR);
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
+  initializeMipsR5900FPUAccChainPass(*PR);
   initializeMipsDAGToDAGISelLegacyPass(*PR);
 }
 
@@ -278,6 +279,10 @@ MachineFunctionInfo *MipsTargetMachine::createMachineFunctionInfo(
 void MipsPassConfig::addPreEmitPass() {
   // Expand pseudo instructions that are sensitive to register allocation.
   addPass(createMipsExpandPseudoPass());
+
+  // R5900: Optimize multiply-add chains to use the FPU accumulator.
+  // This pass runs early to give other passes a chance to work with the result.
+  addPass(createMipsR5900FPUAccChainPass());
 
   // The microMIPS size reduction pass performs instruction reselection for
   // instructions which can be remapped to a 16 bit instruction.
