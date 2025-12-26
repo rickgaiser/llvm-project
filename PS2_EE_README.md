@@ -390,7 +390,7 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] Add `r5900` processor definition
 - [x] Disable LL/SC atomics for R5900
 - [x] Set ELF machine flag (`EF_MIPS_MACH_5900`)
-- [ ] Add basic scheduling model
+- [x] Add basic scheduling model
 
 ### Phase 2: 128-bit Support
 - [ ] Define 128-bit register class (GPR128) in `MipsRegisterInfo.td`
