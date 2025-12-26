@@ -705,6 +705,23 @@ class ABSS_FM<bits<6> funct, bits<5> fmt> : StdArch {
   let Inst{5-0}   = funct;
 }
 
+// R5900 FPU Accumulator instruction format (fd field = 0)
+// Used for ADDA.S, SUBA.S, MULA.S, MADDA.S, MSUBA.S
+// Format: COP1 | fmt | ft | fs | 0 | funct
+class R5900_FPUACC_FM<bits<6> funct> : StdArch {
+  bits<5> fs;
+  bits<5> ft;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0x11;  // COP1
+  let Inst{25-21} = 0x10;  // fmt = S (single precision)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = 0;     // fd = 0 for ACC operations
+  let Inst{5-0}   = funct;
+}
+
 class MFC1_FM<bits<5> funct> : StdArch {
   bits<5> rt;
   bits<5> fs;
