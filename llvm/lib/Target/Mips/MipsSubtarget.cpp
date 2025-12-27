@@ -235,6 +235,11 @@ bool MipsSubtarget::enablePostRAScheduler() const { return true; }
 /// Enable MachineScheduler for R5900 to better interleave loads with FPU ops.
 bool MipsSubtarget::enableMachineScheduler() const { return isR5900(); }
 
+/// Enable Post-RA MachineScheduler for R5900 to interleave loads/mults.
+/// This provides better instruction scheduling than the legacy PostRA scheduler
+/// by using the SchedMachineModel latencies from MipsScheduleR5900.td.
+bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
+
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
   CriticalPathRCs.clear();
   CriticalPathRCs.push_back(isGP64bit() ? &Mips::GPR64RegClass

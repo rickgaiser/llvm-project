@@ -13,9 +13,10 @@ define i64 @test_add(i64 %a, i64 %b) {
   ret i64 %c
 }
 
+; Test 64-bit multiply (R5900 has no dmult, so it expands to 32-bit mults)
 ; CHECK-LABEL: test_mul:
-; CHECK: dmult
-; CHECK: mflo
+; CHECK: mult
+; CHECK: multu
 define i64 @test_mul(i64 %a, i64 %b) {
   %c = mul i64 %a, %b
   ret i64 %c

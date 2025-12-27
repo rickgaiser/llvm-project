@@ -36,7 +36,8 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
 | `-mfix-r5900` | Enable R5900 short loop erratum workaround | **Implemented** (default on) |
 | `-mips-r5900-pipeline-balance` | Balance independent mult/div between pipelines | **Implemented** (opt-in) |
-| `-misched-postra` | Enable post-RA machine scheduler (recommended with pipeline balancing) | **Available** |
+
+**R5900 Scheduling**: The post-RA MachineScheduler is enabled by default for R5900, providing optimal load/multiply interleaving based on the scheduling model latencies.
 
 ---
 
@@ -283,7 +284,7 @@ Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt
 | `MTHI1` | Move To HI1 | **Implemented** (asm-only) |
 | `MTLO1` | Move To LO1 | **Implemented** (asm-only) |
 
-Note: Pipeline 1 instructions are available in inline assembly. Additionally, when the `-mips-r5900-pipeline-balance` flag is enabled, independent multiply operations are automatically converted to use Pipeline 1 (MULT1/MULTU1) to enable instruction-level parallelism. For optimal interleaving of P0/P1 instructions, also use `-misched-postra` to enable the post-RA machine scheduler.
+Note: Pipeline 1 instructions are available in inline assembly. Additionally, when the `-mips-r5900-pipeline-balance` flag is enabled, independent multiply operations are automatically converted to use Pipeline 1 (MULT1/MULTU1) to enable instruction-level parallelism. The post-RA MachineScheduler (enabled by default for R5900) will then interleave P0/P1 instructions for optimal parallelism.
 
 ---
 
@@ -506,8 +507,8 @@ The following custom passes optimize code generation for R5900's unique features
 │  Pre-Sched2 (before post-RA scheduler)                              │
 │    └─ MipsR5900PipelineBalancer: MULT → MULT1 conversion            │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Post-RA Scheduler (-misched-postra)                                │
-│    └─ Interleaves P0/P1 instructions using MAC0/MAC1 resources      │
+│  Post-RA MachineScheduler (enabled by default)                      │
+│    └─ Interleaves loads/mults and P0/P1 instructions for parallelism│
 ├─────────────────────────────────────────────────────────────────────┤
 │  Pre-Emit                                                           │
 │    └─ Delay slot filler, branch expansion                           │

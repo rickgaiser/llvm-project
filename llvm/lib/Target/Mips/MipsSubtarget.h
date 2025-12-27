@@ -235,6 +235,8 @@ public:
   bool enablePostRAScheduler() const override;
   /// Enable MachineScheduler for R5900 to get better load/FPU interleaving.
   bool enableMachineScheduler() const override;
+  /// Enable Post-RA MachineScheduler for R5900 to interleave loads/mults.
+  bool enablePostRAMachineScheduler() const override;
   void getCriticalPathRCs(RegClassVector &CriticalPathRCs) const override;
   CodeGenOptLevel getOptLevelToEnablePostRAScheduler() const override;
 

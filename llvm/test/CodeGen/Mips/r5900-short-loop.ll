@@ -37,15 +37,18 @@ exit:
 
 ; Long loop - should NOT be affected by the fix (too many instructions)
 ; Both FIX and NOFIX can fill delay slots here since loop is longer
+; The scheduler may choose different instructions for the delay slot
 ; FIX-LABEL: test_long_loop:
 ; FIX:       .LBB1_1:
-; FIX:       bnez
-; FIX-NEXT:  daddiu
+; FIX:       bnez ${{[0-9]+}}, .LBB1_1
+; Delay slot should be filled with actual instruction, not nop
+; FIX-NEXT:  {{sw|daddiu|addu}}
 
 ; NOFIX-LABEL: test_long_loop:
 ; NOFIX:     .LBB1_1:
-; NOFIX:     bnez
-; NOFIX-NEXT: daddiu
+; NOFIX:     bnez ${{[0-9]+}}, .LBB1_1
+; Delay slot should be filled with actual instruction, not nop
+; NOFIX-NEXT: {{sw|daddiu|addu}}
 define i32 @test_long_loop(ptr %arr, i32 %n) {
 entry:
   br label %loop
