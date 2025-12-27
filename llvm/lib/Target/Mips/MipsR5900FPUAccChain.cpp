@@ -54,9 +54,8 @@ public:
     return "R5900 FPU Accumulator Chain Optimization";
   }
 
-  MachineFunctionProperties getRequiredProperties() const override {
-    return MachineFunctionProperties().setNoVRegs();
-  }
+  // This pass runs before register allocation, so virtual registers are used.
+  // No special properties required.
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
@@ -130,7 +129,13 @@ bool MipsR5900FPUAccChain::runOnMachineFunction(MachineFunction &MF) {
 
 MachineInstr *MipsR5900FPUAccChain::findDefBefore(MachineInstr &Use,
                                                    Register Reg) {
-  // Scan backwards from Use to find the instruction that defines Reg
+  // For virtual registers (before register allocation), use getVRegDef()
+  // which correctly returns the unique defining instruction in SSA form.
+  if (Reg.isVirtual())
+    return MRI->getVRegDef(Reg);
+
+  // For physical registers (shouldn't happen when running before regalloc),
+  // scan backwards from Use to find the instruction that defines Reg
   MachineBasicBlock *MBB = Use.getParent();
   MachineBasicBlock::reverse_iterator RI(Use.getIterator());
   for (MachineBasicBlock::reverse_iterator RE = MBB->rend(); RI != RE; ++RI) {
@@ -209,6 +214,12 @@ void MipsR5900FPUAccChain::transformChain(MachineBasicBlock &MBB,
                                            SmallVectorImpl<MachineInstr *> &FAdds) {
   LLVM_DEBUG(dbgs() << "R5900 FPU ACC: Transforming chain with " << Leaves.size()
                     << " multiplies\n");
+
+  // Reverse the leaves so we consume them in the order they were loaded.
+  // The BFS traversal collects leaves in reverse program order (last multiply
+  // first), but for optimal scheduling we want MULA_S to use the first-loaded
+  // operands so the accumulator chain can start as soon as possible.
+  std::reverse(Leaves.begin(), Leaves.end());
 
   DebugLoc DL = Root.getDebugLoc();
   MachineBasicBlock::iterator InsertPt = Root;

@@ -30,6 +30,7 @@
 #include "llvm/CodeGen/GlobalISel/Legalizer.h"
 #include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Attributes.h"
@@ -254,6 +255,12 @@ bool MipsPassConfig::addInstSelector() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+
+  // R5900: Optimize multiply-add chains to use the FPU accumulator.
+  // This must run before register allocation so virtual registers are still
+  // in SSA form (one definition per register).
+  if (getMipsSubtarget().isR5900())
+    addPass(createMipsR5900FPUAccChainPass());
 }
 
 TargetTransformInfo
@@ -268,6 +275,13 @@ MipsTargetMachine::getTargetTransformInfo(const Function &F) const {
   return TargetTransformInfo(std::make_unique<MipsTTIImpl>(this, F));
 }
 
+ScheduleDAGInstrs *
+MipsTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
+  // Use the modern post-RA scheduler that respects SchedMachineModel latencies.
+  // This replaces the legacy post-RA-sched which requires Itineraries.
+  return createSchedPostRA(C);
+}
+
 MachineFunctionInfo *MipsTargetMachine::createMachineFunctionInfo(
     BumpPtrAllocator &Allocator, const Function &F,
     const TargetSubtargetInfo *STI) const {
@@ -279,10 +293,6 @@ MachineFunctionInfo *MipsTargetMachine::createMachineFunctionInfo(
 void MipsPassConfig::addPreEmitPass() {
   // Expand pseudo instructions that are sensitive to register allocation.
   addPass(createMipsExpandPseudoPass());
-
-  // R5900: Optimize multiply-add chains to use the FPU accumulator.
-  // This pass runs early to give other passes a chance to work with the result.
-  addPass(createMipsR5900FPUAccChainPass());
 
   // The microMIPS size reduction pass performs instruction reselection for
   // instructions which can be remapped to a 16 bit instruction.
