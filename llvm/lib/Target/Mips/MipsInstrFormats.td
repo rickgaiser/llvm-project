@@ -960,3 +960,79 @@ class HYPCALL_FM<bits<6> op> : StdArch {
   let Inst{20-11} = code_;
   let Inst{5-0}   = op;
 }
+
+//===----------------------------------------------------------------------===//
+// R5900 MMI Instruction Formats
+//===----------------------------------------------------------------------===//
+
+// R5900 3-operand multiply format (SPECIAL opcode with rd field)
+// Standard MULT uses rd=0, R5900 allows rd to receive low result
+class R5900_MULT3_FM<bits<6> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0;        // SPECIAL opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = 0;
+  let Inst{5-0}   = funct;
+}
+
+// R5900 MMI format for MFHI1/MFLO1 (rd only)
+class R5900_MFHILO1_FM<bits<6> funct> : StdArch {
+  bits<5> rd;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-16} = 0;        // rs, rt = 0
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = 0;
+  let Inst{5-0}   = funct;
+}
+
+// R5900 MMI format for MTHI1/MTLO1 (rs only)
+class R5900_MTHILO1_FM<bits<6> funct> : StdArch {
+  bits<5> rs;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-6}  = 0;        // rt, rd, sa = 0
+  let Inst{5-0}   = funct;
+}
+
+// R5900 MMI format with rd field for MADD/MULT1 etc
+class R5900_MMI_3R_FM<bits<6> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = 0;
+  let Inst{5-0}   = funct;
+}
+
+// R5900 MMI format for 2-operand forms (rd=0)
+class R5900_MMI_2R_FM<bits<6> funct> : StdArch {
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-6}  = 0;        // rd, sa = 0
+  let Inst{5-0}   = funct;
+}

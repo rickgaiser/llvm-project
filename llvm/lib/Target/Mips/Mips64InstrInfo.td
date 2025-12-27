@@ -304,26 +304,27 @@ let AdditionalPredicates = [NotInMips16Mode, NotInMicroMips,
 }
 
 /// Multiply and Divide Instructions.
+/// Note: R5900 doesn't support DMULT/DMULTU/DDIV/DDIVU - it uses 32-bit ops only
 let AdditionalPredicates = [NotInMicroMips] in {
   def DMULT  : Mult<"dmult", II_DMULT, GPR64Opnd, [HI0_64, LO0_64]>,
-               MULT_FM<0, 0x1c>, ISA_MIPS3_NOT_32R6_64R6;
+               MULT_FM<0, 0x1c>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
   def DMULTu : Mult<"dmultu", II_DMULTU, GPR64Opnd, [HI0_64, LO0_64]>,
-               MULT_FM<0, 0x1d>, ISA_MIPS3_NOT_32R6_64R6;
+               MULT_FM<0, 0x1d>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 }
 def PseudoDMULT  : MultDivPseudo<DMULT, ACC128, GPR64Opnd, MipsMult,
-                                 II_DMULT>, ISA_MIPS3_NOT_32R6_64R6;
+                                 II_DMULT>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 def PseudoDMULTu : MultDivPseudo<DMULTu, ACC128, GPR64Opnd, MipsMultu,
-                                 II_DMULTU>, ISA_MIPS3_NOT_32R6_64R6;
+                                 II_DMULTU>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 let AdditionalPredicates = [NotInMicroMips] in {
   def DSDIV : Div<"ddiv", II_DDIV, GPR64Opnd, [HI0_64, LO0_64]>,
-              MULT_FM<0, 0x1e>, ISA_MIPS3_NOT_32R6_64R6;
+              MULT_FM<0, 0x1e>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
   def DUDIV : Div<"ddivu", II_DDIVU, GPR64Opnd, [HI0_64, LO0_64]>,
-              MULT_FM<0, 0x1f>, ISA_MIPS3_NOT_32R6_64R6;
+              MULT_FM<0, 0x1f>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 }
 def PseudoDSDIV : MultDivPseudo<DSDIV, ACC128, GPR64Opnd, MipsDivRem,
-                                II_DDIV, 0, 1, 1>, ISA_MIPS3_NOT_32R6_64R6;
+                                II_DDIV, 0, 1, 1>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 def PseudoDUDIV : MultDivPseudo<DUDIV, ACC128, GPR64Opnd, MipsDivRemU,
-                                II_DDIVU, 0, 1, 1>, ISA_MIPS3_NOT_32R6_64R6;
+                                II_DDIVU, 0, 1, 1>, ISA_MIPS3_NOT_32R6_64R6_NOT_R5900;
 
 let isCodeGenOnly = 1 in {
 def MTHI64 : MoveToLOHI<"mthi", GPR64Opnd, [HI0_64]>, MTLO_FM<0x11>,

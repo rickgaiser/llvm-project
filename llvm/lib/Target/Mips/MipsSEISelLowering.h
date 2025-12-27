@@ -96,6 +96,9 @@ class TargetRegisterClass;
     MachineBasicBlock *emitMSACBranchPseudo(MachineInstr &MI,
                                             MachineBasicBlock *BB,
                                             unsigned BranchOp) const;
+    /// Emit the R5900 multiply-add chain pseudo instruction
+    MachineBasicBlock *emitR5900MulMulAdd(MachineInstr &MI,
+                                          MachineBasicBlock *BB) const;
     /// Emit the COPY_FW pseudo instruction
     MachineBasicBlock *emitCOPY_FW(MachineInstr &MI,
                                    MachineBasicBlock *BB) const;
