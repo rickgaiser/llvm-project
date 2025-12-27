@@ -463,6 +463,11 @@ class NOT_ASE_CNMIPSP {
   list<Predicate> ASEPredicate = [NotCnMipsP];
 }
 
+// R5900 lacks TRUNC/CEIL/FLOOR/ROUND - use CVT_W_S (always truncates toward zero)
+class NOT_R5900 {
+  list<Predicate> ASEPredicate = [NotR5900];
+}
+
 class ASE_MIPS64_CNMIPS {
   list<Predicate> ASEPredicate = [HasMips64, HasCnMips];
 }

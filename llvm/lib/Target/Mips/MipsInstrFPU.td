@@ -368,19 +368,20 @@ defm D64 : C_COND_M<"d", FGR64Opnd, 17, II_C_CC_D>, ISA_MIPS1_NOT_32R6_64R6,
 // Floating Point Instructions
 //===----------------------------------------------------------------------===//
 let AdditionalPredicates = [NotInMicroMips] in {
+  // R5900 lacks ROUND/TRUNC/CEIL/FLOOR - use CVT_W_S instead
   def ROUND_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"round.w.s", FGR32Opnd, FGR32Opnd, II_ROUND>,
-                  ABSS_FM<0xc, 16>, ISA_MIPS2;
+                  ABSS_FM<0xc, 16>, ISA_MIPS2, NOT_R5900;
   defm ROUND_W  : ROUND_M<"round.w.d", II_ROUND>, ABSS_FM<0xc, 17>, ISA_MIPS2;
   def TRUNC_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"trunc.w.s", FGR32Opnd, FGR32Opnd, II_TRUNC>,
-                  ABSS_FM<0xd, 16>, ISA_MIPS2;
+                  ABSS_FM<0xd, 16>, ISA_MIPS2, NOT_R5900;
   def CEIL_W_S  : MMRel, StdMMR6Rel,
                   ABSS_FT<"ceil.w.s", FGR32Opnd, FGR32Opnd, II_CEIL>,
-                  ABSS_FM<0xe, 16>, ISA_MIPS2;
+                  ABSS_FM<0xe, 16>, ISA_MIPS2, NOT_R5900;
   def FLOOR_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"floor.w.s", FGR32Opnd, FGR32Opnd, II_FLOOR>,
-                  ABSS_FM<0xf, 16>, ISA_MIPS2;
+                  ABSS_FM<0xf, 16>, ISA_MIPS2, NOT_R5900;
   def CVT_W_S   : MMRel, ABSS_FT<"cvt.w.s", FGR32Opnd, FGR32Opnd, II_CVT>,
                   ABSS_FM<0x24, 16>, ISA_MIPS1;
 
@@ -938,6 +939,11 @@ def : MipsPat<(f32 fpimm0neg), (FNEG_S (MTC1 ZERO))>, ISA_MIPS1;
 
 def : MipsPat<(f32 (any_sint_to_fp GPR32Opnd:$src)),
               (PseudoCVT_S_W GPR32Opnd:$src)>;
+// R5900: use CVT_W_S (always truncates toward zero, no TRUNC_W_S on R5900)
+let Predicates = [HasR5900] in
+def : MipsPat<(MipsTruncIntFP FGR32Opnd:$src),
+              (CVT_W_S FGR32Opnd:$src)>;
+let Predicates = [NotR5900] in
 def : MipsPat<(MipsTruncIntFP FGR32Opnd:$src),
               (TRUNC_W_S FGR32Opnd:$src)>, ISA_MIPS1;
 

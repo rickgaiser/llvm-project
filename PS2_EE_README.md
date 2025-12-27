@@ -291,6 +291,8 @@ Note: Pipeline 1 instructions are available in inline assembly. Additionally, wh
 
 R5900 FPU is single-precision only with additional operations. Double precision is NOT supported.
 
+**Missing Standard Instructions**: The R5900 lacks `TRUNC.W.S`, `CEIL.W.S`, `FLOOR.W.S`, and `ROUND.W.S`. The `CVT.W.S` instruction always truncates toward zero (same behavior as `TRUNC.W.S` on standard MIPS). LLVM automatically uses `CVT.W.S` for float-to-int conversions on R5900.
+
 ### 4.1 Accumulator Operations
 
 | Instruction | Description | LLVM Status |

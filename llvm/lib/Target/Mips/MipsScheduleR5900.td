@@ -378,12 +378,8 @@ def : InstRW<[R5900WriteFPUMove], (instrs FABS_S, FNEG_S, FMOV_S)>;
 def : InstRW<[R5900WriteFPUCmp], (instrs FCMP_S32, BC1F, BC1T, BC1FL, BC1TL)>;
 def : InstRW<[R5900WriteFPUCmp], (instregex "C_[A-Z]+_S$")>;
 
-// cvt.s.w, cvt.w.s
+// cvt.s.w, cvt.w.s (R5900 CVT_W_S always truncates toward zero)
 def : InstRW<[R5900WriteFPUArith], (instrs CVT_S_W, CVT_W_S)>;
-
-// ceil, floor, round, trunc
-def : InstRW<[R5900WriteFPUArith], (instrs CEIL_W_S, FLOOR_W_S, ROUND_W_S,
-                                    TRUNC_W_S, PseudoTRUNC_W_S)>;
 
 // mfc1, mtc1, cfc1, ctc1
 def : InstRW<[R5900WriteFPUTransfer], (instrs MFC1, MTC1, CFC1, CTC1)>;
