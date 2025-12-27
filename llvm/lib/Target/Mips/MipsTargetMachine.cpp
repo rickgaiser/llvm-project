@@ -209,6 +209,12 @@ public:
     // enabled.
     EnableTailMerge = !getMipsSubtarget().enableLongBranchPass();
     EnableLoopTermFold = true;
+
+    // R5900: Use the modern MachineScheduler for post-RA scheduling.
+    // This provides better instruction interleaving than the legacy PostRA
+    // scheduler by respecting the SchedMachineModel latencies.
+    if (getMipsSubtarget().isR5900())
+      substitutePass(&PostRASchedulerID, &PostMachineSchedulerID);
   }
 
   MipsTargetMachine &getMipsTargetMachine() const {

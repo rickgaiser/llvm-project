@@ -54,7 +54,9 @@ entry:
 ; The MachineScheduler interleaves loads with the ACC chain for better performance.
 define void @dot4_mem(ptr %a, ptr %b, ptr %out) {
 ; CHECK-LABEL: dot4_mem:
-; Loads and mula.s can be interleaved by the scheduler
+; Loads and ACC operations can be interleaved by the scheduler for better
+; latency hiding. We check that the ACC chain is correctly formed.
+; CHECK-DAG: lwc1 $f{{[0-9]+}},
 ; CHECK-DAG: lwc1 $f{{[0-9]+}},
 ; CHECK-DAG: lwc1 $f{{[0-9]+}},
 ; CHECK-DAG: lwc1 $f{{[0-9]+}},
@@ -63,11 +65,9 @@ define void @dot4_mem(ptr %a, ptr %b, ptr %out) {
 ; CHECK-DAG: lwc1 $f{{[0-9]+}},
 ; CHECK-DAG: lwc1 $f{{[0-9]+}},
 ; CHECK-DAG: mula.s
-; Last load may be interleaved
-; CHECK-DAG: lwc1 $f{{[0-9]+}},
-; Accumulator chain continues
-; CHECK: madda.s
-; CHECK: madda.s
+; CHECK-DAG: madda.s
+; CHECK-DAG: madda.s
+; Final madd.s produces the result
 ; CHECK: madd.s
 ; CHECK: swc1
 entry:
