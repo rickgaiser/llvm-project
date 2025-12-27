@@ -12,6 +12,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 - **COP2 (VU0)**: 128-bit vector floating-point unit (4x32-bit floats)
 - **No LL/SC**: Load-Linked/Store-Conditional atomics are not available
 - **No CLZ/CLO**: Count Leading Zeros/Ones instructions are not available
+- **No DMULT/DDIV**: 64-bit multiply/divide instructions are not available (use 32-bit ops)
 
 ## Current Implementation Status
 
@@ -21,10 +22,11 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | Linker Support | **Partial** | Recognized as MIPS III variant |
 | `-mcpu=r5900` | **Implemented** | `FeatureR5900` in Mips.td |
 | No LL/SC Atomics | **Implemented** | Disabled via `setMaxAtomicSizeInBitsSupported(0)` |
+| No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | 128-bit Registers | Not Implemented | |
 | MMI Instructions | Not Implemented | |
 | VU0 (COP2) | Not Implemented | |
-| Dual Pipeline | Not Implemented | |
+| Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; optional pipeline balancing via `-mips-r5900-pipeline-balance` |
 
 ## Compiler Flags
 
@@ -33,6 +35,8 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | `-mcpu=r5900` | Target R5900 processor | **Implemented** |
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
 | `-mfix-r5900` | Enable R5900 short loop erratum workaround | **Implemented** (default on) |
+| `-mips-r5900-pipeline-balance` | Balance independent mult/div between pipelines | **Implemented** (opt-in) |
+| `-misched-postra` | Enable post-RA machine scheduler (recommended with pipeline balancing) | **Available** |
 
 ---
 
@@ -52,8 +56,8 @@ Standard MIPS uses 64-bit GP registers; R5900 extends these to 128-bit. Uses TIm
 |----------|------|---------|-------------|
 | `HI` | 64-bit | Upper result of multiply/divide (Pipeline 0) | **Implemented** (MIPS III) |
 | `LO` | 64-bit | Lower result of multiply/divide (Pipeline 0) | **Implemented** (MIPS III) |
-| `HI1` | 64-bit | Upper result of multiply/divide (Pipeline 1) | Not Implemented |
-| `LO1` | 64-bit | Lower result of multiply/divide (Pipeline 1) | Not Implemented |
+| `HI1` | 64-bit | Upper result of multiply/divide (Pipeline 1) | **Implemented** |
+| `LO1` | 64-bit | Lower result of multiply/divide (Pipeline 1) | **Implemented** |
 
 ### Shift Amount Register
 
@@ -253,27 +257,33 @@ R5900 has two multiply/divide units (MAC0/Pipeline 0 and MAC1/Pipeline 1) with d
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `MULT` | Multiply Word (signed) | **Implemented** (MIPS) |
-| `MULTU` | Multiply Word (unsigned) | **Implemented** (MIPS) |
+| `MULT rd,rs,rt` | Multiply Word (signed) | **Implemented + Auto-selected** |
+| `MULTU rd,rs,rt` | Multiply Word (unsigned) | **Implemented** |
 | `DIV` | Divide Word (signed) | **Implemented** (MIPS) |
 | `DIVU` | Divide Word (unsigned) | **Implemented** (MIPS) |
-| `MADD` | Multiply-Add (signed) | Not Implemented |
-| `MADDU` | Multiply-Add (unsigned) | Not Implemented |
+| `MADD rd,rs,rt` | Multiply-Add (signed) | **Implemented + Auto-selected** |
+| `MADDU rd,rs,rt` | Multiply-Add (unsigned) | **Implemented** |
+
+Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt` which writes low result to `$rd` in addition to HI:LO. The compiler automatically:
+- Uses 3-operand MULT for i32 multiplies (saves `mflo` instruction)
+- Uses MULT + MADD chain for `(a*b) + (c*d)` patterns (saves one instruction)
 
 ### Pipeline 1 (MAC1) - R5900 Specific
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `MULT1` | Multiply Word (signed) to HI1:LO1 | Not Implemented |
-| `MULTU1` | Multiply Word (unsigned) to HI1:LO1 | Not Implemented |
-| `DIV1` | Divide Word (signed) to HI1:LO1 | Not Implemented |
-| `DIVU1` | Divide Word (unsigned) to HI1:LO1 | Not Implemented |
-| `MADD1` | Multiply-Add (signed) to HI1:LO1 | Not Implemented |
-| `MADDU1` | Multiply-Add (unsigned) to HI1:LO1 | Not Implemented |
-| `MFHI1` | Move From HI1 | Not Implemented |
-| `MFLO1` | Move From LO1 | Not Implemented |
-| `MTHI1` | Move To HI1 | Not Implemented |
-| `MTLO1` | Move To LO1 | Not Implemented |
+| `MULT1` | Multiply Word (signed) to HI1:LO1 | **Implemented** (auto-balanced) |
+| `MULTU1` | Multiply Word (unsigned) to HI1:LO1 | **Implemented** (auto-balanced) |
+| `DIV1` | Divide Word (signed) to HI1:LO1 | **Implemented** (asm-only) |
+| `DIVU1` | Divide Word (unsigned) to HI1:LO1 | **Implemented** (asm-only) |
+| `MADD1` | Multiply-Add (signed) to HI1:LO1 | **Implemented** (asm-only) |
+| `MADDU1` | Multiply-Add (unsigned) to HI1:LO1 | **Implemented** (asm-only) |
+| `MFHI1` | Move From HI1 | **Implemented** (asm-only) |
+| `MFLO1` | Move From LO1 | **Implemented** (asm-only) |
+| `MTHI1` | Move To HI1 | **Implemented** (asm-only) |
+| `MTLO1` | Move To LO1 | **Implemented** (asm-only) |
+
+Note: Pipeline 1 instructions are available in inline assembly. Additionally, when the `-mips-r5900-pipeline-balance` flag is enabled, independent multiply operations are automatically converted to use Pipeline 1 (MULT1/MULTU1) to enable instruction-level parallelism. For optimal interleaving of P0/P1 instructions, also use `-misched-postra` to enable the post-RA machine scheduler.
 
 ---
 
@@ -413,10 +423,13 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] RSQRT.S
 
 ### Phase 5: Dual Pipeline
-- [ ] HI1/LO1 registers
-- [ ] MULT1, MULTU1, DIV1, DIVU1
-- [ ] MADD1, MADDU1
-- [ ] MFHI1, MFLO1, MTHI1, MTLO1
+- [x] HI1/LO1 registers
+- [x] MULT1, MULTU1, DIV1, DIVU1
+- [x] MADD1, MADDU1
+- [x] MFHI1, MFLO1, MTHI1, MTLO1
+- [x] 3-operand MULT/MULTU/MADD/MADDU (Pipeline 0)
+- [x] Instruction scheduling for both pipelines
+- [x] Optional dual-pipeline balancing (`-mips-r5900-pipeline-balance`)
 
 ### Phase 6: SA Register
 - [ ] SA register definition
@@ -439,6 +452,8 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 ## Key Files for Implementation
 
+### Core MIPS Files
+
 | Purpose | File Path |
 |---------|-----------|
 | Feature/Processor defs | `llvm/lib/Target/Mips/Mips.td` |
@@ -449,6 +464,65 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | 64-bit instructions | `llvm/lib/Target/Mips/Mips64InstrInfo.td` |
 | ELF flags | `llvm/include/llvm/BinaryFormat/ELF.h` |
 | Linker arch tree | `lld/ELF/Arch/MipsArchTree.cpp` |
+
+### R5900-Specific Files
+
+| Purpose | File Path |
+|---------|-----------|
+| R5900 instructions | `llvm/lib/Target/Mips/MipsR5900InstrInfo.td` |
+| R5900 scheduling model | `llvm/lib/Target/Mips/MipsScheduleR5900.td` |
+| FPU accumulator pass | `llvm/lib/Target/Mips/MipsR5900FPUAccChain.cpp` |
+| Pipeline balancer pass | `llvm/lib/Target/Mips/MipsR5900PipelineBalancer.cpp` |
+| ISel patterns | `llvm/lib/Target/Mips/MipsISelDAGToDAG.cpp` |
+| ISel lowering | `llvm/lib/Target/Mips/MipsISelLowering.cpp` |
+
+---
+
+## R5900-Specific LLVM Passes
+
+The following custom passes optimize code generation for R5900's unique features:
+
+| Pass | File | Stage | Description |
+|------|------|-------|-------------|
+| **FPU Accumulator Chain** | `MipsR5900FPUAccChain.cpp` | Pre-RA | Converts FP multiply-add sequences to use the FPU accumulator (`ACC`) with `MULA.S`/`MADDA.S` chains |
+| **Pipeline Balancer** | `MipsR5900PipelineBalancer.cpp` | Pre-Sched2 | Converts independent multiplies to Pipeline 1 (`MULT1`/`MULTU1`) for dual-issue parallelism |
+
+### Pass Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        LLVM Pass Pipeline                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  Instruction Selection                                              │
+│    └─ PseudoR5900MulMulAdd: (a*b)+(c*d) → MULT + MADD chain         │
+├─────────────────────────────────────────────────────────────────────┤
+│  Pre-Register Allocation                                            │
+│    └─ MipsR5900FPUAccChain: FP mul-add → MULA.S/MADDA.S sequences   │
+├─────────────────────────────────────────────────────────────────────┤
+│  Register Allocation                                                │
+├─────────────────────────────────────────────────────────────────────┤
+│  Pre-Sched2 (before post-RA scheduler)                              │
+│    └─ MipsR5900PipelineBalancer: MULT → MULT1 conversion            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Post-RA Scheduler (-misched-postra)                                │
+│    └─ Interleaves P0/P1 instructions using MAC0/MAC1 resources      │
+├─────────────────────────────────────────────────────────────────────┤
+│  Pre-Emit                                                           │
+│    └─ Delay slot filler, branch expansion                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Scheduling Model
+
+The R5900 scheduling model (`MipsScheduleR5900.td`) defines:
+
+| Resource | Pipeline | Instructions |
+|----------|----------|--------------|
+| `R5900MAC0` | Pipeline 0 | `MULT`, `MULTU`, `MADD`, `MADDU`, `DIV`, `DIVU` |
+| `R5900MAC1` | Pipeline 1 | `MULT1`, `MULTU1`, `MADD1`, `MADDU1`, `DIV1`, `DIVU1` |
+| `R5900FPUAcc` | FPU | `MULA.S`, `MADDA.S`, `MSUBA.S`, `MADD.S`, `MSUB.S` |
+
+The dual MAC units allow two independent multiply operations to execute in parallel when properly scheduled.
 
 ---
 

@@ -192,6 +192,9 @@ let Namespace = "Mips" in {
   let SubRegIndices = [sub_32] in {
   def HI0_64  : RegisterWithSubRegs<"hi", [HI0]>;
   def LO0_64  : RegisterWithSubRegs<"lo", [LO0]>;
+  // R5900 Pipeline 1 HI/LO 64-bit versions
+  def HI1_64  : RegisterWithSubRegs<"hi1", [HI1]>;
+  def LO1_64  : RegisterWithSubRegs<"lo1", [LO1]>;
   }
 
   // FP control registers.
@@ -461,6 +464,11 @@ def LO32DSP : RegisterClass<"Mips", [i32], 32, (sequence "LO%u", 0, 3)>;
 def HI32DSP : RegisterClass<"Mips", [i32], 32, (sequence "HI%u", 0, 3)>;
 def LO64 : RegisterClass<"Mips", [i64], 64, (add LO0_64)>;
 def HI64 : RegisterClass<"Mips", [i64], 64, (add HI0_64)>;
+// R5900 Pipeline 1 HI/LO register classes
+def LO32_1 : RegisterClass<"Mips", [i32], 32, (add LO1)>;
+def HI32_1 : RegisterClass<"Mips", [i32], 32, (add HI1)>;
+def LO64_1 : RegisterClass<"Mips", [i64], 64, (add LO1_64)>;
+def HI64_1 : RegisterClass<"Mips", [i64], 64, (add HI1_64)>;
 
 // Hardware registers
 def HWRegs : RegisterClass<"Mips", [i32], 32, (sequence "HWR%u", 0, 31)>,
@@ -476,6 +484,11 @@ def ACC128 : RegisterClass<"Mips", [untyped], 128, (add AC0_64)> {
 }
 
 def ACC64DSP : RegisterClass<"Mips", [untyped], 64, (sequence "AC%u", 0, 3)> {
+  let Size = 64;
+}
+
+// R5900 Pipeline 1 Accumulator
+def ACC64_1 : RegisterClass<"Mips", [untyped], 64, (add AC1)> {
   let Size = 64;
 }
 

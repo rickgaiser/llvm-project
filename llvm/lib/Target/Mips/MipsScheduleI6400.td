@@ -19,7 +19,7 @@ def MipsI6400Model : SchedMachineModel {
                                          InMicroMips, InMips16Mode, HasCnMips,
 					 HasCnMipsP,  HasDSP, HasDSPR2,
 					 HasMips3D, HasMT, HasCRC,
-					 NotMips32r6, NotMips64r6, HasEVA, IsR5900];
+					 NotMips32r6, NotMips64r6, HasEVA, IsR5900, HasR5900];
 }
 
 let SchedModel = MipsI6400Model in {

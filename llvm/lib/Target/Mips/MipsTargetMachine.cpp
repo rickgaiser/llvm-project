@@ -53,6 +53,12 @@ static cl::opt<bool>
     EnableMulMulFix("mfix4300", cl::init(false),
                     cl::desc("Enable the VR4300 mulmul bug fix."), cl::Hidden);
 
+static cl::opt<bool>
+    EnableR5900PipelineBalance("mips-r5900-pipeline-balance", cl::init(false),
+                               cl::desc("Enable R5900 dual pipeline balancing "
+                                        "(MULT1, DIV1, etc.)"),
+                               cl::Hidden);
+
 extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   // Register the target.
   RegisterTargetMachine<MipsebTargetMachine> X(getTheMipsTarget());
@@ -70,6 +76,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
   initializeMipsR5900FPUAccChainPass(*PR);
+  initializeMipsR5900PipelineBalancerPass(*PR);
   initializeMipsDAGToDAGISelLegacyPass(*PR);
 }
 
@@ -216,6 +223,7 @@ public:
   bool addInstSelector() override;
   void addPreEmitPass() override;
   void addPreRegAlloc() override;
+  void addPreSched2() override;
   bool addIRTranslator() override;
   void addPreLegalizeMachineIR() override;
   bool addLegalizeMachineIR() override;
@@ -261,6 +269,15 @@ void MipsPassConfig::addPreRegAlloc() {
   // in SSA form (one definition per register).
   if (getMipsSubtarget().isR5900())
     addPass(createMipsR5900FPUAccChainPass());
+}
+
+void MipsPassConfig::addPreSched2() {
+  // R5900: Balance multiply/divide operations between Pipeline 0 and Pipeline 1
+  // to maximize instruction-level parallelism. This runs BEFORE the post-RA
+  // scheduler so the scheduler can interleave P0/P1 instructions using its
+  // MAC0/MAC1 resource definitions. Opt-in via -mips-r5900-pipeline-balance.
+  if (getMipsSubtarget().isR5900() && EnableR5900PipelineBalance)
+    addPass(createMipsR5900PipelineBalancerPass());
 }
 
 TargetTransformInfo

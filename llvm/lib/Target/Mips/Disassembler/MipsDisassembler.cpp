@@ -66,6 +66,8 @@ public:
 
   bool hasCnMipsP() const { return STI.hasFeature(Mips::FeatureCnMipsP); }
 
+  bool isR5900() const { return STI.hasFeature(Mips::FeatureR5900); }
+
   bool hasCOP3() const {
     // Only present in MIPS-I and MIPS-II
     return !hasMips32() && !hasMips3();
@@ -2133,6 +2135,14 @@ DecodeStatus MipsDisassembler::getInstruction(MCInst &Instr, uint64_t &Size,
     LLVM_DEBUG(
         dbgs() << "Trying MipsFP64 (64 bit FPU) table (32-bit opcodes):\n");
     Result = decodeInstruction(DecoderTableMipsFP6432, Instr, Insn, Address,
+                               this, STI);
+    if (Result != MCDisassembler::Fail)
+      return Result;
+  }
+
+  if (isR5900()) {
+    LLVM_DEBUG(dbgs() << "Trying R5900 (EE Core) table (32-bit opcodes):\n");
+    Result = decodeInstruction(DecoderTableR590032, Instr, Insn, Address,
                                this, STI);
     if (Result != MCDisassembler::Fail)
       return Result;

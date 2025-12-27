@@ -167,6 +167,53 @@ def : InstRW<[R5900WriteMul], (instrs DMULT, DMULTu, PseudoDMULT, PseudoDMULTu)>
 def : InstRW<[R5900WriteDiv], (instrs DSDIV, DUDIV, PseudoDSDIV, PseudoDUDIV)>;
 
 //===----------------------------------------------------------------------===//
+// R5900 3-Operand Multiply (Pipeline 0) - same timing as standard MULT
+//===----------------------------------------------------------------------===//
+
+// 3-operand MULT/MULTU (writes to rd, HI, LO)
+def : InstRW<[R5900WriteMul], (instrs R5900_MULT, R5900_MULTU)>;
+
+// 3-operand MADD/MADDU (Pipeline 0)
+def : InstRW<[R5900WriteMul], (instrs R5900_MADD, R5900_MADDU)>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Pipeline 1 Instructions (MAC1)
+//===----------------------------------------------------------------------===//
+
+def R5900WriteMul1 : SchedWriteRes<[R5900Slot1, R5900PipeI1, R5900MAC1]> {
+  let Latency = 4;
+  let ReleaseAtCycles = [1, 1, 4];
+}
+
+def R5900WriteDiv1 : SchedWriteRes<[R5900Slot1, R5900PipeI1, R5900MAC1]> {
+  let Latency = 37;
+  let ReleaseAtCycles = [1, 1, 37];
+}
+
+def R5900WriteHILO1 : SchedWriteRes<[R5900Slot1, R5900PipeI1]> {
+  let Latency = 1;
+}
+
+def R5900WriteMTHILO1 : SchedWriteRes<[R5900Slot1, R5900PipeI1]> {
+  let Latency = 1;
+}
+
+// mult1, multu1
+def : InstRW<[R5900WriteMul1], (instrs MULT1, MULTU1)>;
+
+// div1, divu1
+def : InstRW<[R5900WriteDiv1], (instrs DIV1, DIVU1)>;
+
+// mfhi1, mflo1
+def : InstRW<[R5900WriteHILO1], (instrs MFHI1, MFLO1)>;
+
+// mthi1, mtlo1
+def : InstRW<[R5900WriteMTHILO1], (instrs MTHI1, MTLO1)>;
+
+// madd1, maddu1
+def : InstRW<[R5900WriteMul1], (instrs MADD1, MADDU1)>;
+
+//===----------------------------------------------------------------------===//
 // Load/Store Pipeline (LS)
 //===----------------------------------------------------------------------===//
 // Load/Store instructions use the LS pipeline and issue from Slot1

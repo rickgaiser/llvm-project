@@ -247,6 +247,10 @@ def UseIndirectJumpsHazard : Predicate<"Subtarget->useIndirectJumpsHazard()">,
                             AssemblerPredicate<(all_of FeatureUseIndirectJumpsHazard)>;
 def NoIndirectJumpGuards : Predicate<"!Subtarget->useIndirectJumpsHazard()">,
                            AssemblerPredicate<(all_of (not FeatureUseIndirectJumpsHazard))>;
+def HasR5900     :    Predicate<"Subtarget->isR5900()">,
+                      AssemblerPredicate<(all_of FeatureR5900)>;
+def NotR5900     :    Predicate<"!Subtarget->isR5900()">,
+                      AssemblerPredicate<(all_of (not FeatureR5900))>;
 def HasCRC   : Predicate<"Subtarget->hasCRC()">,
                AssemblerPredicate<(all_of FeatureCRC)>;
 def HasVirt  : Predicate<"Subtarget->hasVirt()">,
@@ -316,12 +320,22 @@ class ISA_MIPS3_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips3, NotMips32r6, NotMips64r6];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
+// R5900 doesn't support DMULT/DMULTU/DDIV/DDIVU - use its 32-bit pipeline instead
+class ISA_MIPS3_NOT_32R6_64R6_NOT_R5900 {
+  list<Predicate> InsnPredicates = [HasMips3, NotMips32r6, NotMips64r6, NotR5900];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
 class ISA_MIPS32 {
   list<Predicate> InsnPredicates = [HasMips32];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS32_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+// R5900 has its own 3-operand MULT instead of MIPS32's MUL
+class ISA_MIPS32_NOT_32R6_64R6_NOT_R5900 {
+  list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS32R2 {
@@ -2064,9 +2078,10 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def SUBu : MMRel, StdMMR6Rel, ArithLogicR<"subu", GPR32Opnd, 0, II_SUBU, sub>,
              ADD_FM<0, 0x23>, ISA_MIPS1;
 
+  // Note: R5900 uses 3-operand MULT instead of MUL
   let Defs = [HI0, LO0] in
     def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, II_MUL, mul>,
-                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6;
+                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6_NOT_R5900;
 
   def ADD   : MMRel, StdMMR6Rel, ArithLogicR<"add", GPR32Opnd, 1, II_ADD>,
               ADD_FM<0, 0x20>, ISA_MIPS1;
@@ -3377,6 +3392,138 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def : MipsPat<(atomic_store_32 GPR32:$v, addr:$a), (SW GPR32:$v, addr:$a)>,
         ISA_MIPS1;
 }
+
+//===----------------------------------------------------------------------===//
+// R5900 EE Core Integer Instructions
+//===----------------------------------------------------------------------===//
+
+let Predicates = [HasR5900] in {
+
+//===----------------------------------------------------------------------===//
+// R5900 3-Operand Multiply (Pipeline 0) - writes to rd, HI, LO
+//===----------------------------------------------------------------------===//
+
+// 3-operand MULT: (rd, HI, LO) <- rs * rt (signed)
+// Uses mul pattern - R5900 uses this instead of MIPS32's MUL instruction
+let Defs = [HI0, LO0], isCommutable = 1 in
+def R5900_MULT : InstSE<(outs GPR32Opnd:$rd),
+                        (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                        "mult\t$rd, $rs, $rt",
+                        [(set GPR32Opnd:$rd, (mul GPR32Opnd:$rs, GPR32Opnd:$rt))],
+                        II_MULT, FrmR>,
+                 R5900_MULT3_FM<0x18>;
+
+// 3-operand MULTU: (rd, HI, LO) <- rs * rt (unsigned)
+// Note: low 32 bits of signed/unsigned multiply are identical, so both use mul
+let Defs = [HI0, LO0], isCommutable = 1 in
+def R5900_MULTU : InstSE<(outs GPR32Opnd:$rd),
+                         (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                         "multu\t$rd, $rs, $rt", [], II_MULT, FrmR>,
+                  R5900_MULT3_FM<0x19>;
+
+//===----------------------------------------------------------------------===//
+// R5900 MADD/MADDU/MSUB/MSUBU (Pipeline 0, MMI opcode)
+//===----------------------------------------------------------------------===//
+
+// 3-operand MADD: (rd, HI, LO) <- (HI,LO) + rs * rt (signed)
+let Defs = [HI0, LO0], Uses = [HI0, LO0] in
+def R5900_MADD : InstSE<(outs GPR32Opnd:$rd),
+                        (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                        "madd\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+                 R5900_MMI_3R_FM<0x00>;
+
+// 3-operand MADDU: (rd, HI, LO) <- (HI,LO) + rs * rt (unsigned)
+let Defs = [HI0, LO0], Uses = [HI0, LO0] in
+def R5900_MADDU : InstSE<(outs GPR32Opnd:$rd),
+                         (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                         "maddu\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+                  R5900_MMI_3R_FM<0x01>;
+
+// Pseudo instruction for multiply-add chain: (add (mul a, b), (mul c, d))
+// Expands to: R5900_MULT + R5900_MADD
+// This saves one instruction compared to MULT + MULT + ADDU
+let usesCustomInserter = 1, Defs = [HI0, LO0], Predicates = [HasR5900] in
+def PseudoR5900MulMulAdd : PseudoSE<
+    (outs GPR32Opnd:$rd),
+    (ins GPR32Opnd:$a, GPR32Opnd:$b, GPR32Opnd:$c, GPR32Opnd:$d),
+    [(set GPR32Opnd:$rd, (add (mul GPR32Opnd:$a, GPR32Opnd:$b),
+                              (mul GPR32Opnd:$c, GPR32Opnd:$d)))],
+    II_MADD>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Pipeline 1 Move Instructions
+//===----------------------------------------------------------------------===//
+
+let Uses = [HI1] in
+def MFHI1 : InstSE<(outs GPR32Opnd:$rd), (ins),
+                   "mfhi1\t$rd", [], II_MFHI_MFLO, FrmR>,
+            R5900_MFHILO1_FM<0x10>;
+
+let Uses = [LO1] in
+def MFLO1 : InstSE<(outs GPR32Opnd:$rd), (ins),
+                   "mflo1\t$rd", [], II_MFHI_MFLO, FrmR>,
+            R5900_MFHILO1_FM<0x12>;
+
+let Defs = [HI1] in
+def MTHI1 : InstSE<(outs), (ins GPR32Opnd:$rs),
+                   "mthi1\t$rs", [], II_MTHI_MTLO, FrmR>,
+            R5900_MTHILO1_FM<0x11>;
+
+let Defs = [LO1] in
+def MTLO1 : InstSE<(outs), (ins GPR32Opnd:$rs),
+                   "mtlo1\t$rs", [], II_MTHI_MTLO, FrmR>,
+            R5900_MTHILO1_FM<0x13>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Pipeline 1 Multiply/Divide
+//===----------------------------------------------------------------------===//
+
+// 3-operand MULT1: (rd, HI1, LO1) <- rs * rt (signed)
+let Defs = [HI1, LO1], isCommutable = 1 in
+def MULT1 : InstSE<(outs GPR32Opnd:$rd),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                   "mult1\t$rd, $rs, $rt", [], II_MULT, FrmR>,
+            R5900_MMI_3R_FM<0x18>;
+
+// 3-operand MULTU1: (rd, HI1, LO1) <- rs * rt (unsigned)
+let Defs = [HI1, LO1], isCommutable = 1 in
+def MULTU1 : InstSE<(outs GPR32Opnd:$rd),
+                    (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                    "multu1\t$rd, $rs, $rt", [], II_MULT, FrmR>,
+             R5900_MMI_3R_FM<0x19>;
+
+// DIV1: (HI1, LO1) <- rs / rt (signed)
+let Defs = [HI1, LO1] in
+def DIV1 : InstSE<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                  "div1\t$$zero, $rs, $rt", [], II_DIV, FrmR>,
+           R5900_MMI_2R_FM<0x1a>;
+
+// DIVU1: (HI1, LO1) <- rs / rt (unsigned)
+let Defs = [HI1, LO1] in
+def DIVU1 : InstSE<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                   "divu1\t$$zero, $rs, $rt", [], II_DIV, FrmR>,
+            R5900_MMI_2R_FM<0x1b>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Pipeline 1 Multiply-Add
+// Note: MADD1/MADDU1 use DecoderNamespace to avoid conflict with CLZ/CLO
+//===----------------------------------------------------------------------===//
+
+// 3-operand MADD1: (rd, HI1, LO1) <- (HI1,LO1) + rs * rt (signed)
+let Defs = [HI1, LO1], Uses = [HI1, LO1], DecoderNamespace = "R5900" in
+def MADD1 : InstSE<(outs GPR32Opnd:$rd),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                   "madd1\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+            R5900_MMI_3R_FM<0x20>;
+
+// 3-operand MADDU1: (rd, HI1, LO1) <- (HI1,LO1) + rs * rt (unsigned)
+let Defs = [HI1, LO1], Uses = [HI1, LO1], DecoderNamespace = "R5900" in
+def MADDU1 : InstSE<(outs GPR32Opnd:$rd),
+                    (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                    "maddu1\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+             R5900_MMI_3R_FM<0x21>;
+
+} // Predicates = [HasR5900]
 
 //===----------------------------------------------------------------------===//
 // Floating Point Support

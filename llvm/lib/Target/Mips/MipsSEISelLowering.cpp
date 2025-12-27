@@ -235,10 +235,19 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
 
   if (Subtarget.hasCnMips())
     setOperationAction(ISD::MUL,              MVT::i64, Legal);
-  else if (Subtarget.isGP64bit())
+  else if (Subtarget.isR5900()) {
+    // R5900 doesn't have DMULT/DMULTU/DDIV/DDIVU - expand to 32-bit ops
+    setOperationAction(ISD::MUL,              MVT::i64, Expand);
+    setOperationAction(ISD::SMUL_LOHI,        MVT::i64, Expand);
+    setOperationAction(ISD::UMUL_LOHI,        MVT::i64, Expand);
+    setOperationAction(ISD::MULHS,            MVT::i64, Expand);
+    setOperationAction(ISD::MULHU,            MVT::i64, Expand);
+    setOperationAction(ISD::SDIVREM,          MVT::i64, Expand);
+    setOperationAction(ISD::UDIVREM,          MVT::i64, Expand);
+  } else if (Subtarget.isGP64bit())
     setOperationAction(ISD::MUL,              MVT::i64, Custom);
 
-  if (Subtarget.isGP64bit()) {
+  if (Subtarget.isGP64bit() && !Subtarget.isR5900()) {
     setOperationAction(ISD::SMUL_LOHI,        MVT::i64, Custom);
     setOperationAction(ISD::UMUL_LOHI,        MVT::i64, Custom);
     setOperationAction(ISD::MULHS,            MVT::i64, Custom);
@@ -1192,6 +1201,8 @@ MipsSETargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     return emitFPEXTEND_PSEUDO(MI, BB, true);
   case Mips::MSA_FP_ROUND_D_PSEUDO:
     return emitFPROUND_PSEUDO(MI, BB, true);
+  case Mips::PseudoR5900MulMulAdd:
+    return emitR5900MulMulAdd(MI, BB);
   }
 }
 
@@ -3225,6 +3236,48 @@ MachineBasicBlock *MipsSETargetLowering::emitMSACBranchPseudo(
 
   MI.eraseFromParent(); // The pseudo instruction is gone now.
   return Sink;
+}
+
+// Emit the R5900 multiply-add chain pseudo instruction.
+//
+// PseudoR5900MulMulAdd $rd, $a, $b, $c, $d
+// =>
+// R5900_MULT $temp, $a, $b   # temp = a*b, also sets HI:LO = a*b
+// R5900_MADD $rd, $c, $d     # rd = LO + c*d = a*b + c*d
+//
+// This optimization saves one instruction compared to two separate
+// multiplies followed by an add (MULT + MULT + ADDU -> MULT + MADD).
+MachineBasicBlock *
+MipsSETargetLowering::emitR5900MulMulAdd(MachineInstr &MI,
+                                         MachineBasicBlock *BB) const {
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
+  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
+  DebugLoc DL = MI.getDebugLoc();
+
+  // Get operands: $rd = (a * b) + (c * d)
+  Register Rd = MI.getOperand(0).getReg();
+  Register A = MI.getOperand(1).getReg();
+  Register B = MI.getOperand(2).getReg();
+  Register C = MI.getOperand(3).getReg();
+  Register D = MI.getOperand(4).getReg();
+
+  // Create a temp register for the first multiply result (unused, but needed)
+  Register Temp = RegInfo.createVirtualRegister(&Mips::GPR32RegClass);
+
+  // Emit: R5900_MULT $temp, $a, $b
+  // This computes a*b, stores low 32 bits in $temp, and sets HI:LO = a*b
+  BuildMI(*BB, MI, DL, TII->get(Mips::R5900_MULT), Temp)
+      .addReg(A)
+      .addReg(B);
+
+  // Emit: R5900_MADD $rd, $c, $d
+  // This computes rd = LO + c*d = a*b + c*d (using HI:LO set by MULT)
+  BuildMI(*BB, MI, DL, TII->get(Mips::R5900_MADD), Rd)
+      .addReg(C)
+      .addReg(D);
+
+  MI.eraseFromParent();
+  return BB;
 }
 
 // Emit the COPY_FW pseudo instruction.
