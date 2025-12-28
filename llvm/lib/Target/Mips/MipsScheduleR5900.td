@@ -99,14 +99,11 @@ def R5900FPUDivSqrt : ProcResource<1> { let BufferSize = 0; }
 // Integer ALU Instructions
 //===----------------------------------------------------------------------===//
 // ALU ops can execute on either I0 or I1, and issue from either slot.
-// We model them as using just one slot (flexible scheduling).
+// Use a ProcResGroup to allow the scheduler to choose the best slot.
 
-def R5900WriteALU : SchedWriteRes<[R5900Slot0]> {
-  let Latency = 1;
-}
+def R5900EitherSlot : ProcResGroup<[R5900Slot0, R5900Slot1]>;
 
-// ALU ops that prefer slot 1 (can dual-issue with slot 0 ops)
-def R5900WriteALU1 : SchedWriteRes<[R5900Slot1]> {
+def R5900WriteALU : SchedWriteRes<[R5900EitherSlot]> {
   let Latency = 1;
 }
 

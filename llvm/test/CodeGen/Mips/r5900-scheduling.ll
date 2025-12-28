@@ -49,6 +49,30 @@ define void @dot_product_interleave(ptr %a, ptr %b, ptr %out) {
   ret void
 }
 
+; Test: integer ALU can dual-issue with loads
+; ALU uses R5900EitherSlot (Slot0 or Slot1), Load uses Slot1
+; When load goes to Slot1, ALU can use Slot0 for dual-issue
+define i32 @int_dual_alu_load(ptr %p, i32 %a, i32 %b) {
+; CHECK-LABEL: int_dual_alu_load:
+; CHECK: lw
+; CHECK: addu
+  %v = load i32, ptr %p
+  %sum = add i32 %a, %b
+  %result = add i32 %v, %sum
+  ret i32 %result
+}
+
+; Test: integer multiply (Slot0/MAC0) can dual-issue with load (Slot1)
+define i32 @int_dual_mul_load(ptr %p, i32 %a, i32 %b) {
+; CHECK-LABEL: int_dual_mul_load:
+; CHECK: mult
+; CHECK: lw
+  %v = load i32, ptr %p
+  %m = mul i32 %a, %b
+  %result = add i32 %v, %m
+  ret i32 %result
+}
+
 ; Test: two independent multiplies
 ; The MachineScheduler loads all values first, then performs multiplies.
 define void @two_muls(ptr %a, ptr %b, ptr %c, ptr %d, ptr %out1, ptr %out2) {
