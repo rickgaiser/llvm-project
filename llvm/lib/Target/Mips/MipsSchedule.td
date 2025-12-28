@@ -190,6 +190,7 @@ def II_LD               : InstrItinClass;
 def II_LDC1             : InstrItinClass;
 def II_LDC2             : InstrItinClass;
 def II_LDC3             : InstrItinClass;
+def II_LQC2             : InstrItinClass; // R5900 VU0 quadword load
 def II_LDL              : InstrItinClass;
 def II_LDR              : InstrItinClass;
 def II_LDPC             : InstrItinClass;
@@ -316,6 +317,7 @@ def II_SD               : InstrItinClass;
 def II_SDC1             : InstrItinClass;
 def II_SDC2             : InstrItinClass;
 def II_SDC3             : InstrItinClass;
+def II_SQC2             : InstrItinClass; // R5900 VU0 quadword store
 def II_SDL              : InstrItinClass;
 def II_SDR              : InstrItinClass;
 def II_SDXC1            : InstrItinClass;

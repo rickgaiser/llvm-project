@@ -127,6 +127,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // IsR5900 - CPU is R5900 (PlayStation 2 Emotion Engine).
   bool IsR5900 = false;
 
+  // HasVU0 - Enable VU0 SIMD operations (R5900)
+  bool HasVU0 = false;
+
   // isLinux - Target system is Linux. Is false we consider ELFOS for now.
   bool IsLinux;
 
@@ -305,6 +308,7 @@ public:
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
   bool isR5900() const { return IsR5900; }
+  bool hasVU0() const { return HasVU0; }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }

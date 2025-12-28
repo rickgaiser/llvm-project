@@ -438,4 +438,20 @@ def : InstRW<[R5900WriteCOP2Move], (instrs MFC2, MTC2, DMFC2, DMTC2)>;
 def : InstRW<[R5900WriteCOP2], (instrs LWC2, LWC3, SWC2, SWC3,
                                  LDC2, LDC3, SDC2, SDC3)>;
 
+//===----------------------------------------------------------------------===//
+// VU0 Quadword Load/Store (128-bit)
+//===----------------------------------------------------------------------===//
+// LQC2/SQC2 use the load/store unit with VU0.
+
+def R5900WriteVFLoad : SchedWriteRes<[R5900UnitLdSt]> {
+  let Latency = 2;
+}
+
+def R5900WriteVFStore : SchedWriteRes<[R5900UnitLdSt]> {
+  let Latency = 1;
+}
+
+def : InstRW<[R5900WriteVFLoad], (instrs LQC2)>;
+def : InstRW<[R5900WriteVFStore], (instrs SQC2)>;
+
 } // SchedModel = MipsR5900Model

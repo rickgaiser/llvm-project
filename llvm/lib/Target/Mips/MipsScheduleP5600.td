@@ -21,7 +21,7 @@ def MipsP5600Model : SchedMachineModel {
                                          InMicroMips, InMips16Mode,
                                          HasCnMips, HasCnMipsP,
                                          HasDSP, HasDSPR2, HasMips3D, HasMT,
-                                         HasCRC, IsR5900, HasR5900];
+                                         HasCRC, IsR5900, HasR5900, HasVU0];
 }
 
 let SchedModel = MipsP5600Model in {
