@@ -208,6 +208,13 @@ let Namespace = "Mips" in {
   // R5900 FPU Accumulator register
   def FPU_ACC : MipsReg<0, "$acc">;
 
+  // R5900 VU0 (COP2) Vector Float Registers - 128-bit (4x32-bit floats)
+  // VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
+  let isConstant = true in
+  def VF0 : MipsReg<0, "$vf0">, DwarfRegNum<[112]>;
+  foreach I = 1-31 in
+  def VF#I : MipsReg<I, "$vf"#I>, DwarfRegNum<[!add(I, 112)]>;
+
   // COP0 registers.
   foreach I = 0-31 in
   def COP0#I : MipsReg<I, ""#I>;
@@ -502,6 +509,21 @@ def COP0 : RegisterClass<"Mips", [i32], 32, (sequence "COP0%u", 0, 31)>,
 def COP2 : RegisterClass<"Mips", [i32], 32, (sequence "COP2%u", 0, 31)>,
            Unallocatable;
 
+// R5900 VU0 Vector Float registers (128-bit, 4x32-bit floats)
+// VF0 must be first to ensure correct encoding (even though it's not allocatable)
+// VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
+def VFRegs : RegisterClass<"Mips", [v4f32], 128, (add
+  // VF0 - constant register (not allocatable, but must be in class for encoding)
+  VF0,
+  // Return value
+  VF1,
+  // Not preserved across procedure calls
+  VF2, VF3, VF4, VF5, VF6, VF7, VF8, VF9, VF10, VF11,
+  // Arguments
+  VF12, VF13, VF14, VF15, VF16, VF17, VF18, VF19,
+  // Callee-saved
+  VF20, VF21, VF22, VF23, VF24, VF25, VF26, VF27, VF28, VF29, VF30, VF31)>;
+
 // Coprocessor 3 registers.
 def COP3 : RegisterClass<"Mips", [i32], 32, (sequence "COP3%u", 0, 31)>,
            Unallocatable;
@@ -688,6 +710,11 @@ def COP2AsmOperand : MipsAsmRegOperand {
   let Name = "COP2AsmReg";
 }
 
+def VFAsmOperand : MipsAsmRegOperand {
+  let Name = "VFAsmReg";
+  let PredicateMethod = "isVFAsmReg";
+}
+
 def COP3AsmOperand : MipsAsmRegOperand {
   let Name = "COP3AsmReg";
 }
@@ -748,6 +775,10 @@ def COP0Opnd : RegisterOperand<COP0> {
 
 def COP2Opnd : RegisterOperand<COP2> {
   let ParserMatchClass = COP2AsmOperand;
+}
+
+def VFOpnd : RegisterOperand<VFRegs> {
+  let ParserMatchClass = VFAsmOperand;
 }
 
 def COP3Opnd : RegisterOperand<COP3> {

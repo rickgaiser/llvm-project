@@ -382,6 +382,8 @@ void mips::getMIPSTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   AddTargetFeature(Args, Features, options::OPT_mno_madd4, options::OPT_mmadd4,
                    "nomadd4");
   AddTargetFeature(Args, Features, options::OPT_mmt, options::OPT_mno_mt, "mt");
+  AddTargetFeature(Args, Features, options::OPT_mvu0, options::OPT_mno_vu0,
+                   "vu0");
   AddTargetFeature(Args, Features, options::OPT_mcrc, options::OPT_mno_crc,
                    "crc");
   AddTargetFeature(Args, Features, options::OPT_mvirt, options::OPT_mno_virt,

@@ -25,7 +25,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | 128-bit Registers | Not Implemented | |
 | MMI Instructions | Not Implemented | |
-| VU0 (COP2) | Not Implemented | |
+| VU0 (COP2) | **Partial** | VF registers and load/store implemented |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
 ## Compiler Flags
@@ -33,7 +33,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | Flag | Description | LLVM Status |
 |------|-------------|-------------|
 | `-mcpu=r5900` | Target R5900 processor | **Implemented** |
-| `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
+| `-mvu0` | Enable VU0 SIMD operations | **Implemented** |
 | `-mfix-r5900` | Enable R5900 short loop erratum workaround | **Implemented** (default on) |
 
 **R5900 Scheduling**: The post-RA MachineScheduler is enabled by default for R5900, providing optimal load/multiply interleaving based on the scheduling model latencies.
@@ -80,11 +80,13 @@ Note: R5900 FPU is single-precision only. Double-precision is NOT supported.
 
 | Register | Size | Purpose | LLVM Status |
 |----------|------|---------|-------------|
-| `$vf0-$vf31` | 128-bit | Vector FP (4x32-bit floats, xyzw) | Not Implemented |
+| `$vf0-$vf31` | 128-bit | Vector FP (4x32-bit floats, xyzw) | **Implemented** |
 | `$vi0-$vi15` | 16-bit | Integer registers (counters, addresses) | Not Implemented |
 | `ACC` | 128-bit | Vector accumulator (4x32-bit floats) | Not Implemented |
 | `Q` | 32-bit | Division/sqrt result register | Not Implemented |
 | `I` | 32-bit | Immediate FP value (loaded via CTC2) | Not Implemented |
+
+Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) and cannot be modified.
 
 ---
 
@@ -98,7 +100,7 @@ Note: R5900 FPU is single-precision only. Double-precision is NOT supported.
 | `SFmode` | 32-bit | `float` | FPU (COP1) | **Implemented** |
 | `DImode` | 64-bit | `long long` | GP | **Implemented** |
 | `TImode` | 128-bit | `__int128` | GP | Not Implemented |
-| `V4SF` | 128-bit | 4 x 32-bit float | VU0 (COP2) | Not Implemented |
+| `V4SF` | 128-bit | 4 x 32-bit float | VU0 (COP2) | **Partial** (load/store) |
 | `V16QI` | 128-bit | 16 x 8-bit int | GP (MMI) | Not Implemented |
 | `V8HI` | 128-bit | 8 x 16-bit int | GP (MMI) | Not Implemented |
 | `V4SI` | 128-bit | 4 x 32-bit int | GP (MMI) | Not Implemented |
@@ -324,10 +326,10 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `LQC2` | Load Quadword to COP2 | Not Implemented |
-| `SQC2` | Store Quadword from COP2 | Not Implemented |
-| `QMFC2` | Quadword Move From COP2 to GP | Not Implemented |
-| `QMTC2` | Quadword Move To COP2 from GP | Not Implemented |
+| `LQC2` | Load Quadword to COP2 (128-bit load to VF) | **Implemented** |
+| `SQC2` | Store Quadword from COP2 (VF to 128-bit memory) | **Implemented** |
+| `QMFC2` | Quadword Move From COP2 to GP | Not Implemented (requires 128-bit GP) |
+| `QMTC2` | Quadword Move To COP2 from GP | Not Implemented (requires 128-bit GP) |
 | `CFC2` | Control Transfer from VU to EE Core | Not Implemented |
 | `CTC2` | Control Transfer from EE Core to VU | Not Implemented |
 
@@ -439,7 +441,11 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [ ] QFSRV (quadword funnel shift)
 
 ### Phase 7: VU0 (COP2)
-- [ ] Vector register class ($vf0-$vf31)
+- [x] Vector register class ($vf0-$vf31)
+- [x] VF0 constant register (value {0.0, 0.0, 0.0, 1.0})
+- [x] LQC2/SQC2 load/store instructions
+- [x] `-mvu0` compiler flag
+- [x] V4SF calling convention (args in $vf12-$vf19, return in $vf1)
 - [ ] Q and I register definitions
 - [ ] Vector accumulator (ACC)
 - [ ] Vector arithmetic instructions

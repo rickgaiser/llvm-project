@@ -251,6 +251,8 @@ def HasR5900     :    Predicate<"Subtarget->isR5900()">,
                       AssemblerPredicate<(all_of FeatureR5900)>;
 def NotR5900     :    Predicate<"!Subtarget->isR5900()">,
                       AssemblerPredicate<(all_of (not FeatureR5900))>;
+def HasVU0       :    Predicate<"Subtarget->hasVU0()">,
+                      AssemblerPredicate<(all_of FeatureVU0)>;
 def HasCRC   : Predicate<"Subtarget->hasCRC()">,
                AssemblerPredicate<(all_of FeatureCRC)>;
 def HasVirt  : Predicate<"Subtarget->hasVirt()">,
@@ -3529,6 +3531,40 @@ def MADDU1 : InstSE<(outs GPR32Opnd:$rd),
              R5900_MMI_3R_FM<0x21>;
 
 } // Predicates = [HasR5900]
+
+//===----------------------------------------------------------------------===//
+// R5900 VU0 (COP2) Instructions - Quadword Load/Store
+//===----------------------------------------------------------------------===//
+// VU0 uses 128-bit VF registers for SIMD operations.
+// LQC2/SQC2 use the same opcodes as LDC2/SDC2 (0x36/0x3E) but transfer 128-bit.
+
+class LW_VF<string opstr, RegisterOperand RC, InstrItinClass Itin,
+            SDPatternOperator OpNode= null_frag> :
+  InstSE<(outs RC:$rt), (ins mem_simm16:$addr),
+         !strconcat(opstr, "\t$rt, $addr"),
+         [(set RC:$rt, (OpNode addrDefault:$addr))], Itin, FrmFI, opstr> {
+  let DecoderMethod = "DecodeVFMem";
+  let DecoderNamespace = "R5900";
+  let mayLoad = 1;
+}
+
+class SW_VF<string opstr, RegisterOperand RC, InstrItinClass Itin,
+            SDPatternOperator OpNode= null_frag> :
+  InstSE<(outs), (ins RC:$rt, mem_simm16:$addr),
+         !strconcat(opstr, "\t$rt, $addr"),
+         [(OpNode RC:$rt, addrDefault:$addr)], Itin, FrmFI, opstr> {
+  let DecoderMethod = "DecodeVFMem";
+  let DecoderNamespace = "R5900";
+  let mayStore = 1;
+}
+
+let Predicates = [HasVU0] in {
+  // LQC2 - Load Quadword to COP2 (128-bit memory -> VF register)
+  def LQC2 : LW_VF<"lqc2", VFOpnd, II_LQC2, load>, LW_FM<0x36>;
+
+  // SQC2 - Store Quadword from COP2 (VF register -> 128-bit memory)
+  def SQC2 : SW_VF<"sqc2", VFOpnd, II_SQC2, store>, LW_FM<0x3e>;
+} // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//
 // Floating Point Support

@@ -239,6 +239,11 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::GP_64);
   }
 
+  // Reserve VF0 - it's a constant register {0.0, 0.0, 0.0, 1.0} on R5900 VU0.
+  if (Subtarget.hasVU0()) {
+    Reserved.set(Mips::VF0);
+  }
+
   return Reserved;
 }
 

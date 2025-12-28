@@ -196,6 +196,10 @@ def FeatureR5900  : SubtargetFeature<"r5900", "IsR5900", "true",
                                      "R5900 (PS2 Emotion Engine) Support",
                                      [FeatureMips3, FeatureSingleFloat, FeatureFixR5900]>;
 
+def FeatureVU0 : SubtargetFeature<"vu0", "HasVU0", "true",
+                                  "Enable VU0 SIMD operations (R5900)",
+                                  [FeatureR5900]>;
+
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",
                                "UseTCCInDIV", "false",

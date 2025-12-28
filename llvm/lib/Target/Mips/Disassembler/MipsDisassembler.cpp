@@ -240,6 +240,18 @@ static DecodeStatus DecodeCOP2RegisterClass(MCInst &Inst, unsigned RegNo,
   return MCDisassembler::Success;
 }
 
+// R5900 VU0 VF register decoding (VF0-VF31)
+static DecodeStatus DecodeVFRegsRegisterClass(MCInst &Inst, unsigned RegNo,
+                                              uint64_t Address,
+                                              const MCDisassembler *Decoder) {
+  if (RegNo > 31)
+    return MCDisassembler::Fail;
+
+  MCRegister Reg = getReg(Decoder, Mips::VFRegsRegClassID, RegNo);
+  Inst.addOperand(MCOperand::createReg(Reg));
+  return MCDisassembler::Success;
+}
+
 static DecodeStatus DecodeRegListOperand(MCInst &Inst, unsigned Insn,
                                          uint64_t Address,
                                          const MCDisassembler *Decoder) {
@@ -1470,6 +1482,23 @@ static DecodeStatus DecodeFMem3(MCInst &Inst, unsigned Insn, uint64_t Address,
 
   MCRegister Reg = getReg(Decoder, Mips::COP3RegClassID, RegNo);
   MCRegister Base = getReg(Decoder, Mips::GPR32RegClassID, BaseNo);
+
+  Inst.addOperand(MCOperand::createReg(Reg));
+  Inst.addOperand(MCOperand::createReg(Base));
+  Inst.addOperand(MCOperand::createImm(Offset));
+
+  return MCDisassembler::Success;
+}
+
+// Decode VU0 VF register memory operands (R5900 LQC2/SQC2)
+static DecodeStatus DecodeVFMem(MCInst &Inst, unsigned Insn, uint64_t Address,
+                                const MCDisassembler *Decoder) {
+  int Offset = SignExtend32<16>(Insn & 0xffff);
+  unsigned RegNo = fieldFromInstruction(Insn, 16, 5);
+  unsigned BaseNo = fieldFromInstruction(Insn, 21, 5);
+
+  MCRegister Reg = getReg(Decoder, Mips::VFRegsRegClassID, RegNo);
+  MCRegister Base = getReg(Decoder, Mips::GPR64RegClassID, BaseNo);
 
   Inst.addOperand(MCOperand::createReg(Reg));
   Inst.addOperand(MCOperand::createReg(Base));

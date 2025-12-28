@@ -5892,6 +5892,10 @@ def mmt : Flag<["-"], "mmt">, Group<m_mips_Features_Group>,
   HelpText<"Enable MT ASE (MIPS only)">;
 def mno_mt : Flag<["-"], "mno-mt">, Group<m_mips_Features_Group>,
   HelpText<"Disable MT ASE (MIPS only)">;
+def mvu0 : Flag<["-"], "mvu0">, Group<m_mips_Features_Group>,
+  HelpText<"Enable VU0 SIMD operations (R5900 only)">;
+def mno_vu0 : Flag<["-"], "mno-vu0">, Group<m_mips_Features_Group>,
+  HelpText<"Disable VU0 SIMD operations (R5900 only)">;
 def mfp64 : Flag<["-"], "mfp64">, Group<m_mips_Features_Group>,
   HelpText<"Use 64-bit floating point registers (MIPS only)">;
 def mfp32 : Flag<["-"], "mfp32">, Group<m_mips_Features_Group>,

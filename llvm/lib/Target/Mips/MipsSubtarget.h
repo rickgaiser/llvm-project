@@ -120,6 +120,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // FixR5900 - Work around R5900 short loop erratum (NOP in delay slot)
   bool FixR5900 = false;
 
+  // HasVU0 - Enable VU0 SIMD operations (R5900)
+  bool HasVU0 = false;
+
   // isLinux - Target system is Linux. Is false we consider ELFOS for now.
   bool IsLinux;
 
@@ -296,6 +299,7 @@ public:
   bool hasCnMipsP() const { return HasCnMipsP; }
   bool isR5900() const { return IsR5900; }
   bool fixR5900() const { return FixR5900; }
+  bool hasVU0() const { return HasVU0; }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }
