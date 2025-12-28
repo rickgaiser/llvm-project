@@ -26,7 +26,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | 128-bit Registers | Not Implemented | |
 | MMI Instructions | Not Implemented | |
 | VU0 (COP2) | Not Implemented | |
-| Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; optional pipeline balancing via `-mips-r5900-pipeline-balance` |
+| Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
 ## Compiler Flags
 
@@ -35,7 +35,6 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | `-mcpu=r5900` | Target R5900 processor | **Implemented** |
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
 | `-mfix-r5900` | Enable R5900 short loop erratum workaround | **Implemented** (default on) |
-| `-mips-r5900-pipeline-balance` | Balance independent mult/div between pipelines | **Implemented** (opt-in) |
 
 **R5900 Scheduling**: The post-RA MachineScheduler is enabled by default for R5900, providing optimal load/multiply interleaving based on the scheduling model latencies.
 
@@ -273,8 +272,8 @@ Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `MULT1` | Multiply Word (signed) to HI1:LO1 | **Implemented** (auto-balanced) |
-| `MULTU1` | Multiply Word (unsigned) to HI1:LO1 | **Implemented** (auto-balanced) |
+| `MULT1` | Multiply Word (signed) to HI1:LO1 | **Implemented** (asm-only) |
+| `MULTU1` | Multiply Word (unsigned) to HI1:LO1 | **Implemented** (asm-only) |
 | `DIV1` | Divide Word (signed) to HI1:LO1 | **Implemented** (asm-only) |
 | `DIVU1` | Divide Word (unsigned) to HI1:LO1 | **Implemented** (asm-only) |
 | `MADD1` | Multiply-Add (signed) to HI1:LO1 | **Implemented** (asm-only) |
@@ -284,7 +283,7 @@ Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt
 | `MTHI1` | Move To HI1 | **Implemented** (asm-only) |
 | `MTLO1` | Move To LO1 | **Implemented** (asm-only) |
 
-Note: Pipeline 1 instructions are available in inline assembly. Additionally, when the `-mips-r5900-pipeline-balance` flag is enabled, independent multiply operations are automatically converted to use Pipeline 1 (MULT1/MULTU1) to enable instruction-level parallelism. The post-RA MachineScheduler (enabled by default for R5900) will then interleave P0/P1 instructions for optimal parallelism.
+Note: Pipeline 1 instructions (MULT1, MADD1, etc.) are available in inline assembly for explicit use. The compiler uses Pipeline 0 for all generated multiply/divide operations because MULT (Slot0) can dual-issue with LW (Slot1), whereas MULT1 (Slot1) cannot. The post-RA MachineScheduler automatically interleaves loads and multiplies for optimal parallelism.
 
 ---
 
@@ -432,7 +431,7 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] MFHI1, MFLO1, MTHI1, MTLO1
 - [x] 3-operand MULT/MULTU/MADD/MADDU (Pipeline 0)
 - [x] Instruction scheduling for both pipelines
-- [x] Optional dual-pipeline balancing (`-mips-r5900-pipeline-balance`)
+- [x] Pipeline 1 instructions available in inline assembly
 
 ### Phase 6: SA Register
 - [ ] SA register definition
@@ -475,7 +474,6 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | R5900 instructions | `llvm/lib/Target/Mips/MipsR5900InstrInfo.td` |
 | R5900 scheduling model | `llvm/lib/Target/Mips/MipsScheduleR5900.td` |
 | FPU accumulator pass | `llvm/lib/Target/Mips/MipsR5900FPUAccChain.cpp` |
-| Pipeline balancer pass | `llvm/lib/Target/Mips/MipsR5900PipelineBalancer.cpp` |
 | ISel patterns | `llvm/lib/Target/Mips/MipsISelDAGToDAG.cpp` |
 | ISel lowering | `llvm/lib/Target/Mips/MipsISelLowering.cpp` |
 
@@ -488,7 +486,6 @@ The following custom passes optimize code generation for R5900's unique features
 | Pass | File | Stage | Description |
 |------|------|-------|-------------|
 | **FPU Accumulator Chain** | `MipsR5900FPUAccChain.cpp` | Pre-RA | Converts FP multiply-add sequences to use the FPU accumulator (`ACC`) with `MULA.S`/`MADDA.S` chains |
-| **Pipeline Balancer** | `MipsR5900PipelineBalancer.cpp` | Pre-Sched2 | Converts independent multiplies to Pipeline 1 (`MULT1`/`MULTU1`) for dual-issue parallelism |
 
 ### Pass Pipeline Overview
 
@@ -504,11 +501,8 @@ The following custom passes optimize code generation for R5900's unique features
 ├─────────────────────────────────────────────────────────────────────┤
 │  Register Allocation                                                │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Pre-Sched2 (before post-RA scheduler)                              │
-│    └─ MipsR5900PipelineBalancer: MULT → MULT1 conversion            │
-├─────────────────────────────────────────────────────────────────────┤
 │  Post-RA MachineScheduler (enabled by default)                      │
-│    └─ Interleaves loads/mults and P0/P1 instructions for parallelism│
+│    └─ Interleaves loads and multiplies for optimal dual-issue       │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Pre-Emit                                                           │
 │    └─ Delay slot filler, branch expansion                           │
