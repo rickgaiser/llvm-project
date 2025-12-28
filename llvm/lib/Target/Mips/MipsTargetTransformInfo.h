@@ -36,6 +36,25 @@ public:
 
   bool isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                      const TargetTransformInfo::LSRCost &C2) const override;
+
+  /// \name Vector TTI Implementations
+  /// @{
+
+  unsigned getNumberOfRegisters(unsigned ClassID) const override;
+
+  TypeSize
+  getRegisterBitWidth(TargetTransformInfo::RegisterKind K) const override;
+
+  unsigned getMinVectorRegisterBitWidth() const override;
+
+  InstructionCost getArithmeticInstrCost(
+      unsigned Opcode, Type *Ty, TTI::TargetCostKind CostKind,
+      TTI::OperandValueInfo Op1Info = {TTI::OK_AnyValue, TTI::OP_None},
+      TTI::OperandValueInfo Op2Info = {TTI::OK_AnyValue, TTI::OP_None},
+      ArrayRef<const Value *> Args = {},
+      const Instruction *CxtI = nullptr) const override;
+
+  /// @}
 };
 
 } // end namespace llvm
