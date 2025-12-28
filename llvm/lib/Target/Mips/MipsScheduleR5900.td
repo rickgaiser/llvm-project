@@ -129,7 +129,7 @@ def : InstRW<[R5900WriteALU], (instrs DADD, DADDi, DADDiu, DADDu, DSLL, DSLL32,
 
 def R5900WriteMul : SchedWriteRes<[R5900Slot0, R5900PipeI0, R5900MAC0]> {
   let Latency = 4;
-  let ReleaseAtCycles = [1, 1, 4];
+  let ReleaseAtCycles = [1, 1, 2];  // MAC0 has 2-cycle throughput
 }
 
 def R5900WriteDiv : SchedWriteRes<[R5900Slot0, R5900PipeI0, R5900MAC0]> {
@@ -179,7 +179,7 @@ def : InstRW<[R5900WriteMul], (instrs R5900_MADD, R5900_MADDU)>;
 
 def R5900WriteMul1 : SchedWriteRes<[R5900Slot1, R5900PipeI1, R5900MAC1]> {
   let Latency = 4;
-  let ReleaseAtCycles = [1, 1, 4];
+  let ReleaseAtCycles = [1, 1, 2];  // MAC1 has 2-cycle throughput
 }
 
 def R5900WriteDiv1 : SchedWriteRes<[R5900Slot1, R5900PipeI1, R5900MAC1]> {
