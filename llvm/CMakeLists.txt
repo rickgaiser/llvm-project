@@ -554,6 +554,7 @@ set(LLVM_ALL_EXPERIMENTAL_TARGETS
   ARC
   CSKY
   DirectX
+  DVPVU
   M68k
   Xtensa
 )

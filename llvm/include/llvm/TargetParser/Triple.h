@@ -60,6 +60,7 @@ public:
     bpfeb,       // eBPF or extended BPF or 64-bit BPF (big endian)
     csky,        // CSKY: csky
     dxil,        // DXIL 32-bit DirectX bytecode
+    dvpvu,       // DVPVU: PS2 Vector Unit
     hexagon,     // Hexagon: hexagon
     loongarch32, // LoongArch (32-bit): loongarch32
     loongarch64, // LoongArch (64-bit): loongarch64
