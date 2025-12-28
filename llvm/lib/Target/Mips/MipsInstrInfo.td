@@ -3571,6 +3571,18 @@ let Predicates = [HasVU0] in {
 //===----------------------------------------------------------------------===//
 // VU0 macro mode arithmetic instructions use the COP2 encoding with
 // 3 VF registers and a destination mask (xyzw).
+
+// SDTypeProfile for VU0 broadcast operations: 2 v4f32 inputs, 1 v4f32 output
+def SDT_VU0Broadcast : SDTypeProfile<1, 2, [
+  SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, v4f32>
+]>;
+
+// SDNodes for VU0 broadcast multiply operations
+// VMULbc: fd = fs * ft[bc]
+def MipsVU0MULx : SDNode<"MipsISD::VU0_MULx", SDT_VU0Broadcast>;
+def MipsVU0MULy : SDNode<"MipsISD::VU0_MULy", SDT_VU0Broadcast>;
+def MipsVU0MULz : SDNode<"MipsISD::VU0_MULz", SDT_VU0Broadcast>;
+def MipsVU0MULw : SDNode<"MipsISD::VU0_MULw", SDT_VU0Broadcast>;
 //
 // Instruction classes:
 // - VU0_Type1: 3 VF registers + 6-bit opcode (VADD, VSUB, VMUL, VMADD, VMSUB)
@@ -3580,10 +3592,12 @@ let Predicates = [HasVU0] in {
 
 // VU0 Type 1 instruction class: 3 VF registers, 6-bit opcode
 // Used for VADD, VSUB, VMUL, VMADD, VMSUB
-class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin>
+class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin,
+             SDPatternOperator OpNode = null_frag>
     : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
              !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
-             [], Itin, FrmR, opstr> {
+             [(set VFOpnd:$fd, (OpNode VFOpnd:$fs, VFOpnd:$ft))],
+             Itin, FrmR, opstr> {
   let DecoderNamespace = "R5900";
   let hasSideEffects = 0;
   bits<5> fd;
@@ -3645,9 +3659,11 @@ class VU0_3R_ACC<string opstr, bits<6> funct, InstrItinClass Itin>
 
 let Predicates = [HasVU0] in {
   // VU0 Vector Add/Subtract/Multiply (3-register forms, dest mask = xyzw)
-  def VADD  : VU0_3R<"vadd", 0b101000, II_VU0_VADD>;   // 0x28
-  def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB>;   // 0x2C
-  def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL>;   // 0x2A
+  let isCommutable = 1 in {
+    def VADD  : VU0_3R<"vadd", 0b101000, II_VU0_VADD, fadd>;   // 0x28
+    def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL, fmul>;   // 0x2A
+  }
+  def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB, fsub>;   // 0x2C
 
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001, II_VU0_VMADD>;  // 0x29
@@ -3661,6 +3677,152 @@ let Predicates = [HasVU0] in {
   // VU0 Multiply-Add/Sub to ACC (reads and writes ACC)
   def VMADDA : VU0_ACC<"vmadda", 0b10111111111, II_VU0_VMADDA, [VU0ACC]>;  // 0x5FF
   def VMSUBA : VU0_ACC<"vmsuba", 0b10111111011, II_VU0_VMSUBA, [VU0ACC]>;  // 0x5FB
+} // Predicates = [HasVU0]
+
+//===----------------------------------------------------------------------===//
+// VU0 Broadcast Instructions - R5900
+//===----------------------------------------------------------------------===//
+// Broadcast instructions multiply/add/sub each lane by a single broadcast
+// component (x, y, z, or w) from the ft register. Essential for matrix-vector
+// multiplication.
+//
+// MacroOP field type 0: 3 registers + 4-bit opcode + 2-bit bc
+// MacroOP field type 2: 2 registers (ACC dest) + 9-bit opcode + 2-bit bc
+
+// VU0 Type 0 instruction class: 3 VF registers + 4-bit opcode + 2-bit bc
+// Used for VADDbc, VSUBbc, VMULbc, VMADDbc, VMSUBbc
+class VU0_3R_BC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
+                InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-2}   = opcode;
+  let Inst{1-0}   = bc;
+}
+
+// VU0 Type 0 with ACC read: 3 VF registers + 4-bit opcode + 2-bit bc
+// Used for VMADDbc, VMSUBbc (reads ACC, writes VF)
+class VU0_3R_BC_ACC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
+                    InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let Uses = [VU0ACC];
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-2}   = opcode;
+  let Inst{1-0}   = bc;
+}
+
+// VU0 Type 2 instruction class: 2 VF registers, ACC dest, 9-bit opcode + 2-bit bc
+// Used for VADDAbc, VSUBAbc, VMULAbc, VMADDAbc, VMSUBAbc
+class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
+                 InstrItinClass Itin, list<Register> UseRegs = []>
+    : InstSE<(outs), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, ".xyzw\t$fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let Defs = [VU0ACC];
+  let Uses = UseRegs;
+  let hasSideEffects = 0;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-2}  = opcode;
+  let Inst{1-0}   = bc;
+}
+
+// Multiclass to define all 4 broadcast variants (x, y, z, w) for 3-register ops
+multiclass VU0_3R_BC_ALL<string opstr, bits<4> opcode, InstrItinClass Itin> {
+  def x : VU0_3R_BC<opstr, "x", opcode, 0b00, Itin>;
+  def y : VU0_3R_BC<opstr, "y", opcode, 0b01, Itin>;
+  def z : VU0_3R_BC<opstr, "z", opcode, 0b10, Itin>;
+  def w : VU0_3R_BC<opstr, "w", opcode, 0b11, Itin>;
+}
+
+// Multiclass for 3-register ops that read ACC
+multiclass VU0_3R_BC_ACC_ALL<string opstr, bits<4> opcode, InstrItinClass Itin> {
+  def x : VU0_3R_BC_ACC<opstr, "x", opcode, 0b00, Itin>;
+  def y : VU0_3R_BC_ACC<opstr, "y", opcode, 0b01, Itin>;
+  def z : VU0_3R_BC_ACC<opstr, "z", opcode, 0b10, Itin>;
+  def w : VU0_3R_BC_ACC<opstr, "w", opcode, 0b11, Itin>;
+}
+
+// Multiclass for ACC-destination broadcast ops
+multiclass VU0_ACC_BC_ALL<string opstr, bits<9> opcode, InstrItinClass Itin,
+                          list<Register> UseRegs = []> {
+  def x : VU0_ACC_BC<opstr, "x", opcode, 0b00, Itin, UseRegs>;
+  def y : VU0_ACC_BC<opstr, "y", opcode, 0b01, Itin, UseRegs>;
+  def z : VU0_ACC_BC<opstr, "z", opcode, 0b10, Itin, UseRegs>;
+  def w : VU0_ACC_BC<opstr, "w", opcode, 0b11, Itin, UseRegs>;
+}
+
+let Predicates = [HasVU0] in {
+  // VU0 3-register broadcast instructions (Type 0)
+  // VADDbc: fd = fs + ft[bc] (opcode = 0000)
+  defm VADDbc : VU0_3R_BC_ALL<"vadd", 0b0000, II_VU0_VADD>;
+
+  // VSUBbc: fd = fs - ft[bc] (opcode = 0001)
+  defm VSUBbc : VU0_3R_BC_ALL<"vsub", 0b0001, II_VU0_VSUB>;
+
+  // VMULbc: fd = fs * ft[bc] (opcode = 0110)
+  defm VMULbc : VU0_3R_BC_ALL<"vmul", 0b0110, II_VU0_VMUL>;
+
+  // VMADDbc: fd = ACC + fs * ft[bc] (opcode = 0010)
+  defm VMADDbc : VU0_3R_BC_ACC_ALL<"vmadd", 0b0010, II_VU0_VMADD>;
+
+  // VMSUBbc: fd = ACC - fs * ft[bc] (opcode = 0011)
+  defm VMSUBbc : VU0_3R_BC_ACC_ALL<"vmsub", 0b0011, II_VU0_VMSUB>;
+
+  // VU0 ACC-destination broadcast instructions (Type 2)
+  // Opcode format: upper 5 bits + 1111
+  // VADDAbc: ACC = fs + ft[bc] (opcode = 00000 1111 = 0x0F)
+  defm VADDAbc : VU0_ACC_BC_ALL<"vadda", 0b000001111, II_VU0_VADDA>;
+
+  // VSUBAbc: ACC = fs - ft[bc] (opcode = 00001 1111 = 0x1F)
+  defm VSUBAbc : VU0_ACC_BC_ALL<"vsuba", 0b000011111, II_VU0_VSUBA>;
+
+  // VMULAbc: ACC = fs * ft[bc] (opcode = 00110 1111 = 0x6F)
+  defm VMULAbc : VU0_ACC_BC_ALL<"vmula", 0b001101111, II_VU0_VMULA>;
+
+  // VMADDAbc: ACC = ACC + fs * ft[bc] (opcode = 00010 1111 = 0x2F)
+  defm VMADDAbc : VU0_ACC_BC_ALL<"vmadda", 0b000101111, II_VU0_VMADDA, [VU0ACC]>;
+
+  // VMSUBAbc: ACC = ACC - fs * ft[bc] (opcode = 00011 1111 = 0x3F)
+  defm VMSUBAbc : VU0_ACC_BC_ALL<"vmsuba", 0b000111111, II_VU0_VMSUBA, [VU0ACC]>;
+
+  // Patterns to select VMULbc instructions from VU0 SDNodes
+  def : Pat<(MipsVU0MULx VFRegs:$fs, VFRegs:$ft), (VMULbcx VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(MipsVU0MULy VFRegs:$fs, VFRegs:$ft), (VMULbcy VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(MipsVU0MULz VFRegs:$fs, VFRegs:$ft), (VMULbcz VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(MipsVU0MULw VFRegs:$fs, VFRegs:$ft), (VMULbcw VFRegs:$fs, VFRegs:$ft)>;
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//

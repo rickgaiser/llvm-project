@@ -95,11 +95,16 @@ static const MCPhysReg Mips64DPRegs[8] = {
 
 // The MIPS MSA ABI passes vector arguments in the integer register set.
 // The number of integer registers used is dependant on the ABI used.
+// For R5900 VU0, v4f32 is passed in VF registers directly.
 MVT MipsTargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
                                                       CallingConv::ID CC,
                                                       EVT VT) const {
   if (!VT.isVector())
     return getRegisterType(Context, VT);
+
+  // R5900 VU0: v4f32 is passed directly in VF registers
+  if (Subtarget.hasVU0() && VT == MVT::v4f32)
+    return MVT::v4f32;
 
   if (VT.isPow2VectorType() && VT.getVectorElementType().isRound())
     return Subtarget.isABI_O32() || VT.getSizeInBits() == 32 ? MVT::i32
@@ -111,6 +116,9 @@ unsigned MipsTargetLowering::getNumRegistersForCallingConv(LLVMContext &Context,
                                                            CallingConv::ID CC,
                                                            EVT VT) const {
   if (VT.isVector()) {
+    // R5900 VU0: v4f32 uses a single 128-bit VF register
+    if (Subtarget.hasVU0() && VT == MVT::v4f32)
+      return 1;
     if (VT.isPow2VectorType() && VT.getVectorElementType().isRound())
       return divideCeil(VT.getSizeInBits(), Subtarget.isABI_O32() ? 32 : 64);
     return VT.getVectorNumElements() *
@@ -122,6 +130,13 @@ unsigned MipsTargetLowering::getNumRegistersForCallingConv(LLVMContext &Context,
 unsigned MipsTargetLowering::getVectorTypeBreakdownForCallingConv(
     LLVMContext &Context, CallingConv::ID CC, EVT VT, EVT &IntermediateVT,
     unsigned &NumIntermediates, MVT &RegisterVT) const {
+  // R5900 VU0: v4f32 is not broken down - passed directly in VF registers
+  if (Subtarget.hasVU0() && VT == MVT::v4f32) {
+    IntermediateVT = MVT::v4f32;
+    RegisterVT = MVT::v4f32;
+    NumIntermediates = 1;
+    return 1;
+  }
   if (VT.isPow2VectorType() && VT.getVectorElementType().isRound()) {
     IntermediateVT = getRegisterTypeForCallingConv(Context, CC, VT);
     RegisterVT = IntermediateVT.getSimpleVT();
@@ -289,6 +304,19 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::PCKEV:             return "MipsISD::PCKEV";
   case MipsISD::PCKOD:             return "MipsISD::PCKOD";
   case MipsISD::INSVE:             return "MipsISD::INSVE";
+  // R5900 VU0 Broadcast Operations
+  case MipsISD::VU0_MULx:          return "MipsISD::VU0_MULx";
+  case MipsISD::VU0_MULy:          return "MipsISD::VU0_MULy";
+  case MipsISD::VU0_MULz:          return "MipsISD::VU0_MULz";
+  case MipsISD::VU0_MULw:          return "MipsISD::VU0_MULw";
+  case MipsISD::VU0_MADDx:         return "MipsISD::VU0_MADDx";
+  case MipsISD::VU0_MADDy:         return "MipsISD::VU0_MADDy";
+  case MipsISD::VU0_MADDz:         return "MipsISD::VU0_MADDz";
+  case MipsISD::VU0_MADDw:         return "MipsISD::VU0_MADDw";
+  case MipsISD::VU0_MULAx:         return "MipsISD::VU0_MULAx";
+  case MipsISD::VU0_MULAy:         return "MipsISD::VU0_MULAy";
+  case MipsISD::VU0_MULAz:         return "MipsISD::VU0_MULAz";
+  case MipsISD::VU0_MULAw:         return "MipsISD::VU0_MULAw";
   }
   return nullptr;
 }

@@ -201,7 +201,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   }
 
   // R5900 VU0 (COP2) support for v4f32 vectors
-  // Only load/store are currently implemented, all other ops expand.
+  // VU0 macro mode provides SIMD operations on 128-bit VF registers.
   if (Subtarget.hasVU0()) {
     addRegisterClass(MVT::v4f32, &Mips::VFRegsRegClass);
 
@@ -212,6 +212,11 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // Enable load/store (LQC2/SQC2)
     setOperationAction(ISD::LOAD, MVT::v4f32, Legal);
     setOperationAction(ISD::STORE, MVT::v4f32, Legal);
+
+    // Enable VU0 arithmetic operations (VADD, VSUB, VMUL)
+    setOperationAction(ISD::FADD, MVT::v4f32, Legal);
+    setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
+    setOperationAction(ISD::FMUL, MVT::v4f32, Legal);
   }
 
   if (!Subtarget.useSoftFloat()) {

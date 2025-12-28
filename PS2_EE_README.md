@@ -361,11 +361,16 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `VADDbc.xyzw` | dest = a + b.bc | Not Implemented |
-| `VSUBbc.xyzw` | dest = a - b.bc | Not Implemented |
-| `VMULbc.xyzw` | dest = a * b.bc | Not Implemented |
-| `VMADDbc.xyzw` | dest = ACC + a * b.bc | Not Implemented |
-| `VMSUBbc.xyzw` | dest = ACC - a * b.bc | Not Implemented |
+| `VADDbc.xyzw` | dest = a + b.bc | **Implemented** |
+| `VSUBbc.xyzw` | dest = a - b.bc | **Implemented** |
+| `VMULbc.xyzw` | dest = a * b.bc | **Implemented** |
+| `VMADDbc.xyzw` | dest = ACC + a * b.bc | **Implemented** |
+| `VMSUBbc.xyzw` | dest = ACC - a * b.bc | **Implemented** |
+| `VADDAbc.xyzw` | ACC = a + b.bc | **Implemented** |
+| `VSUBAbc.xyzw` | ACC = a - b.bc | **Implemented** |
+| `VMULAbc.xyzw` | ACC = a * b.bc | **Implemented** |
+| `VMADDAbc.xyzw` | ACC += a * b.bc | **Implemented** |
+| `VMSUBAbc.xyzw` | ACC -= a * b.bc | **Implemented** |
 
 ### 5.5 Division and Square Root
 
@@ -452,10 +457,10 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] Vector arithmetic: VADD.xyzw, VSUB.xyzw, VMUL.xyzw
 - [x] ACC-writing: VADDA.xyzw, VSUBA.xyzw, VMULA.xyzw
 - [x] ACC multiply-accumulate: VMADD.xyzw, VMSUB.xyzw, VMADDA.xyzw, VMSUBA.xyzw
+- [x] Broadcast operations: VADDbc, VSUBbc, VMULbc, VMADDbc, VMSUBbc, VADDAbc, VSUBAbc, VMULAbc, VMADDAbc, VMSUBAbc
 - [ ] Q and I register definitions
 - [ ] Division and square root operations
 - [ ] Conversion operations
-- [ ] Broadcast operations (VADDbc, VSUBbc, VMULbc, etc.)
 
 ### Phase 8: R5900 Errata
 - [x] Short loop bug workaround (`-mfix-r5900`)
@@ -528,7 +533,7 @@ The R5900 scheduling model (`MipsScheduleR5900.td`) defines:
 | `R5900MAC0` | Pipeline 0 | `MULT`, `MULTU`, `MADD`, `MADDU`, `DIV`, `DIVU` |
 | `R5900MAC1` | Pipeline 1 | `MULT1`, `MULTU1`, `MADD1`, `MADDU1`, `DIV1`, `DIVU1` |
 | `R5900FPUAcc` | FPU | `MULA.S`, `MADDA.S`, `MSUBA.S`, `MADD.S`, `MSUB.S` |
-| `R5900UnitVU0` | VU0 | `VADD`, `VSUB`, `VMUL`, `VMADD`, `VMSUB`, `VADDA`, `VSUBA`, `VMULA`, `VMADDA`, `VMSUBA` |
+| `R5900UnitVU0` | VU0 | `VADD`, `VSUB`, `VMUL`, `VMADD`, `VMSUB`, `VADDA`, `VSUBA`, `VMULA`, `VMADDA`, `VMSUBA`, broadcast variants (bc) |
 
 The dual MAC units allow two independent multiply operations to execute in parallel when properly scheduled.
 

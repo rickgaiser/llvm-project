@@ -72,3 +72,85 @@ vmadda.xyzw $vf22, $vf23
 # VMSUBA - Vector Multiply-Subtract from ACC
 # CHECK: vmsuba.xyzw     $$vf24, $$vf25          # encoding: [0xfb,0xc5,0xf9,0x4b]
 vmsuba.xyzw $vf24, $vf25
+
+# VU0 Broadcast Instructions - multiply each lane by a single broadcast component
+
+# VMULbc - Vector Multiply with broadcast (all 4 bc variants)
+# CHECK: vmulx.xyzw      $$vf1, $$vf2, $$vf3     # encoding: [0x58,0x10,0xe3,0x4b]
+vmulx.xyzw $vf1, $vf2, $vf3
+# CHECK: vmuly.xyzw      $$vf4, $$vf5, $$vf6     # encoding: [0x19,0x29,0xe6,0x4b]
+vmuly.xyzw $vf4, $vf5, $vf6
+# CHECK: vmulz.xyzw      $$vf7, $$vf8, $$vf9     # encoding: [0xda,0x41,0xe9,0x4b]
+vmulz.xyzw $vf7, $vf8, $vf9
+# CHECK: vmulw.xyzw      $$vf10, $$vf11, $$vf12  # encoding: [0x9b,0x5a,0xec,0x4b]
+vmulw.xyzw $vf10, $vf11, $vf12
+
+# VADDbc - Vector Add with broadcast
+# CHECK: vaddx.xyzw      $$vf1, $$vf2, $$vf3     # encoding: [0x40,0x10,0xe3,0x4b]
+vaddx.xyzw $vf1, $vf2, $vf3
+# CHECK: vaddy.xyzw      $$vf4, $$vf5, $$vf6     # encoding: [0x01,0x29,0xe6,0x4b]
+vaddy.xyzw $vf4, $vf5, $vf6
+# CHECK: vaddz.xyzw      $$vf7, $$vf8, $$vf9     # encoding: [0xc2,0x41,0xe9,0x4b]
+vaddz.xyzw $vf7, $vf8, $vf9
+# CHECK: vaddw.xyzw      $$vf10, $$vf11, $$vf12  # encoding: [0x83,0x5a,0xec,0x4b]
+vaddw.xyzw $vf10, $vf11, $vf12
+
+# VSUBbc - Vector Subtract with broadcast
+# CHECK: vsubx.xyzw      $$vf13, $$vf14, $$vf15  # encoding: [0x44,0x73,0xef,0x4b]
+vsubx.xyzw $vf13, $vf14, $vf15
+# CHECK: vsuby.xyzw      $$vf16, $$vf17, $$vf18  # encoding: [0x05,0x8c,0xf2,0x4b]
+vsuby.xyzw $vf16, $vf17, $vf18
+
+# VMADDbc - Vector Multiply-Add with broadcast
+# CHECK: vmaddx.xyzw     $$vf1, $$vf2, $$vf3     # encoding: [0x48,0x10,0xe3,0x4b]
+vmaddx.xyzw $vf1, $vf2, $vf3
+# CHECK: vmaddy.xyzw     $$vf4, $$vf5, $$vf6     # encoding: [0x09,0x29,0xe6,0x4b]
+vmaddy.xyzw $vf4, $vf5, $vf6
+# CHECK: vmaddz.xyzw     $$vf7, $$vf8, $$vf9     # encoding: [0xca,0x41,0xe9,0x4b]
+vmaddz.xyzw $vf7, $vf8, $vf9
+# CHECK: vmaddw.xyzw     $$vf10, $$vf11, $$vf12  # encoding: [0x8b,0x5a,0xec,0x4b]
+vmaddw.xyzw $vf10, $vf11, $vf12
+
+# VMSUBbc - Vector Multiply-Subtract with broadcast
+# CHECK: vmsubx.xyzw     $$vf13, $$vf14, $$vf15  # encoding: [0x4c,0x73,0xef,0x4b]
+vmsubx.xyzw $vf13, $vf14, $vf15
+# CHECK: vmsuby.xyzw     $$vf16, $$vf17, $$vf18  # encoding: [0x0d,0x8c,0xf2,0x4b]
+vmsuby.xyzw $vf16, $vf17, $vf18
+
+# VMULAbc - Vector Multiply to ACC with broadcast
+# CHECK: vmulax.xyzw     $$vf19, $$vf20          # encoding: [0xbc,0x99,0xf4,0x4b]
+vmulax.xyzw $vf19, $vf20
+# CHECK: vmulay.xyzw     $$vf21, $$vf22          # encoding: [0xbd,0xa9,0xf6,0x4b]
+vmulay.xyzw $vf21, $vf22
+# CHECK: vmulaz.xyzw     $$vf23, $$vf24          # encoding: [0xbe,0xb9,0xf8,0x4b]
+vmulaz.xyzw $vf23, $vf24
+# CHECK: vmulaw.xyzw     $$vf25, $$vf26          # encoding: [0xbf,0xc9,0xfa,0x4b]
+vmulaw.xyzw $vf25, $vf26
+
+# VMADDAbc - Vector Multiply-Add to ACC with broadcast
+# CHECK: vmaddax.xyzw    $$vf1, $$vf2            # encoding: [0xbc,0x08,0xe2,0x4b]
+vmaddax.xyzw $vf1, $vf2
+# CHECK: vmadday.xyzw    $$vf3, $$vf4            # encoding: [0xbd,0x18,0xe4,0x4b]
+vmadday.xyzw $vf3, $vf4
+# CHECK: vmaddaz.xyzw    $$vf5, $$vf6            # encoding: [0xbe,0x28,0xe6,0x4b]
+vmaddaz.xyzw $vf5, $vf6
+# CHECK: vmaddaw.xyzw    $$vf7, $$vf8            # encoding: [0xbf,0x38,0xe8,0x4b]
+vmaddaw.xyzw $vf7, $vf8
+
+# VMSUBAbc - Vector Multiply-Subtract from ACC with broadcast
+# CHECK: vmsubax.xyzw    $$vf9, $$vf10           # encoding: [0xfc,0x48,0xea,0x4b]
+vmsubax.xyzw $vf9, $vf10
+# CHECK: vmsubay.xyzw    $$vf11, $$vf12          # encoding: [0xfd,0x58,0xec,0x4b]
+vmsubay.xyzw $vf11, $vf12
+
+# VADDAbc - Vector Add to ACC with broadcast
+# CHECK: vaddax.xyzw     $$vf13, $$vf14          # encoding: [0x3c,0x68,0xee,0x4b]
+vaddax.xyzw $vf13, $vf14
+# CHECK: vadday.xyzw     $$vf15, $$vf16          # encoding: [0x3d,0x78,0xf0,0x4b]
+vadday.xyzw $vf15, $vf16
+
+# VSUBAbc - Vector Subtract from ACC with broadcast
+# CHECK: vsubax.xyzw     $$vf17, $$vf18          # encoding: [0x7c,0x88,0xf2,0x4b]
+vsubax.xyzw $vf17, $vf18
+# CHECK: vsubay.xyzw     $$vf19, $$vf20          # encoding: [0x7d,0x98,0xf4,0x4b]
+vsubay.xyzw $vf19, $vf20

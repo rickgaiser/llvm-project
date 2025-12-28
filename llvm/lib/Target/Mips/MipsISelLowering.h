@@ -246,6 +246,14 @@ class TargetRegisterClass;
       DOUBLE_SELECT_I,
       DOUBLE_SELECT_I64,
 
+      // R5900 VU0 Broadcast Operations
+      // VMULbc: fd = fs * ft[bc] where bc is 0=x, 1=y, 2=z, 3=w
+      VU0_MULx, VU0_MULy, VU0_MULz, VU0_MULw,
+      // VMADDbc: fd = ACC + fs * ft[bc]
+      VU0_MADDx, VU0_MADDy, VU0_MADDz, VU0_MADDw,
+      // VMULAbc: ACC = fs * ft[bc]
+      VU0_MULAx, VU0_MULAy, VU0_MULAz, VU0_MULAw,
+
       // Load/Store Left/Right nodes.
       FIRST_MEMORY_OPCODE,
       LWL = FIRST_MEMORY_OPCODE,
