@@ -25,7 +25,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | 128-bit Registers | Not Implemented | |
 | MMI Instructions | Not Implemented | |
-| VU0 (COP2) | **Partial** | VF registers and load/store implemented |
+| VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
 ## Compiler Flags
@@ -82,7 +82,7 @@ Note: R5900 FPU is single-precision only. Double-precision is NOT supported.
 |----------|------|---------|-------------|
 | `$vf0-$vf31` | 128-bit | Vector FP (4x32-bit floats, xyzw) | **Implemented** |
 | `$vi0-$vi15` | 16-bit | Integer registers (counters, addresses) | Not Implemented |
-| `ACC` | 128-bit | Vector accumulator (4x32-bit floats) | Not Implemented |
+| `ACC` | 128-bit | Vector accumulator (4x32-bit floats) | **Implemented** |
 | `Q` | 32-bit | Division/sqrt result register | Not Implemented |
 | `I` | 32-bit | Immediate FP value (loaded via CTC2) | Not Implemented |
 
@@ -100,7 +100,7 @@ Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) an
 | `SFmode` | 32-bit | `float` | FPU (COP1) | **Implemented** |
 | `DImode` | 64-bit | `long long` | GP | **Implemented** |
 | `TImode` | 128-bit | `__int128` | GP | Not Implemented |
-| `V4SF` | 128-bit | 4 x 32-bit float | VU0 (COP2) | **Partial** (load/store) |
+| `V4SF` | 128-bit | 4 x 32-bit float | VU0 (COP2) | **Partial** (load/store/arithmetic) |
 | `V16QI` | 128-bit | 16 x 8-bit int | GP (MMI) | Not Implemented |
 | `V8HI` | 128-bit | 8 x 16-bit int | GP (MMI) | Not Implemented |
 | `V4SI` | 128-bit | 4 x 32-bit int | GP (MMI) | Not Implemented |
@@ -337,9 +337,9 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `VADD.xyzw` | dest = a + b | Not Implemented |
-| `VSUB.xyzw` | dest = a - b | Not Implemented |
-| `VMUL.xyzw` | dest = a * b | Not Implemented |
+| `VADD.xyzw` | dest = a + b | **Implemented** |
+| `VSUB.xyzw` | dest = a - b | **Implemented** |
+| `VMUL.xyzw` | dest = a * b | **Implemented** |
 | `VABS.xyzw` | dest = \|a\| | Not Implemented |
 | `VMAX.xyzw` | dest = max(a, b) | Not Implemented |
 | `VMINI.xyzw` | dest = min(a, b) | Not Implemented |
@@ -349,11 +349,13 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `VMULA.xyzw` | ACC = a * b | Not Implemented |
-| `VMADDA.xyzw` | ACC += a * b | Not Implemented |
-| `VMADD.xyzw` | dest = ACC + a * b | Not Implemented |
-| `VMSUBA.xyzw` | ACC -= a * b | Not Implemented |
-| `VMSUB.xyzw` | dest = ACC - a * b | Not Implemented |
+| `VMULA.xyzw` | ACC = a * b | **Implemented** |
+| `VADDA.xyzw` | ACC = a + b | **Implemented** |
+| `VSUBA.xyzw` | ACC = a - b | **Implemented** |
+| `VMADDA.xyzw` | ACC += a * b | **Implemented** |
+| `VMSUBA.xyzw` | ACC -= a * b | **Implemented** |
+| `VMADD.xyzw` | dest = ACC + a * b | **Implemented** |
+| `VMSUB.xyzw` | dest = ACC - a * b | **Implemented** |
 
 ### 5.4 Broadcast Operations (bc = x/y/z/w)
 
@@ -446,12 +448,14 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] LQC2/SQC2 load/store instructions
 - [x] `-mvu0` compiler flag
 - [x] V4SF calling convention (args in $vf12-$vf19, return in $vf1)
+- [x] Vector accumulator (ACC) register
+- [x] Vector arithmetic: VADD.xyzw, VSUB.xyzw, VMUL.xyzw
+- [x] ACC-writing: VADDA.xyzw, VSUBA.xyzw, VMULA.xyzw
+- [x] ACC multiply-accumulate: VMADD.xyzw, VMSUB.xyzw, VMADDA.xyzw, VMSUBA.xyzw
 - [ ] Q and I register definitions
-- [ ] Vector accumulator (ACC)
-- [ ] Vector arithmetic instructions
-- [ ] Vector multiply-accumulate
 - [ ] Division and square root operations
 - [ ] Conversion operations
+- [ ] Broadcast operations (VADDbc, VSUBbc, VMULbc, etc.)
 
 ### Phase 8: R5900 Errata
 - [x] Short loop bug workaround (`-mfix-r5900`)
@@ -524,6 +528,7 @@ The R5900 scheduling model (`MipsScheduleR5900.td`) defines:
 | `R5900MAC0` | Pipeline 0 | `MULT`, `MULTU`, `MADD`, `MADDU`, `DIV`, `DIVU` |
 | `R5900MAC1` | Pipeline 1 | `MULT1`, `MULTU1`, `MADD1`, `MADDU1`, `DIV1`, `DIVU1` |
 | `R5900FPUAcc` | FPU | `MULA.S`, `MADDA.S`, `MSUBA.S`, `MADD.S`, `MSUB.S` |
+| `R5900UnitVU0` | VU0 | `VADD`, `VSUB`, `VMUL`, `VMADD`, `VMSUB`, `VADDA`, `VSUBA`, `VMULA`, `VMADDA`, `VMSUBA` |
 
 The dual MAC units allow two independent multiply operations to execute in parallel when properly scheduled.
 

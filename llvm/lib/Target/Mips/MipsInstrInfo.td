@@ -3567,6 +3567,103 @@ let Predicates = [HasVU0] in {
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//
+// VU0 (COP2) Arithmetic Instructions - R5900
+//===----------------------------------------------------------------------===//
+// VU0 macro mode arithmetic instructions use the COP2 encoding with
+// 3 VF registers and a destination mask (xyzw).
+//
+// Instruction classes:
+// - VU0_Type1: 3 VF registers + 6-bit opcode (VADD, VSUB, VMUL, VMADD, VMSUB)
+// - VU0_Type0: 3 VF registers + 4-bit opcode + 2-bit bc (VADDbc, VSUBbc, VMULbc)
+// - VU0_Type3: 2 VF registers + 11-bit opcode (VADDA, VSUBA, VMULA - ACC dest)
+// - VU0_Type2: 2 VF registers + 9-bit opcode + 2-bit bc (VADDAbc, etc.)
+
+// VU0 Type 1 instruction class: 3 VF registers, 6-bit opcode
+// Used for VADD, VSUB, VMUL, VMADD, VMSUB
+class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-0}   = funct;
+}
+
+// VU0 Type 3 instruction class: 2 VF registers, ACC destination, 11-bit opcode
+// Used for VADDA, VSUBA, VMULA, VMADDA, VMSUBA
+class VU0_ACC<string opstr, bits<11> funct, InstrItinClass Itin,
+              list<Register> UseRegs = []>
+    : InstSE<(outs), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, ".xyzw\t$fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let Defs = [VU0ACC];
+  let Uses = UseRegs;
+  let hasSideEffects = 0;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-0}  = funct;
+}
+
+// VU0 Type 1 with ACC read: 3 VF registers, uses ACC, 6-bit opcode
+// Used for VMADD, VMSUB (reads ACC, writes VF)
+class VU0_3R_ACC<string opstr, bits<6> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let Uses = [VU0ACC];
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-0}   = funct;
+}
+
+let Predicates = [HasVU0] in {
+  // VU0 Vector Add/Subtract/Multiply (3-register forms, dest mask = xyzw)
+  def VADD  : VU0_3R<"vadd", 0b101000, II_VU0_VADD>;   // 0x28
+  def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB>;   // 0x2C
+  def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL>;   // 0x2A
+
+  // VU0 Multiply-Accumulate (uses ACC register)
+  def VMADD : VU0_3R_ACC<"vmadd", 0b101001, II_VU0_VMADD>;  // 0x29
+  def VMSUB : VU0_3R_ACC<"vmsub", 0b101101, II_VU0_VMSUB>;  // 0x2D
+
+  // VU0 ACC-destination instructions (writes to ACC)
+  def VADDA : VU0_ACC<"vadda", 0b10111111100, II_VU0_VADDA>;   // bits 10-0 = 0x5FC
+  def VSUBA : VU0_ACC<"vsuba", 0b10111111101, II_VU0_VSUBA>;   // bits 10-0 = 0x5FD
+  def VMULA : VU0_ACC<"vmula", 0b10111111110, II_VU0_VMULA>;   // bits 10-0 = 0x5FE
+
+  // VU0 Multiply-Add/Sub to ACC (reads and writes ACC)
+  def VMADDA : VU0_ACC<"vmadda", 0b10111111111, II_VU0_VMADDA, [VU0ACC]>;  // 0x5FF
+  def VMSUBA : VU0_ACC<"vmsuba", 0b10111111011, II_VU0_VMSUBA, [VU0ACC]>;  // 0x5FB
+} // Predicates = [HasVU0]
+
+//===----------------------------------------------------------------------===//
 // Floating Point Support
 //===----------------------------------------------------------------------===//
 

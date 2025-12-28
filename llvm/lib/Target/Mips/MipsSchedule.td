@@ -192,6 +192,18 @@ def II_LDC2             : InstrItinClass;
 def II_LDC3             : InstrItinClass;
 def II_LQC2             : InstrItinClass; // R5900 VU0 quadword load
 def II_LDL              : InstrItinClass;
+
+// R5900 VU0 arithmetic instructions
+def II_VU0_VADD         : InstrItinClass;  // VU0 vector add
+def II_VU0_VSUB         : InstrItinClass;  // VU0 vector subtract
+def II_VU0_VMUL         : InstrItinClass;  // VU0 vector multiply
+def II_VU0_VMADD        : InstrItinClass;  // VU0 vector multiply-add
+def II_VU0_VMSUB        : InstrItinClass;  // VU0 vector multiply-subtract
+def II_VU0_VADDA        : InstrItinClass;  // VU0 vector add to ACC
+def II_VU0_VSUBA        : InstrItinClass;  // VU0 vector subtract to ACC
+def II_VU0_VMULA        : InstrItinClass;  // VU0 vector multiply to ACC
+def II_VU0_VMADDA       : InstrItinClass;  // VU0 vector multiply-add to ACC
+def II_VU0_VMSUBA       : InstrItinClass;  // VU0 vector multiply-subtract to ACC
 def II_LDR              : InstrItinClass;
 def II_LDPC             : InstrItinClass;
 def II_LDXC1            : InstrItinClass;
