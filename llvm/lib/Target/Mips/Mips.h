@@ -52,6 +52,7 @@ FunctionPass *createMipsPreLegalizeCombiner();
 FunctionPass *createMipsPostLegalizeCombiner(bool IsOptNone);
 FunctionPass *createMipsMulMulBugPass();
 FunctionPass *createMipsR5900FPUAccChainPass();
+FunctionPass *createMipsR5900VU0AccChainPass();
 
 InstructionSelector *
 createMipsInstructionSelector(const MipsTargetMachine &, const MipsSubtarget &,
@@ -66,6 +67,7 @@ void initializeMipsMulMulBugFixPass(PassRegistry &);
 void initializeMipsPostLegalizerCombinerPass(PassRegistry &);
 void initializeMipsPreLegalizerCombinerPass(PassRegistry &);
 void initializeMipsR5900FPUAccChainPass(PassRegistry &);
+void initializeMipsR5900VU0AccChainPass(PassRegistry &);
 } // namespace llvm
 
 #endif
