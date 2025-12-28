@@ -458,6 +458,9 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 - [x] ACC-writing: VADDA.xyzw, VSUBA.xyzw, VMULA.xyzw
 - [x] ACC multiply-accumulate: VMADD.xyzw, VMSUB.xyzw, VMADDA.xyzw, VMSUBA.xyzw
 - [x] Broadcast operations: VADDbc, VSUBbc, VMULbc, VMADDbc, VMSUBbc, VADDAbc, VSUBAbc, VMULAbc, VMADDAbc, VMSUBAbc
+- [x] TTI methods for autovectorization (getNumberOfRegisters, getRegisterBitWidth, getArithmeticInstrCost)
+- [x] Broadcast pattern recognition: shufflevector+fmul -> VMULbc
+- [ ] ACC-based FMA chain optimization (VMULA/VMADD sequences)
 - [ ] Q and I register definitions
 - [ ] Division and square root operations
 - [ ] Conversion operations

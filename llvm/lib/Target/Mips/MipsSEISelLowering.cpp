@@ -217,6 +217,14 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::FADD, MVT::v4f32, Legal);
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
     setOperationAction(ISD::FMUL, MVT::v4f32, Legal);
+
+    // Enable custom lowering for broadcast pattern recognition
+    // This allows recognizing shuffle+fmul -> VMULbc patterns
+    setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v4f32, Custom);
+    setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
+
+    // Enable DAG combine for broadcast multiply patterns
+    setTargetDAGCombine(ISD::FMUL);
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -1105,6 +1113,69 @@ static SDValue performXORCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+// VU0 Broadcast Multiply Combine
+// Recognize: fmul(A, shuffle(B, <N,N,N,N>)) -> VU0_MULx/y/z/w(A, B)
+// This enables efficient matrix-vector operations using VMULbc instructions.
+static SDValue performVU0FMULCombine(SDNode *N, SelectionDAG &DAG,
+                                     const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
+    return SDValue();
+
+  SDLoc DL(N);
+
+  // Check both operands for shuffle pattern (fmul is commutative)
+  for (int i = 0; i < 2; i++) {
+    SDValue Vec = N->getOperand(i);
+    SDValue Shuf = N->getOperand(1 - i);
+
+    if (Shuf.getOpcode() != ISD::VECTOR_SHUFFLE)
+      continue;
+
+    ShuffleVectorSDNode *SVN = cast<ShuffleVectorSDNode>(Shuf.getNode());
+    ArrayRef<int> Mask = SVN->getMask();
+
+    // Check for broadcast: all non-undef mask elements are the same (0-3)
+    int BroadcastIdx = -1;
+    bool IsBroadcast = true;
+    for (int M : Mask) {
+      if (M < 0)
+        continue; // undef
+      if (BroadcastIdx < 0)
+        BroadcastIdx = M;
+      else if (M != BroadcastIdx) {
+        IsBroadcast = false;
+        break;
+      }
+    }
+
+    if (IsBroadcast && BroadcastIdx >= 0 && BroadcastIdx < 4) {
+      // We found a broadcast shuffle. Get the source vector.
+      SDValue BroadcastSrc = SVN->getOperand(0);
+
+      unsigned Opc;
+      switch (BroadcastIdx) {
+      case 0:
+        Opc = MipsISD::VU0_MULx;
+        break;
+      case 1:
+        Opc = MipsISD::VU0_MULy;
+        break;
+      case 2:
+        Opc = MipsISD::VU0_MULz;
+        break;
+      case 3:
+        Opc = MipsISD::VU0_MULw;
+        break;
+      default:
+        llvm_unreachable("Invalid broadcast index");
+      }
+      return DAG.getNode(Opc, DL, MVT::v4f32, Vec, BroadcastSrc);
+    }
+  }
+
+  return SDValue();
+}
+
 SDValue
 MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
@@ -1116,6 +1187,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::OR:
     Val = performORCombine(N, DAG, DCI, Subtarget);
+    break;
+  case ISD::FMUL:
+    Val = performVU0FMULCombine(N, DAG, Subtarget);
     break;
   case ISD::MUL:
     return performMULCombine(N, DAG, DCI, this, Subtarget);
@@ -3089,6 +3163,11 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
   EVT ResTy = Op->getValueType(0);
 
   if (!ResTy.is128BitVector())
+    return SDValue();
+
+  // VU0 v4f32 shuffles are handled by DAG combine (broadcast patterns) or
+  // expanded to scalar operations. MSA shuffle lowering doesn't apply.
+  if (Subtarget.hasVU0() && ResTy == MVT::v4f32)
     return SDValue();
 
   int ResTyNumElts = ResTy.getVectorNumElements();
