@@ -444,7 +444,7 @@ def : InstRW<[R5900WriteCOP2], (instrs LWC2, LWC3, SWC2, SWC3,
 // LQC2/SQC2 use the load/store unit with VU0.
 
 def R5900WriteVFLoad : SchedWriteRes<[R5900UnitLdSt]> {
-  let Latency = 2;
+  let Latency = 1;
 }
 
 def R5900WriteVFStore : SchedWriteRes<[R5900UnitLdSt]> {
@@ -483,7 +483,7 @@ def : InstRW<[R5900WriteVU0AccInit], (instrs VADDA, VSUBA, VMULA)>;
 // VMADD, VMSUB (ACC-reading, VF destination)
 def : InstRW<[R5900WriteVU0AccResult], (instrs VMADD, VMSUB)>;
 
-// VMADDA, VMSUBA (ACC-reading and ACC-writing)
-def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDA, VMSUBA)>;
+// VMADDA, VMSUBA (ACC-reading and ACC-writing) - uses ACC forwarding
+def : InstRW<[R5900WriteVU0AccInit], (instrs VMADDA, VMSUBA)>;
 
 } // SchedModel = MipsR5900Model
