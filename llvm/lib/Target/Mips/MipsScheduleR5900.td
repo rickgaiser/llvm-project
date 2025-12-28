@@ -454,4 +454,36 @@ def R5900WriteVFStore : SchedWriteRes<[R5900UnitLdSt]> {
 def : InstRW<[R5900WriteVFLoad], (instrs LQC2)>;
 def : InstRW<[R5900WriteVFStore], (instrs SQC2)>;
 
+//===----------------------------------------------------------------------===//
+// VU0 Arithmetic Instructions
+//===----------------------------------------------------------------------===//
+// VU0 macro mode vector arithmetic uses the VU0 unit.
+// Latency is 4 cycles (FMAC pipeline).
+
+def R5900WriteVU0Arith : SchedWriteRes<[R5900UnitVU0]> {
+  let Latency = 4;
+}
+
+// VU0 ACC-writing instructions have 1-cycle latency for ACC chaining
+def R5900WriteVU0AccInit : SchedWriteRes<[R5900UnitVU0]> {
+  let Latency = 1;
+}
+
+// VU0 ACC-reading instructions have 4-cycle latency
+def R5900WriteVU0AccResult : SchedWriteRes<[R5900UnitVU0]> {
+  let Latency = 4;
+}
+
+// VADD, VSUB, VMUL (3-register, VF destination)
+def : InstRW<[R5900WriteVU0Arith], (instrs VADD, VSUB, VMUL)>;
+
+// VADDA, VSUBA, VMULA (ACC-writing, no VF destination)
+def : InstRW<[R5900WriteVU0AccInit], (instrs VADDA, VSUBA, VMULA)>;
+
+// VMADD, VMSUB (ACC-reading, VF destination)
+def : InstRW<[R5900WriteVU0AccResult], (instrs VMADD, VMSUB)>;
+
+// VMADDA, VMSUBA (ACC-reading and ACC-writing)
+def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDA, VMSUBA)>;
+
 } // SchedModel = MipsR5900Model

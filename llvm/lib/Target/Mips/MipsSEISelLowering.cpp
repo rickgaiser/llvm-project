@@ -200,6 +200,20 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setTargetDAGCombine({ISD::AND, ISD::OR, ISD::SRA, ISD::VSELECT, ISD::XOR});
   }
 
+  // R5900 VU0 (COP2) support for v4f32 vectors
+  // Only load/store are currently implemented, all other ops expand.
+  if (Subtarget.hasVU0()) {
+    addRegisterClass(MVT::v4f32, &Mips::VFRegsRegClass);
+
+    // Expand all builtin opcodes by default
+    for (unsigned Opc = 0; Opc < ISD::BUILTIN_OP_END; ++Opc)
+      setOperationAction(Opc, MVT::v4f32, Expand);
+
+    // Enable load/store (LQC2/SQC2)
+    setOperationAction(ISD::LOAD, MVT::v4f32, Legal);
+    setOperationAction(ISD::STORE, MVT::v4f32, Legal);
+  }
+
   if (!Subtarget.useSoftFloat()) {
     addRegisterClass(MVT::f32, &Mips::FGR32RegClass);
 
