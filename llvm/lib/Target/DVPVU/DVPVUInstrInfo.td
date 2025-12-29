@@ -123,44 +123,48 @@ def RET : DVPVUInst<(outs), (ins),
 //===----------------------------------------------------------------------===//
 
 // ADD - Vector Add
+// Opcodes from binutils dvp-opc.c (VUOP6 values):
+// ADD: 0x28, MUL: 0x2a, MAX: 0x2b, SUB: 0x2c, MSUB: 0x2d, OPMSUB: 0x2e, MINI: 0x2f
+// MADD: 0x29
+// Note: Bit 5=1 distinguishes regular from broadcast instructions
 let Itinerary = IIC_FMAC in {
 
-def ADDvv : UpperInst<0b000000,
+def ADDvv : UpperInst<0b101000,  // 0x28
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "add$dest\t$vd, $vs, $vt",
     []>;
 
-def SUBvv : UpperInst<0b000001,
+def SUBvv : UpperInst<0b101100,  // 0x2c
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "sub$dest\t$vd, $vs, $vt",
     []>;
 
-def MULvv : UpperInst<0b011100,
+def MULvv : UpperInst<0b101010,  // 0x2a
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "mul$dest\t$vd, $vs, $vt",
     []>;
 
-def MADDvv : UpperInst<0b000010,
+def MADDvv : UpperInst<0b101001,  // 0x29
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "madd$dest\t$vd, $vs, $vt",
     []>;  // Uses ACC
 
-def MSUBvv : UpperInst<0b000011,
+def MSUBvv : UpperInst<0b101101,  // 0x2d
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "msub$dest\t$vd, $vs, $vt",
     []>;
 
-def MAXvv : UpperInst<0b011011,
+def MAXvv : UpperInst<0b101011,  // 0x2b
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "max$dest\t$vd, $vs, $vt",
     []>;
 
-def MINIvv : UpperInst<0b011111,
+def MINIvv : UpperInst<0b101111,  // 0x2f
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
     "mini$dest\t$vd, $vs, $vt",
     []>;
 
-def ABSv : UpperInst2Op<0b111101,
+def ABSv : UpperInst2Op<0b111101,  // 0x3d (0x1fd is 11-bit, low 6 bits = 0b111101)
     (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs),
     "abs$dest\t$vd, $vs",
     []>;
@@ -172,6 +176,137 @@ def NOP_UPPER : UpperNopInst<0b101111,
     []> {
   let Itinerary = IIC_NOP;
 }
+
+} // Itinerary = IIC_FMAC
+
+//===----------------------------------------------------------------------===//
+// Upper Broadcast Instructions
+//===----------------------------------------------------------------------===//
+// Broadcast instructions: multiply/add/sub with a single component broadcasted
+// Syntax: mulx.xyzw vf1, vf2, vf3x (multiply vf2 by vf3.x broadcast to all lanes)
+// BC field: x=0, y=1, z=2, w=3
+// Opcode (bits 5-2): add=0, sub=1, madd=2, msub=3, max=4, mini=5, mul=6
+
+let Itinerary = IIC_FMAC in {
+
+// MUL broadcast variants (opcode = 6)
+def MULx : UpperBroadcastInst<0b0110, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "mulx$dest\t$vd, $vs, ${vt}x", []>;
+
+def MULy : UpperBroadcastInst<0b0110, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "muly$dest\t$vd, $vs, ${vt}y", []>;
+
+def MULz : UpperBroadcastInst<0b0110, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "mulz$dest\t$vd, $vs, ${vt}z", []>;
+
+def MULw : UpperBroadcastInst<0b0110, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "mulw$dest\t$vd, $vs, ${vt}w", []>;
+
+// ADD broadcast variants (opcode = 0)
+def ADDx : UpperBroadcastInst<0b0000, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "addx$dest\t$vd, $vs, ${vt}x", []>;
+
+def ADDy : UpperBroadcastInst<0b0000, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "addy$dest\t$vd, $vs, ${vt}y", []>;
+
+def ADDz : UpperBroadcastInst<0b0000, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "addz$dest\t$vd, $vs, ${vt}z", []>;
+
+def ADDw : UpperBroadcastInst<0b0000, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "addw$dest\t$vd, $vs, ${vt}w", []>;
+
+// SUB broadcast variants (opcode = 1)
+def SUBx : UpperBroadcastInst<0b0001, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "subx$dest\t$vd, $vs, ${vt}x", []>;
+
+def SUBy : UpperBroadcastInst<0b0001, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "suby$dest\t$vd, $vs, ${vt}y", []>;
+
+def SUBz : UpperBroadcastInst<0b0001, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "subz$dest\t$vd, $vs, ${vt}z", []>;
+
+def SUBw : UpperBroadcastInst<0b0001, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "subw$dest\t$vd, $vs, ${vt}w", []>;
+
+// MADD broadcast variants (opcode = 2)
+def MADDx : UpperBroadcastInst<0b0010, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maddx$dest\t$vd, $vs, ${vt}x", []>;
+
+def MADDy : UpperBroadcastInst<0b0010, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maddy$dest\t$vd, $vs, ${vt}y", []>;
+
+def MADDz : UpperBroadcastInst<0b0010, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maddz$dest\t$vd, $vs, ${vt}z", []>;
+
+def MADDw : UpperBroadcastInst<0b0010, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maddw$dest\t$vd, $vs, ${vt}w", []>;
+
+// MSUB broadcast variants (opcode = 3)
+def MSUBx : UpperBroadcastInst<0b0011, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "msubx$dest\t$vd, $vs, ${vt}x", []>;
+
+def MSUBy : UpperBroadcastInst<0b0011, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "msuby$dest\t$vd, $vs, ${vt}y", []>;
+
+def MSUBz : UpperBroadcastInst<0b0011, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "msubz$dest\t$vd, $vs, ${vt}z", []>;
+
+def MSUBw : UpperBroadcastInst<0b0011, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "msubw$dest\t$vd, $vs, ${vt}w", []>;
+
+// MAX broadcast variants (opcode = 4)
+def MAXx : UpperBroadcastInst<0b0100, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maxx$dest\t$vd, $vs, ${vt}x", []>;
+
+def MAXy : UpperBroadcastInst<0b0100, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maxy$dest\t$vd, $vs, ${vt}y", []>;
+
+def MAXz : UpperBroadcastInst<0b0100, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maxz$dest\t$vd, $vs, ${vt}z", []>;
+
+def MAXw : UpperBroadcastInst<0b0100, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "maxw$dest\t$vd, $vs, ${vt}w", []>;
+
+// MINI broadcast variants (opcode = 5)
+def MINIx : UpperBroadcastInst<0b0101, 0b00,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "minix$dest\t$vd, $vs, ${vt}x", []>;
+
+def MINIy : UpperBroadcastInst<0b0101, 0b01,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "miniy$dest\t$vd, $vs, ${vt}y", []>;
+
+def MINIz : UpperBroadcastInst<0b0101, 0b10,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "miniz$dest\t$vd, $vs, ${vt}z", []>;
+
+def MINIw : UpperBroadcastInst<0b0101, 0b11,
+    (outs VFRegs:$vd), (ins destmask:$dest, VFRegs:$vs, VFRegs:$vt),
+    "miniw$dest\t$vd, $vs, ${vt}w", []>;
 
 } // Itinerary = IIC_FMAC
 
@@ -452,17 +587,18 @@ def ADJCALLSTACKUP   : Pseudo<(outs), (ins i32imm:$amt1, i32imm:$amt2),
 // Uses UpperInstISel which has fixed dest=0xF.
 
 // Vector Float Arithmetic (Upper pipeline) - ISel versions with full mask
-def ADD_xyzw : UpperInstISel<0b000000,
+// Use same opcodes as regular instructions (0x28, 0x2a, 0x2c)
+def ADD_xyzw : UpperInstISel<0b101000,  // 0x28
     (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
     "add.xyzw\t$vd, $vs, $vt",
     [(set v4f32:$vd, (fadd v4f32:$vs, v4f32:$vt))]>;
 
-def SUB_xyzw : UpperInstISel<0b000001,
+def SUB_xyzw : UpperInstISel<0b101100,  // 0x2c
     (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
     "sub.xyzw\t$vd, $vs, $vt",
     [(set v4f32:$vd, (fsub v4f32:$vs, v4f32:$vt))]>;
 
-def MUL_xyzw : UpperInstISel<0b011100,
+def MUL_xyzw : UpperInstISel<0b101010,  // 0x2a
     (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
     "mul.xyzw\t$vd, $vs, $vt",
     [(set v4f32:$vd, (fmul v4f32:$vs, v4f32:$vt))]>;
@@ -530,4 +666,92 @@ def : Pat<(v4f32 (load VIRegs:$base)), (LQ_xyzw VIRegs:$base, 0)>;
 def : Pat<(store v4f32:$src, VIRegs:$base), (SQ_xyzw v4f32:$src, VIRegs:$base, 0)>;
 def : Pat<(i16 (load VIRegs:$base)), (ILW_x VIRegs:$base, 0)>;
 def : Pat<(store i16:$src, VIRegs:$base), (ISW_x i16:$src, VIRegs:$base, 0)>;
+
+//===----------------------------------------------------------------------===//
+// Broadcast Multiply ISel Instructions
+//===----------------------------------------------------------------------===//
+// These are used for matrix-vector multiplication patterns where we need to
+// multiply a vector by a scalar component broadcast.
+// Example: result = matrix_row * vertex.x (broadcast x to all lanes)
+
+// Broadcast SDNode - extracts a scalar and broadcasts it
+def dvpvu_broadcast : SDNode<"DVPVUISD::BROADCAST", SDTypeProfile<1, 2,
+    [SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, i32>]>>;
+
+// MUL broadcast ISel variants (fixed destmask=0xF)
+def MULx_xyzw : UpperBroadcastInstISel<0b0110, 0b00,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "mulx.xyzw\t$vd, $vs, ${vt}x", []>;
+
+def MULy_xyzw : UpperBroadcastInstISel<0b0110, 0b01,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "muly.xyzw\t$vd, $vs, ${vt}y", []>;
+
+def MULz_xyzw : UpperBroadcastInstISel<0b0110, 0b10,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "mulz.xyzw\t$vd, $vs, ${vt}z", []>;
+
+def MULw_xyzw : UpperBroadcastInstISel<0b0110, 0b11,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "mulw.xyzw\t$vd, $vs, ${vt}w", []>;
+
+// ADD broadcast ISel variants (fixed destmask=0xF)
+def ADDx_xyzw : UpperBroadcastInstISel<0b0000, 0b00,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "addx.xyzw\t$vd, $vs, ${vt}x", []>;
+
+def ADDy_xyzw : UpperBroadcastInstISel<0b0000, 0b01,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "addy.xyzw\t$vd, $vs, ${vt}y", []>;
+
+def ADDz_xyzw : UpperBroadcastInstISel<0b0000, 0b10,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "addz.xyzw\t$vd, $vs, ${vt}z", []>;
+
+def ADDw_xyzw : UpperBroadcastInstISel<0b0000, 0b11,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "addw.xyzw\t$vd, $vs, ${vt}w", []>;
+
+// SUB broadcast ISel variants (fixed destmask=0xF)
+def SUBx_xyzw : UpperBroadcastInstISel<0b0001, 0b00,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "subx.xyzw\t$vd, $vs, ${vt}x", []>;
+
+def SUBy_xyzw : UpperBroadcastInstISel<0b0001, 0b01,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "suby.xyzw\t$vd, $vs, ${vt}y", []>;
+
+def SUBz_xyzw : UpperBroadcastInstISel<0b0001, 0b10,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "subz.xyzw\t$vd, $vs, ${vt}z", []>;
+
+def SUBw_xyzw : UpperBroadcastInstISel<0b0001, 0b11,
+    (outs VFRegs:$vd), (ins VFRegs:$vs, VFRegs:$vt),
+    "subw.xyzw\t$vd, $vs, ${vt}w", []>;
+
+//===----------------------------------------------------------------------===//
+// Broadcast Multiply Patterns
+//===----------------------------------------------------------------------===//
+// These patterns match (fmul vec, (broadcast vec, idx)) and select the
+// appropriate broadcast multiply instruction.
+
+// fmul vec, (broadcast vec2, 0) -> MULx vec, vec2
+def : Pat<(fmul v4f32:$vs, (dvpvu_broadcast v4f32:$vt, (i32 0))),
+          (MULx_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul v4f32:$vs, (dvpvu_broadcast v4f32:$vt, (i32 1))),
+          (MULy_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul v4f32:$vs, (dvpvu_broadcast v4f32:$vt, (i32 2))),
+          (MULz_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul v4f32:$vs, (dvpvu_broadcast v4f32:$vt, (i32 3))),
+          (MULw_xyzw VFRegs:$vs, VFRegs:$vt)>;
+
+// Commutative: (broadcast vec2, idx) fmul vec -> MULx vec, vec2
+def : Pat<(fmul (dvpvu_broadcast v4f32:$vt, (i32 0)), v4f32:$vs),
+          (MULx_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul (dvpvu_broadcast v4f32:$vt, (i32 1)), v4f32:$vs),
+          (MULy_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul (dvpvu_broadcast v4f32:$vt, (i32 2)), v4f32:$vs),
+          (MULz_xyzw VFRegs:$vs, VFRegs:$vt)>;
+def : Pat<(fmul (dvpvu_broadcast v4f32:$vt, (i32 3)), v4f32:$vs),
+          (MULw_xyzw VFRegs:$vs, VFRegs:$vt)>;
 

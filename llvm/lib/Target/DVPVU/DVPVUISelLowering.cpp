@@ -190,8 +190,36 @@ SDValue DVPVUTargetLowering::LowerVECTOR_SHUFFLE(SDValue Op,
                                                   SelectionDAG &DAG) const {
   // VU has limited shuffle support via broadcast and MR32
   SDLoc DL(Op);
+  ShuffleVectorSDNode *SVN = cast<ShuffleVectorSDNode>(Op);
+  SDValue V1 = Op.getOperand(0);
+  EVT VT = Op.getValueType();
 
-  // TODO: Implement vector shuffle lowering
+  // Check for broadcast pattern: all indices are the same
+  ArrayRef<int> Mask = SVN->getMask();
+  if (Mask.size() == 4 && VT == MVT::v4f32) {
+    // Check if all valid indices are the same (ignoring undef=-1)
+    bool IsBroadcast = true;
+    int BroadcastIdx = -1;
+
+    for (int Idx : Mask) {
+      if (Idx >= 0) {  // Ignore undef
+        if (BroadcastIdx < 0) {
+          BroadcastIdx = Idx;
+        } else if (Idx != BroadcastIdx) {
+          IsBroadcast = false;
+          break;
+        }
+      }
+    }
+
+    if (IsBroadcast && BroadcastIdx >= 0 && BroadcastIdx < 4) {
+      // Create BROADCAST node: (BROADCAST source_vec, index)
+      SDValue Idx = DAG.getConstant(BroadcastIdx, DL, MVT::i32);
+      return DAG.getNode(DVPVUISD::BROADCAST, DL, VT, V1, Idx);
+    }
+  }
+
+  // TODO: Handle other shuffle patterns (MR32 for rotation, etc.)
   return SDValue();
 }
 
