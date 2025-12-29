@@ -62,3 +62,6 @@ def DVPVU : Target {
   let InstructionSet = DVPVUInstrInfo;
   let AssemblyWriters = [DVPVUInstPrinter];
 }
+
+// Remap pointer-using pseudos to use our register classes
+defm : RemapAllTargetPseudoPointerOperands<VIRegs>;

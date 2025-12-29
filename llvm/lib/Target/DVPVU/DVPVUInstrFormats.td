@@ -41,6 +41,13 @@ class DVPVUInst<dag outs, dag ins, string asmstr, list<dag> pattern>
   let Pattern = pattern;
 
   let DecoderNamespace = "DVPVU";
+
+  // 64-bit instruction encoding
+  field bits<64> Inst;
+  bits<32> Upper = 0;
+  bits<32> Lower = 0;
+  let Inst{63-32} = Upper;
+  let Inst{31-0} = Lower;
 }
 
 //===----------------------------------------------------------------------===//
@@ -64,6 +71,24 @@ class UpperInst<bits<6> opcode, dag outs, dag ins, string asmstr,
   let Upper{20-16} = vt;
   let Upper{15-11} = vs;
   let Upper{10-6} = vd;
+  let Upper{5-0} = opcode;
+
+  // Default lower to NOP
+  bits<32> Lower = 0b10000000000000000000000000110011;
+}
+
+// Upper NOP instruction (no operands)
+class UpperNopInst<bits<6> opcode, dag outs, dag ins, string asmstr,
+                   list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<32> Upper;
+  let Upper{31} = 0;
+  let Upper{30-27} = 0;
+  let Upper{26-25} = 0;
+  let Upper{24-21} = 0;  // DEST = 0
+  let Upper{20-16} = 0;  // VT = 0
+  let Upper{15-11} = 0;  // VS = 0
+  let Upper{10-6} = 0;   // VD = 0
   let Upper{5-0} = opcode;
 
   // Default lower to NOP
@@ -459,8 +484,8 @@ class LowerMtirInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   bits<32> Upper = 0b00101111000000000000000000000000;
 }
 
-// EFU instruction
-class LowerEfuInst<bits<7> opcode, dag outs, dag ins, string asmstr,
+// EFU instruction - function code differentiates EFU operations
+class LowerEfuInst<bits<7> opcode, bits<6> func, dag outs, dag ins, string asmstr,
                    list<dag> pattern>
     : DVPVUInst<outs, ins, asmstr, pattern> {
   bits<5> vs;
@@ -471,7 +496,68 @@ class LowerEfuInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{24-23} = fsf;
   let Lower{22-16} = 0;
   let Lower{15-11} = vs;
-  let Lower{10-0} = 0;
+  let Lower{10-6} = 0;
+  let Lower{5-0} = func;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+}
+
+//===----------------------------------------------------------------------===//
+// ISel Instruction Formats (CodeGen only, fixed destmask)
+//===----------------------------------------------------------------------===//
+
+// Upper instruction with fixed destmask=0xF (.xyzw) for ISel
+// No destmask operand - pattern matching doesn't need masks
+class UpperInstISel<bits<6> opcode, dag outs, dag ins, string asmstr,
+                    list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<5> vd;
+  bits<5> vs;
+  bits<5> vt;
+
+  bits<32> Upper;
+  let Upper{31} = 0;      // I-bit
+  let Upper{30-27} = 0;   // Reserved
+  let Upper{26-25} = 0;
+  let Upper{24-21} = 0b1111;  // Fixed: dest = xyzw
+  let Upper{20-16} = vt;
+  let Upper{15-11} = vs;
+  let Upper{10-6} = vd;
+  let Upper{5-0} = opcode;
+
+  // Default lower to NOP
+  bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let isCodeGenOnly = 1;
+}
+
+// Lower memory instruction with fixed destmask=0xF (.xyzw) for ISel
+class LowerMemInstISel<bits<7> opcode, dag outs, dag ins, string asmstr,
+                       list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<5> vt;
+  bits<4> is;
+  bits<11> offset;
+
+  bits<32> Lower;
+  let Lower{31-25} = opcode;
+  let Lower{24-21} = 0b1111;  // Fixed: dest = xyzw
+  let Lower{20-16} = vt;
+  let Lower{15-11} = {0, is};
+  let Lower{10-0} = offset;
+
+  // Default upper to NOP
+  bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let isCodeGenOnly = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Pseudo Instructions
+//===----------------------------------------------------------------------===//
+
+class Pseudo<dag outs, dag ins, string asmstr, list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  let isPseudo = 1;
+  let isCodeGenOnly = 1;
 }

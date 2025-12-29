@@ -15,4 +15,39 @@ tablegen(LLVM DVPVUGenSDNodeInfo.inc -gen-sd-node-info)
 
 add_public_tablegen_target(DVPVUCommonTableGen)
 
+add_llvm_target(DVPVUCodeGen
+  DVPVUAsmPrinter.cpp
+  DVPVUFrameLowering.cpp
+  DVPVUISelDAGToDAG.cpp
+  DVPVUISelLowering.cpp
+  DVPVUInstrInfo.cpp
+  DVPVUMachineFunctionInfo.cpp
+  DVPVUMCInstLower.cpp
+  DVPVURegisterInfo.cpp
+  DVPVUSubtarget.cpp
+  DVPVUTargetMachine.cpp
+  DVPVUTargetObjectFile.cpp
+
+  LINK_COMPONENTS
+  Analysis
+  AsmPrinter
+  CodeGen
+  CodeGenTypes
+  Core
+  DVPVUDesc
+  DVPVUInfo
+  MC
+  SelectionDAG
+  Support
+  Target
+  TargetParser
+  TransformUtils
+
+  ADD_TO_COMPONENT
+  DVPVU
+)
+
+add_subdirectory(AsmParser)
+add_subdirectory(Disassembler)
+add_subdirectory(MCTargetDesc)
 add_subdirectory(TargetInfo)
