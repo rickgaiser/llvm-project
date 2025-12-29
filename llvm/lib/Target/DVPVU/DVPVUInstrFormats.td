@@ -552,6 +552,28 @@ class LowerMemInstISel<bits<7> opcode, dag outs, dag ins, string asmstr,
   let isCodeGenOnly = 1;
 }
 
+// Lower integer word memory instruction with fixed field=x for ISel
+class LowerWordMemInstISel<bits<7> opcode, dag outs, dag ins, string asmstr,
+                           list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<4> it;
+  bits<4> is;
+  bits<11> offset;
+
+  bits<32> Lower;
+  let Lower{31-25} = opcode;
+  let Lower{24-23} = 0b00;  // Fixed: field = x
+  let Lower{22-21} = 0;
+  let Lower{20-16} = {0, it};
+  let Lower{15-11} = {0, is};
+  let Lower{10-0} = offset;
+
+  // Default upper to NOP
+  bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let isCodeGenOnly = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Pseudo Instructions
 //===----------------------------------------------------------------------===//

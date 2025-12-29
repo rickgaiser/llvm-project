@@ -103,8 +103,8 @@ def RetGlue : SDNode<"DVPVUISD::RET_GLUE", SDTNone,
 // Addressing Mode Patterns
 //===----------------------------------------------------------------------===//
 
-// Address operand: base register + immediate offset
-def AddrVI : ComplexPattern<i32, 2, "SelectAddrVI", [frameindex], []>;
+// Address operand: base register + immediate offset (16-bit pointers)
+def AddrVI : ComplexPattern<i16, 2, "SelectAddrVI", [frameindex], []>;
 
 //===----------------------------------------------------------------------===//
 // Pseudo-instructions for CodeGen
@@ -495,20 +495,39 @@ def IOR_isel : LowerInst<0b0110101,
 
 // Load/Store ISel patterns
 // Use LowerMemInstISel which has fixed dest=0xF (.xyzw)
-// For now, use explicit base+offset patterns without ComplexPattern
+// Simple patterns: load from register with 0 offset
+
+// Vector Load (LQ) - 128-bit
 let mayLoad = 1, isCodeGenOnly = 1 in
 def LQ_xyzw : LowerMemInstISel<0b0000000,
     (outs VFRegs:$vt), (ins VIRegs:$is, simm11:$offset),
     "lq.xyzw\t$vt, ${offset}(${is})",
     []>;
 
+// Vector Store (SQ) - 128-bit
 let mayStore = 1, isCodeGenOnly = 1 in
 def SQ_xyzw : LowerMemInstISel<0b0000001,
     (outs), (ins VFRegs:$vt, VIRegs:$is, simm11:$offset),
     "sq.xyzw\t$vt, ${offset}(${is})",
     []>;
 
-// Simple load/store patterns for frame index access
+// Integer Load (ILW) - 16-bit from .x field
+let mayLoad = 1, isCodeGenOnly = 1 in
+def ILW_x : LowerWordMemInstISel<0b0000100,
+    (outs VIRegs:$it), (ins VIRegs:$is, simm11:$offset),
+    "ilw.x\t$it, ${offset}(${is})",
+    []>;
+
+// Integer Store (ISW) - 16-bit to .x field
+let mayStore = 1, isCodeGenOnly = 1 in
+def ISW_x : LowerWordMemInstISel<0b0000101,
+    (outs), (ins VIRegs:$it, VIRegs:$is, simm11:$offset),
+    "isw.x\t$it, ${offset}(${is})",
+    []>;
+
+// Simple load/store patterns: load from register with 0 offset
 def : Pat<(v4f32 (load VIRegs:$base)), (LQ_xyzw VIRegs:$base, 0)>;
 def : Pat<(store v4f32:$src, VIRegs:$base), (SQ_xyzw v4f32:$src, VIRegs:$base, 0)>;
+def : Pat<(i16 (load VIRegs:$base)), (ILW_x VIRegs:$base, 0)>;
+def : Pat<(store i16:$src, VIRegs:$base), (ISW_x i16:$src, VIRegs:$base, 0)>;
 

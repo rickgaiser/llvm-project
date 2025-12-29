@@ -33,12 +33,12 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDVPVUTarget() {
 static std::string computeDataLayout() {
   // e = little endian
   // m:e = ELF mangling
-  // p:32:32 = 32-bit pointers, 32-bit aligned
+  // p:16:16 = 16-bit pointers, 16-bit aligned (VU has 4KB/16KB addressable)
   // i16:16 = 16-bit integers, 16-bit aligned
   // f32:32 = 32-bit floats, 32-bit aligned
   // v128:128 = 128-bit vectors, 128-bit aligned
   // n16:32 = native 16 and 32 bit integers
-  return "e-m:e-p:32:32-i16:16-f32:32-v128:128-n16:32";
+  return "e-m:e-p:16:16-i16:16-f32:32-v128:128-n16:32";
 }
 
 static Reloc::Model getEffectiveRelocModel(std::optional<Reloc::Model> RM) {

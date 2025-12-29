@@ -1,27 +1,33 @@
 ; RUN: llc -mtriple=dvpvu < %s | FileCheck %s
-; Test load/store operations
 
-; XFAIL: *
-; TODO: Add load/store patterns
-
-; VU memory operations:
-; - LQ.dest vt, offset(is)    (load quadword - 128-bit)
-; - SQ.dest vt, offset(is)    (store quadword - 128-bit)
-; - LQI.dest vt, (is++)       (load with post-increment)
-; - SQI.dest vt, (is++)       (store with post-increment)
-; - ILW.f it, offset(is)      (load word - 32-bit)
-; - ISW.f it, offset(is)      (store word - 32-bit)
-
+; Test vector load (LQ)
 ; CHECK-LABEL: test_load_vector:
 ; CHECK: lq.xyzw
 define <4 x float> @test_load_vector(ptr %p) {
-  %val = load <4 x float>, ptr %p
-  ret <4 x float> %val
+  %v = load <4 x float>, ptr %p
+  ret <4 x float> %v
 }
 
+; Test vector store (SQ)
 ; CHECK-LABEL: test_store_vector:
 ; CHECK: sq.xyzw
-define void @test_store_vector(ptr %p, <4 x float> %val) {
-  store <4 x float> %val, ptr %p
+define void @test_store_vector(<4 x float> %v, ptr %p) {
+  store <4 x float> %v, ptr %p
+  ret void
+}
+
+; Test integer load (ILW)
+; CHECK-LABEL: test_load_int:
+; CHECK: ilw.x
+define i16 @test_load_int(ptr %p) {
+  %v = load i16, ptr %p
+  ret i16 %v
+}
+
+; Test integer store (ISW)
+; CHECK-LABEL: test_store_int:
+; CHECK: isw.x
+define void @test_store_int(i16 %v, ptr %p) {
+  store i16 %v, ptr %p
   ret void
 }
