@@ -133,6 +133,29 @@ void DVPVUAsmPrinter::emitInstruction(const MachineInstr *MI) {
   DVPVUMCInstLower MCInstLowering(OutContext, *this);
   MCSubtargetInfo STI = getSubtargetInfo();
 
+  // Handle bundles: emit all bundled instructions together
+  if (MI->isBundle()) {
+    // Emit a comment showing this is a bundled VLIW pair
+    OutStreamer->AddComment("VLIW bundle: Upper + Lower");
+
+    // Iterate through bundled instructions and emit each one
+    const MachineBasicBlock *MBB = MI->getParent();
+    MachineBasicBlock::const_instr_iterator I = MI->getIterator();
+    ++I; // Skip the BUNDLE instruction itself
+
+    while (I != MBB->instr_end() && I->isInsideBundle()) {
+      MCInst TmpInst;
+      MCInstLowering.Lower(&*I, TmpInst);
+      OutStreamer->emitInstruction(TmpInst, STI);
+      ++I;
+    }
+    return;
+  }
+
+  // Skip instructions that are inside a bundle (already handled above)
+  if (MI->isInsideBundle())
+    return;
+
   MCInst TmpInst;
   MCInstLowering.Lower(MI, TmpInst);
   OutStreamer->emitInstruction(TmpInst, STI);

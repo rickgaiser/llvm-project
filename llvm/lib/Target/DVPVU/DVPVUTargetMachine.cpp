@@ -28,6 +28,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeDVPVUTarget() {
   RegisterTargetMachine<DVPVUTargetMachine> X(getTheDVPVUTarget());
   auto &PR = *PassRegistry::getPassRegistry();
   initializeDVPVUDAGToDAGISelLegacyPass(PR);
+  initializeDVPVUVLIWPacketizerPass(PR);
 }
 
 static std::string computeDataLayout() {
@@ -87,8 +88,8 @@ bool DVPVUPassConfig::addInstSelector() {
 }
 
 void DVPVUPassConfig::addPreEmitPass() {
-  // TODO: Add VLIW packetizer pass here
-  // addPass(createDVPVUVLIWPacketizerPass());
+  // Bundle Upper+Lower instruction pairs into 64-bit VLIW words
+  addPass(createDVPVUVLIWPacketizerPass());
 }
 
 MachineFunctionInfo *DVPVUTargetMachine::createMachineFunctionInfo(

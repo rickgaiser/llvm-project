@@ -27,6 +27,7 @@ add_llvm_target(DVPVUCodeGen
   DVPVUSubtarget.cpp
   DVPVUTargetMachine.cpp
   DVPVUTargetObjectFile.cpp
+  DVPVUVLIWPacketizer.cpp
 
   LINK_COMPONENTS
   Analysis

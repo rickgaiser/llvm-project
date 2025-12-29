@@ -25,7 +25,10 @@ class PassRegistry;
 FunctionPass *createDVPVUISelDag(DVPVUTargetMachine &TM,
                                   CodeGenOptLevel OptLevel);
 
+FunctionPass *createDVPVUVLIWPacketizerPass();
+
 void initializeDVPVUDAGToDAGISelLegacyPass(PassRegistry &);
+void initializeDVPVUVLIWPacketizerPass(PassRegistry &);
 
 } // end namespace llvm
 

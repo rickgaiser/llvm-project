@@ -27,6 +27,17 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// TSFlags - Target-Specific Flags
+//===----------------------------------------------------------------------===//
+//
+// Bit 0: IsUpper - Instruction uses the Upper slot (FMAC)
+// Bit 1: IsLower - Instruction uses the Lower slot
+//
+// These flags are used by the VLIW Packetizer to determine which slot
+// an instruction occupies and to bundle Upper+Lower instruction pairs.
+//
+
+//===----------------------------------------------------------------------===//
 // Base Instruction Class
 //===----------------------------------------------------------------------===//
 
@@ -48,6 +59,14 @@ class DVPVUInst<dag outs, dag ins, string asmstr, list<dag> pattern>
   bits<32> Lower = 0;
   let Inst{63-32} = Upper;
   let Inst{31-0} = Lower;
+
+  // TSFlags for VLIW slot identification
+  // Bit 0: IsUpper (uses Upper slot)
+  // Bit 1: IsLower (uses Lower slot)
+  bit IsUpper = 0;
+  bit IsLower = 0;
+  let TSFlags{0} = IsUpper;
+  let TSFlags{1} = IsLower;
 }
 
 //===----------------------------------------------------------------------===//
@@ -75,6 +94,8 @@ class UpperInst<bits<6> opcode, dag outs, dag ins, string asmstr,
 
   // Default lower to NOP
   bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let IsUpper = 1;
 }
 
 // Upper NOP instruction (no operands)
@@ -93,6 +114,8 @@ class UpperNopInst<bits<6> opcode, dag outs, dag ins, string asmstr,
 
   // Default lower to NOP
   bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let IsUpper = 1;
 }
 
 // 2-operand upper instruction (e.g., ABS)
@@ -114,6 +137,8 @@ class UpperInst2Op<bits<6> opcode, dag outs, dag ins, string asmstr,
   let Upper{5-0} = opcode;
 
   bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let IsUpper = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -138,6 +163,8 @@ class LowerInst<bits<7> opcode, dag outs, dag ins, string asmstr,
 
   // Default upper to NOP
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Lower instruction with immediate (e.g., IADDI)
@@ -157,6 +184,8 @@ class LowerImmInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{5-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Load/Store memory instruction
@@ -176,6 +205,8 @@ class LowerMemInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = offset;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Load/Store with increment
@@ -194,6 +225,8 @@ class LowerMemIncInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Integer word memory instruction
@@ -214,6 +247,8 @@ class LowerWordMemInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = offset;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Division instruction
@@ -234,6 +269,8 @@ class LowerDivInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // SQRT instruction
@@ -251,6 +288,8 @@ class LowerSqrtInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // RSQRT instruction
@@ -271,6 +310,8 @@ class LowerRsqrtInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Wait instruction
@@ -282,6 +323,8 @@ class LowerWaitInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{24-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Unconditional branch
@@ -299,6 +342,7 @@ class LowerBranchInst<bits<7> opcode, dag outs, dag ins, string asmstr,
 
   let isBranch = 1;
   let isTerminator = 1;
+  let IsLower = 1;
 }
 
 // Branch and link
@@ -319,6 +363,7 @@ class LowerBranchLinkInst<bits<7> opcode, dag outs, dag ins, string asmstr,
 
   let isBranch = 1;
   let isCall = 1;
+  let IsLower = 1;
 }
 
 // Jump register
@@ -339,6 +384,7 @@ class LowerJumpRegInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let isTerminator = 1;
   let isBarrier = 1;
   let isIndirectBranch = 1;
+  let IsLower = 1;
 }
 
 // Jump and link register
@@ -358,6 +404,7 @@ class LowerJumpLinkRegInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   bits<32> Upper = 0b00101111000000000000000000000000;
 
   let isCall = 1;
+  let IsLower = 1;
 }
 
 // Conditional branch with two registers
@@ -379,6 +426,7 @@ class LowerCondBranchInst<bits<7> opcode, dag outs, dag ins, string asmstr,
 
   let isBranch = 1;
   let isTerminator = 1;
+  let IsLower = 1;
 }
 
 // Conditional branch with single register
@@ -398,6 +446,7 @@ class LowerCondBranchSingleInst<bits<7> opcode, dag outs, dag ins, string asmstr
 
   let isBranch = 1;
   let isTerminator = 1;
+  let IsLower = 1;
 }
 
 // NOP instruction
@@ -409,6 +458,8 @@ class LowerNopInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{24-0} = 0;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Move instruction
@@ -427,6 +478,8 @@ class LowerMoveInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0b00000110000;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // MR32 (rotate) instruction
@@ -445,6 +498,8 @@ class LowerMr32Inst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0b00000110001;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Move from integer register
@@ -463,6 +518,8 @@ class LowerMfirInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0b00000110011;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // Move to integer register
@@ -482,6 +539,8 @@ class LowerMtirInst<bits<7> opcode, dag outs, dag ins, string asmstr,
   let Lower{10-0} = 0b00000110100;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
 }
 
 // EFU instruction - function code differentiates EFU operations
@@ -500,6 +559,67 @@ class LowerEfuInst<bits<7> opcode, bits<6> func, dag outs, dag ins, string asmst
   let Lower{5-0} = func;
 
   bits<32> Upper = 0b00101111000000000000000000000000;
+
+  let IsLower = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Broadcast Upper Instruction Format
+//===----------------------------------------------------------------------===//
+
+// Upper instruction with broadcast (e.g., MULx, ADDy, etc.)
+// The BC field (bits 1-0) selects which component of VT to broadcast.
+// Assembly syntax: mulx.xyzw vf1, vf2, vf3x
+// The opcode is encoded in a 4-bit field (bits 5-2)
+class UpperBroadcastInst<bits<4> opcode, bits<2> bc, dag outs, dag ins,
+                         string asmstr, list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<5> vd;
+  bits<5> vs;
+  bits<5> vt;
+  bits<4> dest;
+
+  bits<32> Upper;
+  let Upper{31} = 0;      // I-bit
+  let Upper{30-27} = 0;   // Reserved
+  let Upper{26-25} = 0;
+  let Upper{24-21} = dest;
+  let Upper{20-16} = vt;
+  let Upper{15-11} = vs;
+  let Upper{10-6} = vd;
+  let Upper{5-2} = opcode;
+  let Upper{1-0} = bc;
+
+  // Default lower to NOP
+  bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let IsUpper = 1;
+}
+
+// Upper broadcast instruction for ISel (fixed destmask=0xF)
+class UpperBroadcastInstISel<bits<4> opcode, bits<2> bc, dag outs, dag ins,
+                             string asmstr, list<dag> pattern>
+    : DVPVUInst<outs, ins, asmstr, pattern> {
+  bits<5> vd;
+  bits<5> vs;
+  bits<5> vt;
+
+  bits<32> Upper;
+  let Upper{31} = 0;      // I-bit
+  let Upper{30-27} = 0;   // Reserved
+  let Upper{26-25} = 0;
+  let Upper{24-21} = 0b1111;  // Fixed: dest = xyzw
+  let Upper{20-16} = vt;
+  let Upper{15-11} = vs;
+  let Upper{10-6} = vd;
+  let Upper{5-2} = opcode;
+  let Upper{1-0} = bc;
+
+  // Default lower to NOP
+  bits<32> Lower = 0b10000000000000000000000000110011;
+
+  let isCodeGenOnly = 1;
+  let IsUpper = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -529,6 +649,7 @@ class UpperInstISel<bits<6> opcode, dag outs, dag ins, string asmstr,
   bits<32> Lower = 0b10000000000000000000000000110011;
 
   let isCodeGenOnly = 1;
+  let IsUpper = 1;
 }
 
 // Lower memory instruction with fixed destmask=0xF (.xyzw) for ISel
@@ -550,6 +671,7 @@ class LowerMemInstISel<bits<7> opcode, dag outs, dag ins, string asmstr,
   bits<32> Upper = 0b00101111000000000000000000000000;
 
   let isCodeGenOnly = 1;
+  let IsLower = 1;
 }
 
 // Lower integer word memory instruction with fixed field=x for ISel
@@ -572,6 +694,7 @@ class LowerWordMemInstISel<bits<7> opcode, dag outs, dag ins, string asmstr,
   bits<32> Upper = 0b00101111000000000000000000000000;
 
   let isCodeGenOnly = 1;
+  let IsLower = 1;
 }
 
 //===----------------------------------------------------------------------===//
