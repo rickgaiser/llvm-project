@@ -224,6 +224,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
 
     // Enable DAG combine for broadcast multiply patterns
+    // Note: VU0_BLEND is a target node that's always eligible for DAG combine
     setTargetDAGCombine(ISD::FMUL);
   }
 
@@ -1184,6 +1185,62 @@ static SDValue performVU0FMULCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+// VU0 Blend Combine
+// Fold: VU0_BLEND(base, arith(base, x), mask) -> VU0_*_MASKED(base, x, mask)
+// Also handles the swapped case: VU0_BLEND(arith(base, x), base, mask)
+// This optimizes patterns like: result.xy = a.xy + b.xy, result.zw = a.zw
+static SDValue performVU0BlendCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0())
+    return SDValue();
+
+  SDLoc DL(N);
+  SDValue Op0 = N->getOperand(0);
+  SDValue Op1 = N->getOperand(1);
+  SDValue MaskVal = N->getOperand(2);
+  EVT VT = N->getValueType(0);
+  unsigned Mask = cast<ConstantSDNode>(MaskVal)->getZExtValue();
+
+  // Try both orderings: (base, arith) and (arith, base)
+  // VU0_BLEND(base, src, mask): result[i] = mask[i] ? src[i] : base[i]
+  for (int Swap = 0; Swap <= 1; Swap++) {
+    SDValue Base = Swap ? Op1 : Op0;
+    SDValue Src = Swap ? Op0 : Op1;
+    unsigned EffMask = Swap ? (0xF ^ Mask) : Mask;  // Invert mask if swapped
+
+    unsigned SrcOp = Src.getOpcode();
+    if (SrcOp == ISD::FADD || SrcOp == ISD::FSUB || SrcOp == ISD::FMUL) {
+      SDValue ArithOp0 = Src.getOperand(0);
+      SDValue ArithOp1 = Src.getOperand(1);
+
+      // Check if one operand of arithmetic is Base
+      SDValue Other;
+      if (ArithOp0 == Base) {
+        Other = ArithOp1;
+      } else if (ArithOp1 == Base && SrcOp != ISD::FSUB) {
+        // For commutative ops (FADD, FMUL), either operand can be Base
+        Other = ArithOp0;
+      } else {
+        continue;  // Try other ordering
+      }
+
+      // Create masked arithmetic node
+      unsigned MaskedOp;
+      switch (SrcOp) {
+      case ISD::FADD: MaskedOp = MipsISD::VU0_FADD_MASKED; break;
+      case ISD::FSUB: MaskedOp = MipsISD::VU0_FSUB_MASKED; break;
+      case ISD::FMUL: MaskedOp = MipsISD::VU0_FMUL_MASKED; break;
+      default: llvm_unreachable("Unexpected opcode");
+      }
+
+      SDValue NewMask = DAG.getConstant(EffMask, DL, MVT::i32);
+      return DAG.getNode(MaskedOp, DL, VT, Base, Other, NewMask);
+    }
+  }
+
+  return SDValue();
+}
+
 SDValue
 MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
@@ -1215,6 +1272,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::SETCC:
     Val = performSETCCCombine(N, DAG);
+    break;
+  case MipsISD::VU0_BLEND:
+    Val = performVU0BlendCombine(N, DAG, Subtarget);
     break;
   }
 
@@ -3173,10 +3233,48 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
   if (!ResTy.is128BitVector())
     return SDValue();
 
-  // VU0 v4f32 shuffles are handled by DAG combine (broadcast patterns) or
-  // expanded to scalar operations. MSA shuffle lowering doesn't apply.
-  if (Subtarget.hasVU0() && ResTy == MVT::v4f32)
+  // VU0 v4f32 shuffles: detect blend patterns for destination masking
+  if (Subtarget.hasVU0() && ResTy == MVT::v4f32) {
+    SDLoc DL(Op);
+    SDValue V1 = Op.getOperand(0);
+    SDValue V2 = Op.getOperand(1);
+
+    ArrayRef<int> Mask = Node->getMask();
+
+    // Check for blend pattern: elements come from V1 or V2 at same positions
+    // A blend is when each element either comes from V1[i] or V2[i] (not shuffled)
+    // Example: <0, 1, 6, 7> means x,y from V1, z,w from V2 -> blend mask 0b1100
+    //          <4, 5, 2, 3> means x,y from V2, z,w from V1 -> blend mask 0b0011
+    unsigned BlendMask = 0;  // Bits set = take from V1, clear = take from V2
+    bool IsBlend = true;
+    for (unsigned i = 0; i < 4; ++i) {
+      int Idx = Mask[i];
+      if (Idx < 0) {
+        // Undef - we can take from either, default to V2 (base)
+        continue;
+      } else if (Idx == (int)i) {
+        // From V1 at same position - this component will be written
+        BlendMask |= (1 << (3 - i));  // xyzw = bits 3,2,1,0
+      } else if (Idx == (int)(i + 4)) {
+        // From V2 at same position - this component preserved from base
+      } else {
+        // General permutation, not a simple blend
+        IsBlend = false;
+        break;
+      }
+    }
+
+    if (IsBlend && BlendMask != 0 && BlendMask != 0xF) {
+      // Create VU0_BLEND(base=V2, src=V1, mask)
+      // Result: for each bit set in mask, take from V1; otherwise take from V2
+      SDValue MaskVal = DAG.getConstant(BlendMask, DL, MVT::i32);
+      return DAG.getNode(MipsISD::VU0_BLEND, DL, ResTy, V2, V1, MaskVal);
+    }
+
+    // If not a blend, fall through to scalar expansion
+    // (broadcast patterns are handled by DAG combine on FMUL)
     return SDValue();
+  }
 
   int ResTyNumElts = ResTy.getVectorNumElements();
   SmallVector<int, 16> Indices;

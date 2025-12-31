@@ -206,6 +206,7 @@ class MipsAsmParser : public MCTargetAsmParser {
   ParseStatus parseJumpTarget(OperandVector &Operands);
   ParseStatus parseInvNum(OperandVector &Operands);
   ParseStatus parseRegisterList(OperandVector &Operands);
+  ParseStatus parseVU0DestMask(OperandVector &Operands);
   const MCExpr *parseRelocExpr();
 
   bool searchSymbolAlias(OperandVector &Operands);
@@ -1311,6 +1312,11 @@ public:
   template <unsigned Bottom, unsigned Top> bool isConstantUImmRange() const {
     return isConstantImm() && getConstantImm() >= Bottom &&
            getConstantImm() <= Top;
+  }
+
+  // VU0 destination mask (4-bit: xyzw)
+  bool isVU0DestMask() const {
+    return isConstantImm() && isUInt<4>(getConstantImm());
   }
 
   bool isToken() const override {
@@ -6949,6 +6955,43 @@ ParseStatus MipsAsmParser::parseRegisterList(OperandVector &Operands) {
   SMLoc E = Parser.getTok().getLoc();
   Operands.push_back(MipsOperand::CreateRegList(Regs, S, E, *this));
   parseMemOperand(Operands);
+  return ParseStatus::Success;
+}
+
+ParseStatus MipsAsmParser::parseVU0DestMask(OperandVector &Operands) {
+  MCAsmParser &Parser = getParser();
+
+  // Parse destination mask suffix: .xyzw, .xy, .z, etc.
+  if (Parser.getTok().isNot(AsmToken::Dot))
+    return ParseStatus::NoMatch;
+
+  SMLoc S = Parser.getTok().getLoc();
+  Parser.Lex();  // Consume '.'
+
+  unsigned Mask = 0;
+  StringRef MaskStr = Parser.getTok().getString();
+
+  // Parse xyzw components
+  for (char c : MaskStr) {
+    switch (c) {
+      case 'x': Mask |= 0b1000; break;
+      case 'y': Mask |= 0b0100; break;
+      case 'z': Mask |= 0b0010; break;
+      case 'w': Mask |= 0b0001; break;
+      default:
+        return Error(S, "invalid VU0 destination mask component");
+    }
+  }
+
+  if (Mask == 0)
+    return Error(S, "empty VU0 destination mask");
+
+  Parser.Lex();  // Consume the mask identifier
+  SMLoc E = Parser.getTok().getLoc();
+
+  const MCExpr *MaskExpr = MCConstantExpr::create(Mask, getContext());
+  Operands.push_back(MipsOperand::CreateImm(MaskExpr, S, E, *this));
+
   return ParseStatus::Success;
 }
 

@@ -255,6 +255,12 @@ class TargetRegisterClass;
       // VMULAbc: ACC = fs * ft[bc]
       VU0_MULAx, VU0_MULAy, VU0_MULAz, VU0_MULAw,
 
+      // R5900 VU0 Masked Operations (for destination masking)
+      // Blend: result[i] = (mask[i] ? src[i] : base[i])
+      VU0_BLEND,
+      // Masked arithmetic: result[i] = (mask[i] ? op(base[i], other[i]) : base[i])
+      VU0_FADD_MASKED, VU0_FSUB_MASKED, VU0_FMUL_MASKED,
+
       // Load/Store Left/Right nodes.
       FIRST_MEMORY_OPCODE,
       LWL = FIRST_MEMORY_OPCODE,

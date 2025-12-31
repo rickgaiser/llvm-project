@@ -315,6 +315,11 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::VU0_MULAy:         return "MipsISD::VU0_MULAy";
   case MipsISD::VU0_MULAz:         return "MipsISD::VU0_MULAz";
   case MipsISD::VU0_MULAw:         return "MipsISD::VU0_MULAw";
+  // R5900 VU0 Masked Operations
+  case MipsISD::VU0_BLEND:         return "MipsISD::VU0_BLEND";
+  case MipsISD::VU0_FADD_MASKED:   return "MipsISD::VU0_FADD_MASKED";
+  case MipsISD::VU0_FSUB_MASKED:   return "MipsISD::VU0_FSUB_MASKED";
+  case MipsISD::VU0_FMUL_MASKED:   return "MipsISD::VU0_FMUL_MASKED";
   }
   return nullptr;
 }

@@ -3585,6 +3585,35 @@ let Predicates = [HasVU0] in {
 // VU0 macro mode arithmetic instructions use the COP2 encoding with
 // 3 VF registers and a destination mask (xyzw).
 
+//===----------------------------------------------------------------------===//
+// VU0 Destination Mask Operand
+//===----------------------------------------------------------------------===//
+// The 4-bit destination mask controls which components (x,y,z,w) are written.
+// Bit 3 = x, Bit 2 = y, Bit 1 = z, Bit 0 = w
+
+def VU0DestMaskAsmOperand : AsmOperandClass {
+  let Name = "VU0DestMask";
+  let RenderMethod = "addImmOperands";
+  let ParserMethod = "parseVU0DestMask";
+}
+
+def vu0destmask : Operand<i32> {
+  let PrintMethod = "printVU0DestMask";
+  let ParserMatchClass = VU0DestMaskAsmOperand;
+}
+
+// SDTypeProfile for VU0 masked operations: (result, base, other, mask)
+// result[i] = (mask[i] ? op(base[i], other[i]) : base[i])
+def SDT_VU0Masked : SDTypeProfile<1, 3, [
+  SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, v4f32>, SDTCisVT<3, i32>
+]>;
+
+// SDNodes for VU0 masked operations (blend folded into arithmetic)
+def MipsVU0BLEND        : SDNode<"MipsISD::VU0_BLEND", SDT_VU0Masked>;
+def MipsVU0FADD_MASKED  : SDNode<"MipsISD::VU0_FADD_MASKED", SDT_VU0Masked>;
+def MipsVU0FSUB_MASKED  : SDNode<"MipsISD::VU0_FSUB_MASKED", SDT_VU0Masked>;
+def MipsVU0FMUL_MASKED  : SDNode<"MipsISD::VU0_FMUL_MASKED", SDT_VU0Masked>;
+
 // SDTypeProfile for VU0 broadcast operations: 2 v4f32 inputs, 1 v4f32 output
 def SDT_VU0Broadcast : SDTypeProfile<1, 2, [
   SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, v4f32>
@@ -3670,6 +3699,30 @@ class VU0_3R_ACC<string opstr, bits<6> funct, InstrItinClass Itin>
   let Inst{5-0}   = funct;
 }
 
+// VU0 Type 1 with dynamic destination mask: 3 VF registers, variable mask
+// Used for masked VADD, VSUB, VMUL (blend operations)
+class VU0_3R_Masked<string opstr, bits<6> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$base, VFOpnd:$fs, VFOpnd:$ft, vu0destmask:$mask),
+             !strconcat(opstr, "$mask\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  let isCodeGenOnly = 1;  // Not for assembly, only for ISel
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> mask;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = mask;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-0}   = funct;
+  let Constraints = "$base = $fd";
+}
+
 let Predicates = [HasVU0] in {
   // VU0 Vector Add/Subtract/Multiply (3-register forms, dest mask = xyzw)
   let isCommutable = 1 in {
@@ -3690,6 +3743,26 @@ let Predicates = [HasVU0] in {
   // VU0 Multiply-Add/Sub to ACC (reads and writes ACC)
   def VMADDA : VU0_ACC<"vmadda", 0b10111111111, II_VU0_VMADDA, [VU0ACC]>;  // 0x5FF
   def VMSUBA : VU0_ACC<"vmsuba", 0b10111111011, II_VU0_VMSUBA, [VU0ACC]>;  // 0x5FB
+
+  //===----------------------------------------------------------------------===//
+  // VU0 Masked Instructions (dynamic destination mask)
+  //===----------------------------------------------------------------------===//
+  // These instructions have a variable destination mask for blend operations.
+  // The mask is an immediate operand that selects which components to write.
+
+  def VADDm : VU0_3R_Masked<"vadd", 0b101000, II_VU0_VADD>;  // 0x28
+  def VSUBm : VU0_3R_Masked<"vsub", 0b101100, II_VU0_VSUB>;  // 0x2C
+  def VMULm : VU0_3R_Masked<"vmul", 0b101010, II_VU0_VMUL>;  // 0x2A
+
+  // Patterns for masked operations
+  // Match: (VU0_FADD_MASKED base, other, mask) -> VADDm(base, base, other, mask)
+  def : Pat<(MipsVU0FADD_MASKED v4f32:$base, v4f32:$other, (i32 imm:$mask)),
+            (VADDm VFRegs:$base, VFRegs:$base, VFRegs:$other, (i32 imm:$mask))>;
+  def : Pat<(MipsVU0FSUB_MASKED v4f32:$base, v4f32:$other, (i32 imm:$mask)),
+            (VSUBm VFRegs:$base, VFRegs:$base, VFRegs:$other, (i32 imm:$mask))>;
+  def : Pat<(MipsVU0FMUL_MASKED v4f32:$base, v4f32:$other, (i32 imm:$mask)),
+            (VMULm VFRegs:$base, VFRegs:$base, VFRegs:$other, (i32 imm:$mask))>;
+
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//
