@@ -349,6 +349,33 @@ R5900 FPU is single-precision only with additional operations. Double precision 
 | `RSQRT.S` | Reciprocal Square Root (fd = fs / sqrt(ft)) | **Implemented** |
 | `SQRT.S` | Square Root | **Implemented** (MIPS) |
 
+### 4.3 Compare Instructions
+
+R5900 only supports 4 FP compare conditions. Standard MIPS compare conditions not available on R5900 are handled by LLVM through transformation:
+
+| Instruction | Opcode | Description | LLVM Status |
+|-------------|--------|-------------|-------------|
+| `C.F.S` | 0x30 | False (always 0) | **Implemented** |
+| `C.EQ.S` | 0x32 | Equal | **Implemented** |
+| `C.LT.S` | 0x34 | Less Than (ordered) | **Implemented** |
+| `C.LE.S` | 0x36 | Less Than or Equal (ordered) | **Implemented** |
+
+**Not Supported**: C.UN, C.UEQ, C.OLT, C.ULT, C.OLE, C.ULE, and signaling variants (C.SF, C.NGLE, etc.) are not available in hardware. LLVM automatically transforms these to use supported instructions:
+
+- **Unordered comparisons** (C.ULT, C.ULE, C.UEQ): Mapped to ordered equivalents since R5900 FPU doesn't produce NaN values
+- **Greater-than comparisons**: Implemented by swapping operands (e.g., `a > b` becomes `b < a`)
+
+### 4.4 Conditional Moves
+
+| Instruction | Description | LLVM Status |
+|-------------|-------------|-------------|
+| `MOVN.S` | Move if GPR Not Zero | **Implemented** |
+| `MOVZ.S` | Move if GPR Zero | **Implemented** |
+| `MOVT.S` | Move if FCC True | Not Available |
+| `MOVF.S` | Move if FCC False | Not Available |
+
+Note: R5900 lacks `MOVT.S` and `MOVF.S` (FP condition code-based moves). FP conditional moves use `MOVN.S`/`MOVZ.S` with GPR-based conditions instead.
+
 ---
 
 ## 5. COP2 (VU0) - Vector Floating-Point Unit

@@ -372,9 +372,9 @@ def : InstRW<[R5900WriteFPULoad], (instrs LWC1)>;
 // swc1 (FPU store)
 def : InstRW<[R5900WriteFPUStore], (instrs SWC1)>;
 
-// movn.s, movz.s, movf.s, movt.s (conditional moves)
-def : InstRW<[R5900WriteFPUMove], (instrs MOVN_I_S, MOVZ_I_S, MOVF_S, MOVT_S,
-                                   MOVF_I, MOVT_I)>;
+// movn.s, movz.s (conditional moves based on GPR)
+// Note: R5900 does NOT support MOVT/MOVF (FCC-based conditional moves)
+def : InstRW<[R5900WriteFPUMove], (instrs MOVN_I_S, MOVZ_I_S)>;
 
 // R5900 FPU Accumulator Instructions
 def : InstRW<[R5900WriteFPUAccInit], (instrs ADDA_S, SUBA_S, MULA_S)>;
