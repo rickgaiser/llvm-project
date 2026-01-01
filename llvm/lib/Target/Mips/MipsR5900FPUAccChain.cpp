@@ -82,6 +82,13 @@ private:
     return MI.getOpcode() == Mips::FMUL_S;
   }
 
+  /// Check if an instruction is MTC1 with $zero (i.e., loading 0.0f)
+  bool isZeroConstant(const MachineInstr &MI) const {
+    return MI.getOpcode() == Mips::MTC1 &&
+           MI.getOperand(1).isReg() &&
+           MI.getOperand(1).getReg() == Mips::ZERO;
+  }
+
   /// Represents a multiply-add leaf in the reduction tree
   struct MulAddLeaf {
     MachineInstr *FMul;  // The FMUL_S instruction
@@ -191,14 +198,35 @@ bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root,
       if (!Def1 || !Def2)
         return false;
 
-      // Both operands must be FMUL_S or FADD_S
-      if (!isFMulS(*Def1) && !isFAddS(*Def1))
-        return false;
-      if (!isFMulS(*Def2) && !isFAddS(*Def2))
+      // Check if either operand is a zero constant (MTC1 $zero).
+      // This happens at the start of a sum: sum = 0.0f + (a*b).
+      // In this case, we only need to follow the non-zero operand.
+      bool Def1IsZero = isZeroConstant(*Def1);
+      bool Def2IsZero = isZeroConstant(*Def2);
+
+      // If both are zero, this is just 0+0, not useful
+      if (Def1IsZero && Def2IsZero)
         return false;
 
-      Worklist.push_back(Def1);
-      Worklist.push_back(Def2);
+      // If one is zero, only follow the other operand
+      if (Def1IsZero) {
+        if (!isFMulS(*Def2) && !isFAddS(*Def2))
+          return false;
+        Worklist.push_back(Def2);
+      } else if (Def2IsZero) {
+        if (!isFMulS(*Def1) && !isFAddS(*Def1))
+          return false;
+        Worklist.push_back(Def1);
+      } else {
+        // Both operands must be FMUL_S or FADD_S
+        if (!isFMulS(*Def1) && !isFAddS(*Def1))
+          return false;
+        if (!isFMulS(*Def2) && !isFAddS(*Def2))
+          return false;
+
+        Worklist.push_back(Def1);
+        Worklist.push_back(Def2);
+      }
     } else {
       return false;
     }

@@ -123,6 +123,22 @@ private:
     }
   }
 
+  /// Check if an instruction is loading a zero vector from constant pool.
+  /// This handles the pattern: v4f32 result = {0,0,0,0}; which loads from CP
+  /// since VF0 is {0,0,0,1} and cannot be used for all-zeros.
+  bool isZeroVectorLoad(const MachineInstr &MI) const {
+    // LQC2 from constant pool is the common pattern for zero vector init
+    if (MI.getOpcode() != Mips::LQC2)
+      return false;
+    // Check if loading from constant pool (the MachineMemOperand will indicate)
+    for (const MachineMemOperand *MMO : MI.memoperands()) {
+      if (MMO->getPseudoValue() &&
+          MMO->getPseudoValue()->kind() == PseudoSourceValue::ConstantPool)
+        return true;
+    }
+    return false;
+  }
+
   /// Represents a broadcast multiply leaf in the reduction tree
   struct BroadcastMulLeaf {
     MachineInstr *VMul;      // The VMULbc instruction
@@ -218,14 +234,35 @@ bool MipsR5900VU0AccChain::buildChain(MachineInstr &Root,
       if (!Def1 || !Def2)
         return false;
 
-      // Both operands must be VMULbc or VADD
-      if (!isVMULbc(*Def1) && !isVADD(*Def1))
-        return false;
-      if (!isVMULbc(*Def2) && !isVADD(*Def2))
+      // Check if either operand is a zero vector load from constant pool.
+      // This happens at the start of a sum: result = {0,0,0,0} + (m0 * v.x).
+      // In this case, we only need to follow the non-zero operand.
+      bool Def1IsZero = isZeroVectorLoad(*Def1);
+      bool Def2IsZero = isZeroVectorLoad(*Def2);
+
+      // If both are zero loads, not useful
+      if (Def1IsZero && Def2IsZero)
         return false;
 
-      Worklist.push_back(Def1);
-      Worklist.push_back(Def2);
+      // If one is zero, only follow the other operand
+      if (Def1IsZero) {
+        if (!isVMULbc(*Def2) && !isVADD(*Def2))
+          return false;
+        Worklist.push_back(Def2);
+      } else if (Def2IsZero) {
+        if (!isVMULbc(*Def1) && !isVADD(*Def1))
+          return false;
+        Worklist.push_back(Def1);
+      } else {
+        // Both operands must be VMULbc or VADD
+        if (!isVMULbc(*Def1) && !isVADD(*Def1))
+          return false;
+        if (!isVMULbc(*Def2) && !isVADD(*Def2))
+          return false;
+
+        Worklist.push_back(Def1);
+        Worklist.push_back(Def2);
+      }
     } else {
       return false;
     }
