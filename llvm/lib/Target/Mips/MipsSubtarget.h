@@ -150,6 +150,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // HasMips4_32r2 - Has the subset of MIPS-IV present in MIPS32r2
   bool HasMips4_32r2;
 
+  // HasMips4_r5900 - Has the R5900 subset of MIPS-IV (MOVN/MOVZ, not MOVT/MOVF)
+  bool HasMips4_r5900 = false;
+
   // HasMips5_32r2 - Has the subset of MIPS-V present in MIPS32r2
   bool HasMips5_32r2;
 
@@ -279,6 +282,7 @@ public:
   bool hasMips5() const { return MipsArchVersion >= Mips5; }
   bool hasMips4_32() const { return HasMips4_32; }
   bool hasMips4_32r2() const { return HasMips4_32r2; }
+  bool hasMips4_r5900() const { return HasMips4_r5900; }
   bool hasMips32() const {
     return (MipsArchVersion >= Mips32 && MipsArchVersion < Mips32Max) ||
            hasMips64();

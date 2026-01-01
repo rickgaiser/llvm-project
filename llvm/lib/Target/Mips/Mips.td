@@ -99,6 +99,8 @@ def FeatureMips3       : SubtargetFeature<"mips3", "MipsArchVersion", "Mips3",
 def FeatureMips4_32    : SubtargetFeature<"mips4_32", "HasMips4_32", "true",
                                 "Subset of MIPS-IV that is also in MIPS32 "
                                 "[highly experimental]">;
+def FeatureMips4_r5900 : SubtargetFeature<"mips4_r5900", "HasMips4_r5900", "true",
+                                "R5900 subset of MIPS-IV">;
 def FeatureMips4_32r2  : SubtargetFeature<"mips4_32r2", "HasMips4_32r2", "true",
                                 "Subset of MIPS-IV that is also in MIPS32r2 "
                                 "[highly experimental]">;
@@ -190,7 +192,8 @@ def FeatureCnMipsP : SubtargetFeature<"cnmipsp", "HasCnMipsP",
 // Note: R5900 has no LL/SC (atomic), no FPU double precision
 def FeatureR5900  : SubtargetFeature<"r5900", "IsR5900", "true",
                                      "R5900 (PS2 Emotion Engine) Support",
-                                     [FeatureMips3, FeatureSingleFloat]>;
+                                     [FeatureMips3, FeatureMips4_r5900,
+                                      FeatureSingleFloat]>;
 
 def FeatureVU0 : SubtargetFeature<"vu0", "HasVU0", "true",
                                   "Enable VU0 SIMD operations (R5900)",

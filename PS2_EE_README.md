@@ -10,6 +10,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 - **MMI (Multimedia Instructions)**: 128-bit SIMD integer operations
 - **COP1 (FPU)**: Single-precision only, with accumulator and extra operations
 - **COP2 (VU0)**: 128-bit vector floating-point unit (4x32-bit floats)
+- **MIPS IV Subset**: Supports MOVN, MOVZ, PREF, and FPU conditional moves
 - **No LL/SC**: Load-Linked/Store-Conditional atomics are not available
 - **No CLZ/CLO**: Count Leading Zeros/Ones instructions are not available
 - **No DMULT/DDIV**: 64-bit multiply/divide instructions are not available (use 32-bit ops)
@@ -23,6 +24,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | `-mcpu=r5900` | **Implemented** | `FeatureR5900` in Mips.td |
 | No LL/SC Atomics | **Implemented** | Disabled via `setMaxAtomicSizeInBitsSupported(0)` |
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
+| MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
 | 128-bit Registers | Not Implemented | |
 | MMI Instructions | Not Implemented | |
 | VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
@@ -104,6 +106,29 @@ Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) an
 | `V8HI` | 128-bit | 8 x 16-bit int | GP (MMI) | Not Implemented |
 | `V4SI` | 128-bit | 4 x 32-bit int | GP (MMI) | Not Implemented |
 | `V2DI` | 128-bit | 2 x 64-bit int | GP (MMI) | Not Implemented |
+
+---
+
+## MIPS IV Subset Instructions
+
+The R5900 supports a subset of MIPS IV instructions. These are enabled via `FeatureMips4_r5900` in LLVM.
+
+### Conditional Moves
+
+| Instruction | Description | LLVM Status |
+|-------------|-------------|-------------|
+| `MOVN` | Move if Not Zero | **Implemented** |
+| `MOVZ` | Move if Zero | **Implemented** |
+| `MOVN.S` | FP Move if Not Zero (single) | **Implemented** |
+| `MOVZ.S` | FP Move if Zero (single) | **Implemented** |
+
+### Prefetch
+
+| Instruction | Description | LLVM Status |
+|-------------|-------------|-------------|
+| `PREF` | Prefetch | **Implemented** |
+
+Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP condition flag conditional moves) or `PREFX` (indexed prefetch).
 
 ---
 
