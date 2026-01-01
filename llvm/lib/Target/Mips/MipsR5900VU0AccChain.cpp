@@ -269,7 +269,35 @@ bool MipsR5900VU0AccChain::buildChain(MachineInstr &Root,
   }
 
   // Need at least 2 broadcast multiplies to benefit from ACC
-  return Leaves.size() >= 2;
+  if (Leaves.size() < 2)
+    return false;
+
+  // Verify that all intermediate results are only used within the chain.
+  // If any intermediate value is used outside the chain, we cannot safely
+  // delete the original instructions.
+  for (MachineInstr *MI : ChainInstrs) {
+    // Skip the root - its result is what we're replacing
+    if (MI == &Root)
+      continue;
+
+    // Check all defs of this instruction
+    for (const MachineOperand &MO : MI->defs()) {
+      if (!MO.isReg() || !MO.getReg().isVirtual())
+        continue;
+
+      Register DefReg = MO.getReg();
+      for (MachineInstr &Use : MRI->use_instructions(DefReg)) {
+        // All uses must be within the chain
+        if (!ChainInstrs.count(&Use)) {
+          LLVM_DEBUG(dbgs() << "R5900 VU0 ACC: Cannot optimize - intermediate "
+                            << "value has uses outside chain\n");
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
 }
 
 void MipsR5900VU0AccChain::transformChain(MachineBasicBlock &MBB,
