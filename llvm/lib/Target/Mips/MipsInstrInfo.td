@@ -2276,6 +2276,14 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def WAIT : MMRel, StdMMR6Rel, WAIT_FT<"wait">, WAIT_FM, INSN_MIPS3_32;
 }
 
+// R5900 Enable/Disable Interrupt instructions (no operands)
+let Predicates = [HasR5900] in {
+  let DecoderNamespace = "R5900" in {
+    def EI_R5900 : ER_FT<"ei", II_EI>, EI_FM_R5900<0x38>;
+    def DI_R5900 : ER_FT<"di", II_DI>, EI_FM_R5900<0x39>;
+  }
+}
+
 let AdditionalPredicates = [NotInMicroMips] in {
 /// Load-linked, Store-conditional
 def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;

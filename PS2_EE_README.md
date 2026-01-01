@@ -311,6 +311,17 @@ Note: Pipeline 1 instructions (MULT1, MADD1, etc.) are available in inline assem
 
 ---
 
+## 3.5 COP0 (System Control) - R5900 Specific
+
+| Instruction | Description | LLVM Status |
+|-------------|-------------|-------------|
+| `EI` | Enable Interrupts | **Implemented** |
+| `DI` | Disable Interrupts | **Implemented** |
+
+Note: R5900 has its own `EI`/`DI` instructions with different encodings than MIPS32R2. The R5900 versions are no-operand instructions (`0x42000038` for EI, `0x42000039` for DI), while MIPS32R2 uses a different format with an optional rt register.
+
+---
+
 ## 4. COP1 (FPU) - Floating-Point Unit
 
 R5900 FPU is single-precision only with additional operations. Double precision is NOT supported.

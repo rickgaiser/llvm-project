@@ -660,6 +660,20 @@ class EI_FM<bits<1> sc> : StdArch
 }
 
 //===----------------------------------------------------------------------===//
+//  R5900 Enable/disable interrupt instruction format <COP0|CO|0|funct>
+//  EI: 0x42000038, DI: 0x42000039
+//===----------------------------------------------------------------------===//
+
+class EI_FM_R5900<bits<6> funct> : StdArch
+{
+  bits<32> Inst;
+  let Inst{31-26} = 0x10;  // COP0
+  let Inst{25}    = 1;     // CO bit
+  let Inst{24-6}  = 0;
+  let Inst{5-0}   = funct;
+}
+
+//===----------------------------------------------------------------------===//
 //
 //  FLOATING POINT INSTRUCTION FORMATS
 //
