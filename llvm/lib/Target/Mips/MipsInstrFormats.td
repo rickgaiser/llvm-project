@@ -1037,6 +1037,78 @@ class R5900_MMI_2R_FM<bits<6> funct> : StdArch {
   let Inst{5-0}   = funct;
 }
 
+// R5900 MMI PMFHL format: rd = HI/LO combined
+// | 31-26  | 25-16 | 15-11 | 10-6 | 5-0    |
+// | MMI    | 0     | rd    | fmt  | PMFHL  |
+// | 011100 | 0     | rd    | fmt  | 110000 |
+class R5900_MMI_PMFHL_FM<bits<5> fmt> : StdArch {
+  bits<5> rd;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-16} = 0;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = fmt;
+  let Inst{5-0}   = 0b110000; // PMFHL function code
+}
+
+// R5900 MMI PMTHL format: HI/LO = rs (split word units)
+// | 31-26  | 25-21 | 20-11 | 10-6 | 5-0    |
+// | MMI    | rs    | 0     | fmt  | PMTHL  |
+// | 011100 | rs    | 0     | fmt  | 110001 |
+class R5900_MMI_PMTHL_FM<bits<5> fmt> : StdArch {
+  bits<5> rs;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-11} = 0;
+  let Inst{10-6}  = fmt;
+  let Inst{5-0}   = 0b110001; // PMTHL function code
+}
+
+// R5900 MMI2 format: 3-register parallel multiply instructions
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | rd    | funct | MMI2   |
+// | 011100 | rs    | rt    | rd    | func  | 001001 |
+// Used for: PMULTW, PMADDW, PMSUBW, PMULTUW, PMADDUW, etc.
+class R5900_MMI2_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001001; // MMI2 function code
+}
+
+// R5900 MMI3 format: 3-register parallel multiply instructions
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | rd    | funct | MMI3   |
+// | 011100 | rs    | rt    | rd    | func  | 101001 |
+// Used for: PMULTUW, PMADDUW, etc.
+class R5900_MMI3_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101001; // MMI3 function code
+}
+
 //===----------------------------------------------------------------------===//
 // R5900 VU0 (COP2) Instruction Formats - Macro Mode
 //===----------------------------------------------------------------------===//

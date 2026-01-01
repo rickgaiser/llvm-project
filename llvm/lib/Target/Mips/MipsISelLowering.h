@@ -140,6 +140,15 @@ class TargetRegisterClass;
       MSub,
       MSubu,
 
+      // R5900 Parallel Multiply nodes - return i64 directly in GPR
+      // These are used for widening multiply chains: PMULTW + PMADDW/PMSUBW
+      // Result goes directly to destination register, no MFHI/MFLO needed.
+      PMult,   // PMULTW: rd = rs * rt (signed 32x32->64)
+      PMultu,  // PMULTUW: rd = rs * rt (unsigned 32x32->64)
+      PMAdd,   // PMADDW: rd = acc + rs * rt (signed, acc in HI:LO)
+      PMAddu,  // PMADDUW: rd = acc + rs * rt (unsigned, acc in HI:LO)
+      PMSub,   // PMSUBW: rd = acc - rs * rt (signed, acc in HI:LO)
+
       // DivRem(u)
       DivRem,
       DivRemU,

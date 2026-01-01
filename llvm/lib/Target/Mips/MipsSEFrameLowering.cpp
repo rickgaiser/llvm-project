@@ -76,6 +76,8 @@ private:
   void expandLoadACC(MachineBasicBlock &MBB, Iter I, unsigned RegSize);
   void expandStoreACC(MachineBasicBlock &MBB, Iter I, unsigned MFHiOpc,
                       unsigned MFLoOpc, unsigned RegSize);
+  void expandLoadACC_R5900(MachineBasicBlock &MBB, Iter I);
+  void expandStoreACC_R5900(MachineBasicBlock &MBB, Iter I);
   bool expandCopy(MachineBasicBlock &MBB, Iter I);
   bool expandCopyACC(MachineBasicBlock &MBB, Iter I, unsigned MFHiOpc,
                      unsigned MFLoOpc);
@@ -119,6 +121,12 @@ bool ExpandPseudo::expandInstr(MachineBasicBlock &MBB, Iter I) {
     expandStoreCCond(MBB, I);
     break;
   case Mips::LOAD_ACC64:
+    if (Subtarget.isR5900()) {
+      expandLoadACC_R5900(MBB, I);
+      break;
+    }
+    expandLoadACC(MBB, I, 4);
+    break;
   case Mips::LOAD_ACC64DSP:
     expandLoadACC(MBB, I, 4);
     break;
@@ -126,6 +134,10 @@ bool ExpandPseudo::expandInstr(MachineBasicBlock &MBB, Iter I) {
     expandLoadACC(MBB, I, 8);
     break;
   case Mips::STORE_ACC64:
+    if (Subtarget.isR5900()) {
+      expandStoreACC_R5900(MBB, I);
+      break;
+    }
     expandStoreACC(MBB, I, Mips::PseudoMFHI, Mips::PseudoMFLO, 4);
     break;
   case Mips::STORE_ACC64DSP:
@@ -237,6 +249,42 @@ void ExpandPseudo::expandStoreACC(MachineBasicBlock &MBB, Iter I,
   TII.storeRegToStack(MBB, I, VR0, true, FI, RC, 0);
   BuildMI(MBB, I, DL, TII.get(MFHiOpc), VR1).addReg(Src, SrcKill);
   TII.storeRegToStack(MBB, I, VR1, true, FI, RC, RegSize);
+}
+
+void ExpandPseudo::expandStoreACC_R5900(MachineBasicBlock &MBB, Iter I) {
+  // R5900 optimization: use PMFHL.LW to extract HI:LO as a single GPR64,
+  // then store with a single 64-bit store (SD).
+  //   pmfhl.lw $vr
+  //   sd $vr, FI
+
+  assert(I->getOperand(0).isReg() && I->getOperand(1).isFI());
+
+  const TargetRegisterClass *RC = &Mips::GPR64RegClass;
+  Register VR = MRI.createVirtualRegister(RC);
+  Register FI = I->getOperand(1).getIndex();
+  DebugLoc DL = I->getDebugLoc();
+
+  // PMFHL.LW extracts HI:LO into a GPR64: rd[31:0]=LO, rd[63:32]=HI
+  BuildMI(MBB, I, DL, TII.get(Mips::PMFHL_LW), VR);
+  TII.storeRegToStack(MBB, I, VR, true, FI, RC, 0);
+}
+
+void ExpandPseudo::expandLoadACC_R5900(MachineBasicBlock &MBB, Iter I) {
+  // R5900 optimization: load a single GPR64 value and use PMTHL.LW
+  // to restore HI:LO in one instruction.
+  //   ld $vr, FI
+  //   pmthl.lw $vr
+
+  assert(I->getOperand(0).isReg() && I->getOperand(1).isFI());
+
+  const TargetRegisterClass *RC = &Mips::GPR64RegClass;
+  Register VR = MRI.createVirtualRegister(RC);
+  Register FI = I->getOperand(1).getIndex();
+  DebugLoc DL = I->getDebugLoc();
+
+  TII.loadRegFromStack(MBB, I, VR, FI, RC, 0);
+  // PMTHL.LW moves GPR64 to HI:LO: LO[31:0]=rs[31:0], HI[31:0]=rs[63:32]
+  BuildMI(MBB, I, DL, TII.get(Mips::PMTHL_LW)).addReg(VR, RegState::Kill);
 }
 
 bool ExpandPseudo::expandCopy(MachineBasicBlock &MBB, Iter I) {

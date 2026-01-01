@@ -218,6 +218,11 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::MAddu:             return "MipsISD::MAddu";
   case MipsISD::MSub:              return "MipsISD::MSub";
   case MipsISD::MSubu:             return "MipsISD::MSubu";
+  case MipsISD::PMult:             return "MipsISD::PMult";
+  case MipsISD::PMultu:            return "MipsISD::PMultu";
+  case MipsISD::PMAdd:             return "MipsISD::PMAdd";
+  case MipsISD::PMAddu:            return "MipsISD::PMAddu";
+  case MipsISD::PMSub:             return "MipsISD::PMSub";
   case MipsISD::DivRem:            return "MipsISD::DivRem";
   case MipsISD::DivRemU:           return "MipsISD::DivRemU";
   case MipsISD::DivRem16:          return "MipsISD::DivRem16";
@@ -1074,6 +1079,222 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
   }
 }
 
+/// Helper to check if a value is a widening multiply (sext/zext i32 * sext/zext i32)
+/// Also handles AssertSext/AssertZext which represent values already extended
+/// by the caller (e.g., MIPS64 ABI signext parameters).
+static bool isWideningMul(SDValue V, bool &IsSigned, SDValue &LHS, SDValue &RHS) {
+  if (V.getOpcode() != ISD::MUL)
+    return false;
+
+  SDValue Op0 = V.getOperand(0);
+  SDValue Op1 = V.getOperand(1);
+
+  // Check for explicit SIGN_EXTEND/ZERO_EXTEND from i32
+  bool Op0Signed = Op0.getOpcode() == ISD::SIGN_EXTEND;
+  bool Op0Unsigned = Op0.getOpcode() == ISD::ZERO_EXTEND;
+  bool Op1Signed = Op1.getOpcode() == ISD::SIGN_EXTEND;
+  bool Op1Unsigned = Op1.getOpcode() == ISD::ZERO_EXTEND;
+
+  // Also check for AssertSext/AssertZext from i32
+  // These are used when the value is already sign/zero-extended by the caller
+  // (e.g., MIPS64 ABI signext parameters arrive as i64 with AssertSext hint)
+  if (Op0.getOpcode() == ISD::AssertSext &&
+      cast<VTSDNode>(Op0.getOperand(1))->getVT() == MVT::i32)
+    Op0Signed = true;
+  if (Op0.getOpcode() == ISD::AssertZext &&
+      cast<VTSDNode>(Op0.getOperand(1))->getVT() == MVT::i32)
+    Op0Unsigned = true;
+  if (Op1.getOpcode() == ISD::AssertSext &&
+      cast<VTSDNode>(Op1.getOperand(1))->getVT() == MVT::i32)
+    Op1Signed = true;
+  if (Op1.getOpcode() == ISD::AssertZext &&
+      cast<VTSDNode>(Op1.getOperand(1))->getVT() == MVT::i32)
+    Op1Unsigned = true;
+
+  // Both must be same type of extension from i32
+  if (Op0Signed && Op1Signed) {
+    // For explicit extends, source is operand 0
+    // For AssertSext/AssertZext, we need to truncate the i64 value to i32
+    if (Op0.getOpcode() == ISD::SIGN_EXTEND) {
+      if (Op0.getOperand(0).getValueType() != MVT::i32)
+        return false;
+      LHS = Op0.getOperand(0);
+    } else {
+      // AssertSext: value is already i64, we need i32 operand
+      // Return the AssertSext node itself; we'll truncate in the combine
+      LHS = Op0;
+    }
+    if (Op1.getOpcode() == ISD::SIGN_EXTEND) {
+      if (Op1.getOperand(0).getValueType() != MVT::i32)
+        return false;
+      RHS = Op1.getOperand(0);
+    } else {
+      RHS = Op1;
+    }
+    IsSigned = true;
+    return true;
+  }
+  if (Op0Unsigned && Op1Unsigned) {
+    if (Op0.getOpcode() == ISD::ZERO_EXTEND) {
+      if (Op0.getOperand(0).getValueType() != MVT::i32)
+        return false;
+      LHS = Op0.getOperand(0);
+    } else {
+      LHS = Op0;
+    }
+    if (Op1.getOpcode() == ISD::ZERO_EXTEND) {
+      if (Op1.getOperand(0).getValueType() != MVT::i32)
+        return false;
+      RHS = Op1.getOperand(0);
+    } else {
+      RHS = Op1;
+    }
+    IsSigned = false;
+    return true;
+  }
+  return false;
+}
+
+/// Multiply operands with sign information for PMADDW/PMSUBW chain
+struct WideningMulOp {
+  SDValue LHS;
+  SDValue RHS;
+  bool IsSubtract; // true = subtract this product, false = add
+};
+
+/// Recursively collect widening multiplies from an add/sub tree
+/// Negate parameter tracks whether we're in a subtracted subtree
+static bool collectWideningMuls(SDValue V, bool &IsSigned,
+                                SmallVectorImpl<WideningMulOp> &Muls,
+                                SmallPtrSetImpl<SDNode *> &Visited,
+                                bool Negate = false) {
+  // Avoid infinite loops
+  if (!Visited.insert(V.getNode()).second)
+    return true;
+
+  SDValue LHS, RHS;
+  bool MulSigned;
+  if (isWideningMul(V, MulSigned, LHS, RHS)) {
+    // First multiply sets signedness, others must match
+    if (Muls.empty()) {
+      IsSigned = MulSigned;
+    } else if (IsSigned != MulSigned) {
+      return false; // Mixed signed/unsigned
+    }
+    Muls.push_back({LHS, RHS, Negate});
+    return true;
+  }
+
+  if (V.getOpcode() == ISD::ADD) {
+    return collectWideningMuls(V.getOperand(0), IsSigned, Muls, Visited, Negate) &&
+           collectWideningMuls(V.getOperand(1), IsSigned, Muls, Visited, Negate);
+  }
+
+  if (V.getOpcode() == ISD::SUB) {
+    // For (A - B): A keeps current negate state, B gets flipped
+    // Note: Only signed has PMSUBW, so reject unsigned subtractions
+    return collectWideningMuls(V.getOperand(0), IsSigned, Muls, Visited, Negate) &&
+           collectWideningMuls(V.getOperand(1), IsSigned, Muls, Visited, !Negate);
+  }
+
+  return false;
+}
+
+/// R5900 widening multiply-add/sub chain combine
+/// Transforms: (add (sext i32 a to i64) * (sext i32 b to i64),
+///                  (sext i32 c to i64) * (sext i32 d to i64))
+/// To: PMULTW + PMADDW chain using HI:LO accumulator
+/// Also handles subtract patterns like (a*b) - (c*d) using PMSUBW.
+/// Also handles AssertSext patterns from signext function parameters.
+static SDValue performR5900WideningMADDCombine(SDNode *N, SelectionDAG &DAG,
+                                               const MipsSubtarget &Subtarget) {
+  // Only handle i64 adds/subs
+  if (N->getValueType(0) != MVT::i64)
+    return SDValue();
+
+  // Collect all widening multiplies in the add/sub tree
+  SmallVector<WideningMulOp, 8> Muls;
+  SmallPtrSet<SDNode *, 8> Visited;
+  bool IsSigned = false;
+
+  if (!collectWideningMuls(SDValue(N, 0), IsSigned, Muls, Visited))
+    return SDValue();
+
+  // Need at least 2 multiplies to benefit from chaining
+  if (Muls.size() < 2)
+    return SDValue();
+
+  // Check if any multiply is subtracted - only works for signed (PMSUBW exists)
+  bool HasSubtract = false;
+  for (const auto &Mul : Muls) {
+    if (Mul.IsSubtract) {
+      HasSubtract = true;
+      break;
+    }
+  }
+
+  // PMSUBW only exists for signed, reject unsigned with subtractions
+  if (HasSubtract && !IsSigned)
+    return SDValue();
+
+  // First multiply must not be subtracted (no "negate PMULTW" instruction)
+  // Reorder to put a non-subtracted multiply first if needed
+  if (Muls[0].IsSubtract) {
+    // Find first non-subtracted multiply and swap
+    for (size_t i = 1; i < Muls.size(); ++i) {
+      if (!Muls[i].IsSubtract) {
+        std::swap(Muls[0], Muls[i]);
+        break;
+      }
+    }
+    // If all are subtracted, we can't optimize
+    if (Muls[0].IsSubtract)
+      return SDValue();
+  }
+
+  SDLoc DL(N);
+
+  // Use PMULTW/PMADDW/PMSUBW which write result directly to rd.
+  // PMULTW rd, rs, rt: rd[63:0] = rs[31:0] * rt[31:0], also writes HI:LO
+  // PMADDW rd, rs, rt: rd[63:0] = HI:LO + rs[31:0] * rt[31:0]
+  // PMSUBW rd, rs, rt: rd[63:0] = HI:LO - rs[31:0] * rt[31:0]
+  //
+  // Chain: PMULTW + N×(PMADDW|PMSUBW), last instruction's rd is our result.
+
+  unsigned PMultOpc = IsSigned ? MipsISD::PMult : MipsISD::PMultu;
+  unsigned PMAddOpc = IsSigned ? MipsISD::PMAdd : MipsISD::PMAddu;
+  unsigned PMSubOpc = MipsISD::PMSub; // Only signed exists
+
+  // Helper to ensure operand is i64 (extend if needed).
+  // PMULTW/PMADDW take 64-bit GPRs but only use lower 32 bits for multiply.
+  auto getI64Operand = [&DAG, &DL](SDValue V) -> SDValue {
+    if (V.getValueType() == MVT::i32)
+      return DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, V);
+    return V;
+  };
+
+  // First multiply: PMULTW returns i64 directly, also outputs glue
+  SDValue LHS0 = getI64Operand(Muls[0].LHS);
+  SDValue RHS0 = getI64Operand(Muls[0].RHS);
+  SDVTList VTs = DAG.getVTList(MVT::i64, MVT::Glue);
+  SDValue Result = DAG.getNode(PMultOpc, DL, VTs, LHS0, RHS0);
+  SDValue Glue = Result.getValue(1);
+
+  // Subsequent multiplies: PMADDW/PMSUBW accumulate and return i64
+  // Ordering ensured by glue chain from previous PMult/PMAdd/PMSub.
+  for (size_t i = 1; i < Muls.size(); ++i) {
+    SDValue LHS = getI64Operand(Muls[i].LHS);
+    SDValue RHS = getI64Operand(Muls[i].RHS);
+    unsigned Opc = Muls[i].IsSubtract ? PMSubOpc : PMAddOpc;
+    SDValue Ops[] = {LHS, RHS, Glue};
+    Result = DAG.getNode(Opc, DL, VTs, Ops);
+    Glue = Result.getValue(1);
+  }
+
+  // Result is already i64, no MFHILO extraction needed!
+  return Result;
+}
+
 static SDValue performMADD_MSUBCombine(SDNode *ROOTNode, SelectionDAG &CurDAG,
                                        const MipsSubtarget &Subtarget) {
   // ROOTNode must have a multiplication as an operand for the match to be
@@ -1174,6 +1395,14 @@ static SDValue performSUBCombine(SDNode *N, SelectionDAG &DAG,
                                  const MipsSubtarget &Subtarget) {
   // (sub v0 (mul v1, v2)) => (msub v1, v2, v0)
   if (DCI.isBeforeLegalizeOps()) {
+    // R5900: Optimize widening multiply-sub chains (32x32->64 with subtraction)
+    // This handles patterns like (a*b) - (c*d) with i64 result
+    if (Subtarget.isR5900() && N->getValueType(0) == MVT::i64) {
+      SDValue Result = performR5900WideningMADDCombine(N, DAG, Subtarget);
+      if (Result)
+        return Result;
+    }
+
     if (Subtarget.hasMips32() && !Subtarget.hasMips32r6() &&
         !Subtarget.inMips16Mode() && N->getValueType(0) == MVT::i64)
       return performMADD_MSUBCombine(N, DAG, Subtarget);
@@ -1189,6 +1418,14 @@ static SDValue performADDCombine(SDNode *N, SelectionDAG &DAG,
                                  const MipsSubtarget &Subtarget) {
   // (add v0 (mul v1, v2)) => (madd v1, v2, v0)
   if (DCI.isBeforeLegalizeOps()) {
+    // R5900: Optimize widening multiply-add chains (32x32->64 accumulation)
+    // This handles patterns like (a*b) + (c*d) + (e*f) with i64 result
+    if (Subtarget.isR5900() && N->getValueType(0) == MVT::i64) {
+      SDValue Result = performR5900WideningMADDCombine(N, DAG, Subtarget);
+      if (Result)
+        return Result;
+    }
+
     if (Subtarget.hasMips32() && !Subtarget.hasMips32r6() &&
         !Subtarget.inMips16Mode() && N->getValueType(0) == MVT::i64)
       return performMADD_MSUBCombine(N, DAG, Subtarget);

@@ -146,13 +146,13 @@ Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) an
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PMULTW` | Parallel Multiply Word | Not Implemented |
-| `PMULTUW` | Parallel Multiply Unsigned Word | Not Implemented |
+| `PMULTW` | Parallel Multiply Word | **Implemented** (auto-selected for widening mul chains) |
+| `PMULTUW` | Parallel Multiply Unsigned Word | **Implemented** (auto-selected for widening mul chains) |
 | `PDIVW` | Parallel Divide Word | Not Implemented |
 | `PDIVUW` | Parallel Divide Unsigned Word | Not Implemented |
-| `PMADDW` | Parallel Multiply-Add Word | Not Implemented |
-| `PMADDUW` | Parallel Multiply-Add Unsigned Word | Not Implemented |
-| `PMSUBW` | Parallel Multiply-Subtract Word | Not Implemented |
+| `PMADDW` | Parallel Multiply-Add Word | **Implemented** (auto-selected for widening mul chains) |
+| `PMADDUW` | Parallel Multiply-Add Unsigned Word | **Implemented** (auto-selected for widening mul chains) |
+| `PMSUBW` | Parallel Multiply-Subtract Word | **Implemented** (auto-selected for widening mul-sub chains) |
 | `PMULTH` | Parallel Multiply Halfword | Not Implemented |
 | `PMADDH` | Parallel Multiply-Add Halfword | Not Implemented |
 | `PMSUBH` | Parallel Multiply-Subtract Halfword | Not Implemented |
@@ -163,12 +163,12 @@ Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) an
 | `PMFLO` | Parallel Move From LO Register | Not Implemented |
 | `PMTHI` | Parallel Move To HI Register | Not Implemented |
 | `PMTLO` | Parallel Move To LO Register | Not Implemented |
-| `PMFHL.LW` | Parallel Move From HI/LO (Low Word) | Not Implemented |
+| `PMFHL.LW` | Parallel Move From HI/LO (Low Word) | **Implemented** (used for ACC64 spill to stack) |
 | `PMFHL.UW` | Parallel Move From HI/LO (Upper Word) | Not Implemented |
 | `PMFHL.SLW` | Parallel Move From HI/LO (Signed Low Word) | Not Implemented |
 | `PMFHL.LH` | Parallel Move From HI/LO (Low Halfword) | Not Implemented |
 | `PMFHL.SH` | Parallel Move From HI/LO (Signed Halfword) | Not Implemented |
-| `PMTHL.LW` | Parallel Move To HI/LO (Low Word) | Not Implemented |
+| `PMTHL.LW` | Parallel Move To HI/LO (Low Word) | **Implemented** (used for ACC64 restore from stack) |
 
 ### 2.3 Shift Operations
 
@@ -263,11 +263,9 @@ R5900 has two multiply/divide units (MAC0/Pipeline 0 and MAC1/Pipeline 1) with d
 | `DIV` | Divide Word (signed) | **Implemented** (MIPS) |
 | `DIVU` | Divide Word (unsigned) | **Implemented** (MIPS) |
 | `MADD rd,rs,rt` | Multiply-Add (signed) | **Implemented + Auto-selected** |
-| `MADDU rd,rs,rt` | Multiply-Add (unsigned) | **Implemented** |
+| `MADDU rd,rs,rt` | Multiply-Add (unsigned) | **Implemented + Auto-selected** |
 
-Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt` which writes low result to `$rd` in addition to HI:LO. The compiler automatically:
-- Uses 3-operand MULT for i32 multiplies (saves `mflo` instruction)
-- Uses MULT + MADD chain for `(a*b) + (c*d)` patterns (saves one instruction)
+Note: R5900 extends MULT/MULTU/MADD/MADDU to 3-operand form: `mult $rd, $rs, $rt` which writes low result to `$rd` in addition to HI:LO. The 2-operand form `mult $rs, $rt` is equivalent to 3-operand with `$zero` as destination.
 
 ### Pipeline 1 (MAC1) - R5900 Specific
 
@@ -510,8 +508,12 @@ The following custom passes optimize code generation for R5900's unique features
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        LLVM Pass Pipeline                           │
 ├─────────────────────────────────────────────────────────────────────┤
+│  DAG Combine                                                        │
+│    └─ Widening MADD/MSUB: (sext a*b)±(sext c*d) → PMULTW+PMADDW/SUB │
+│       Result is 64-bit GPR, no HI:LO extraction needed              │
+├─────────────────────────────────────────────────────────────────────┤
 │  Instruction Selection                                              │
-│    └─ PseudoR5900MulMulAdd: (a*b)+(c*d) → MULT + MADD chain         │
+│    └─ PseudoR5900MulMulAdd: (a*b)+(c*d) → MULT + MADD chain (i32)   │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Pre-Register Allocation                                            │
 │    └─ MipsR5900FPUAccChain: FP mul-add → MULA.S/MADDA.S sequences   │
@@ -520,6 +522,9 @@ The following custom passes optimize code generation for R5900's unique features
 ├─────────────────────────────────────────────────────────────────────┤
 │  Post-RA MachineScheduler (enabled by default)                      │
 │    └─ Interleaves loads and multiplies for optimal dual-issue       │
+├─────────────────────────────────────────────────────────────────────┤
+│  Post-RA Pseudo Expansion                                           │
+│    └─ ACC64 spill: PMFHL.LW + SD, ACC64 restore: LD + PMTHL.LW      │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Pre-Emit                                                           │
 │    └─ Delay slot filler, branch expansion                           │

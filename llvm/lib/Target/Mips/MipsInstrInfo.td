@@ -121,6 +121,19 @@ def MipsMAddu : SDNode<"MipsISD::MAddu", SDT_MipsMAddMSub>;
 def MipsMSub  : SDNode<"MipsISD::MSub", SDT_MipsMAddMSub>;
 def MipsMSubu : SDNode<"MipsISD::MSubu", SDT_MipsMAddMSub>;
 
+// R5900 Parallel Mult/Add nodes - return i64 directly to GPR
+// These operate on 64-bit registers but only use lower 32 bits for multiply.
+// PMult/PMultu: rd[63:0] = rs[31:0] * rt[31:0] (widening 32x32->64)
+// PMAdd/PMAddu: rd[63:0] = HI:LO + rs[31:0] * rt[31:0] (widening multiply-add)
+// Ordering ensured by glue: PMult outputs glue, PMAdd inputs/outputs glue.
+def SDT_PMult : SDTypeProfile<1, 2, [SDTCisVT<0, i64>, SDTCisVT<1, i64>,
+                                     SDTCisSameAs<1, 2>]>;
+def MipsPMult  : SDNode<"MipsISD::PMult", SDT_PMult, [SDNPOutGlue]>;
+def MipsPMultu : SDNode<"MipsISD::PMultu", SDT_PMult, [SDNPOutGlue]>;
+def MipsPMAdd  : SDNode<"MipsISD::PMAdd", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
+def MipsPMAddu : SDNode<"MipsISD::PMAddu", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
+def MipsPMSub  : SDNode<"MipsISD::PMSub", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
+
 // DivRem(u) nodes
 def MipsDivRem    : SDNode<"MipsISD::DivRem", SDT_MipsMultDiv>;
 def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsMultDiv>;
@@ -3542,6 +3555,89 @@ def MADDU1 : InstSE<(outs GPR32Opnd:$rd),
                     (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                     "maddu1\t$rd, $rs, $rt", [], II_MADD, FrmR>,
              R5900_MMI_3R_FM<0x21>;
+
+//===----------------------------------------------------------------------===//
+// PMFHL - Parallel Move From HI/LO Register
+// Combines HI and LO into a single register in one instruction.
+//===----------------------------------------------------------------------===//
+
+// PMFHL.LW - Move HI:LO to GPR64 in word units
+// rd[31:0] = LO[31:0], rd[63:32] = HI[31:0]
+// This is perfect for extracting 64-bit result from 32x32 multiply.
+let Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMFHL_LW : InstSE<(outs GPR64Opnd:$rd), (ins),
+                      "pmfhl.lw\t$rd", [], II_MFHI_MFLO, FrmR>,
+               R5900_MMI_PMFHL_FM<0b00000>;
+
+// PMTHL.LW - Move GPR64 to HI:LO in word units
+// LO[31:0] = rs[31:0], HI[31:0] = rs[63:32]
+// This is the inverse of PMFHL.LW, used for restoring HI:LO from a GPR64.
+let Defs = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMTHL_LW : InstSE<(outs), (ins GPR64Opnd:$rs),
+                      "pmthl.lw\t$rs", [], II_MTHI_MTLO, FrmR>,
+               R5900_MMI_PMTHL_FM<0b00000>;
+
+//===----------------------------------------------------------------------===//
+// PMULTW/PMADDW - Parallel Multiply/Multiply-Add Word
+// These instructions perform 32x32->64 widening multiply with result directly
+// in GPR64, eliminating the need for mfhi/mflo or pmfhl.lw extraction.
+//
+// PMULTW rd, rs, rt:
+//   - Computes: rd[63:0] = sign_extend(rs[31:0]) * sign_extend(rt[31:0])
+//   - Also writes to LO[63:0] (sign-extended) and HI (for upper lane, unused)
+//   - Key advantage: 64-bit result directly in rd, no extraction needed
+//
+// PMADDW rd, rs, rt:
+//   - Computes: rd[63:0] = LO[63:0] + sign_extend(rs[31:0]) * sign_extend(rt[31:0])
+//   - Accumulates in LO[63:0], writes accumulated result to rd
+//   - Perfect for widening MADD chains: PMULTW + N×PMADDW
+//===----------------------------------------------------------------------===//
+
+// PMULTW - Parallel Multiply Word (signed)
+// rd[63:0] = rs[31:0] * rt[31:0], also writes to HI:LO
+let Defs = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMULTW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                    "pmultw\t$rd, $rs, $rt",
+                    [(set GPR64Opnd:$rd, (MipsPMult GPR64Opnd:$rs, GPR64Opnd:$rt))],
+                    II_MULT, FrmR>,
+             R5900_MMI2_FM<0b01100>;
+
+// PMADDW - Parallel Multiply-Add Word (signed)
+// rd[63:0] = LO[63:0] + rs[31:0] * rt[31:0], accumulates in HI:LO
+// Ordering with previous PMULTW/PMADDW ensured by Uses = [HI0, LO0].
+let Defs = [HI0, LO0], Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMADDW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                    "pmaddw\t$rd, $rs, $rt",
+                    [(set GPR64Opnd:$rd, (MipsPMAdd GPR64Opnd:$rs, GPR64Opnd:$rt))],
+                    II_MADD, FrmR>,
+             R5900_MMI2_FM<0b00000>;
+
+// PMSUBW - Parallel Multiply-Subtract Word (signed)
+// rd[63:0] = LO[63:0] - rs[31:0] * rt[31:0], subtracts from HI:LO
+let Defs = [HI0, LO0], Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMSUBW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                    "pmsubw\t$rd, $rs, $rt",
+                    [(set GPR64Opnd:$rd, (MipsPMSub GPR64Opnd:$rs, GPR64Opnd:$rt))],
+                    II_MADD, FrmR>,
+             R5900_MMI2_FM<0b00100>;
+
+// PMULTUW - Parallel Multiply Word (unsigned)
+// rd[63:0] = rs[31:0] * rt[31:0] (unsigned), also writes to HI:LO
+let Defs = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMULTUW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                     "pmultuw\t$rd, $rs, $rt",
+                     [(set GPR64Opnd:$rd, (MipsPMultu GPR64Opnd:$rs, GPR64Opnd:$rt))],
+                     II_MULT, FrmR>,
+              R5900_MMI3_FM<0b01100>;
+
+// PMADDUW - Parallel Multiply-Add Word (unsigned)
+// rd[63:0] = LO[63:0] + rs[31:0] * rt[31:0] (unsigned), accumulates in HI:LO
+let Defs = [HI0, LO0], Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMADDUW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                     "pmadduw\t$rd, $rs, $rt",
+                     [(set GPR64Opnd:$rd, (MipsPMAddu GPR64Opnd:$rs, GPR64Opnd:$rt))],
+                     II_MADD, FrmR>,
+              R5900_MMI3_FM<0b00000>;
 
 } // Predicates = [HasR5900]
 
