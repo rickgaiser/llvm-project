@@ -486,4 +486,10 @@ def : InstRW<[R5900WriteVU0AccResult], (instrs VMADD, VMSUB)>;
 // VMADDA, VMSUBA (ACC-reading and ACC-writing)
 def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDA, VMSUBA)>;
 
+// VMOVEm (masked move, VF destination)
+def : InstRW<[R5900WriteVU0Arith], (instrs VMOVEm)>;
+
+// VABS, VMAX, VMINI (VF destination)
+def : InstRW<[R5900WriteVU0Arith], (instrs VABS, VMAX, VMINI)>;
+
 } // SchedModel = MipsR5900Model

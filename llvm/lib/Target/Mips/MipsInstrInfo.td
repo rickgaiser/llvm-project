@@ -3830,6 +3830,51 @@ class VU0_3R_Masked<string opstr, bits<6> funct, InstrItinClass Itin>
   let Constraints = "$base = $fd";
 }
 
+// VU0 VMOVE instruction class: 2 VF registers, masked move
+// VMOVE.dest ft, fs - copies selected lanes from fs to ft
+// Note: ft is the destination (not fd like in arithmetic ops)
+// Encoding: Type 3 format with 11-bit opcode = 0x33C
+class VU0_MOVE_Masked<string opstr, bits<11> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$ft), (ins VFOpnd:$base, VFOpnd:$fs, vu0destmask:$mask),
+             !strconcat(opstr, "$mask\t$ft, $fs"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  let isCodeGenOnly = 1;  // Not for assembly, only for ISel
+  bits<5> ft;
+  bits<5> fs;
+  bits<4> mask;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = mask;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-0}  = funct;
+  let Constraints = "$base = $ft";
+}
+
+// VU0 Type 3 instruction class: 2 VF registers (ft=dest, fs=src), 11-bit opcode
+// Used for VABS - note destination is ft, not fd!
+class VU0_2R<string opstr, bits<11> funct, InstrItinClass Itin,
+             SDPatternOperator OpNode = null_frag>
+    : InstSE<(outs VFOpnd:$ft), (ins VFOpnd:$fs),
+             !strconcat(opstr, ".xyzw\t$ft, $fs"),
+             [(set VFOpnd:$ft, (OpNode VFOpnd:$fs))],
+             Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  bits<5> ft;
+  bits<5> fs;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-0}  = funct;
+}
+
 let Predicates = [HasVU0] in {
   // VU0 Vector Add/Subtract/Multiply (3-register forms, dest mask = xyzw)
   let isCommutable = 1 in {
@@ -3837,6 +3882,15 @@ let Predicates = [HasVU0] in {
     def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL, fmul>;   // 0x2A
   }
   def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB, fsub>;   // 0x2C
+
+  // VU0 Vector Min/Max (3-register forms)
+  let isCommutable = 1 in {
+    def VMAX  : VU0_3R<"vmax", 0b101011, II_VU0_VMAX>;   // 0x2B
+    def VMINI : VU0_3R<"vmini", 0b101111, II_VU0_VMINI>; // 0x2F
+  }
+
+  // VU0 Absolute value (2-register form: ft = |fs|)
+  def VABS  : VU0_2R<"vabs", 0b01111111101, II_VU0_VABS, fabs>;  // 0x1FD
 
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001, II_VU0_VMADD>;  // 0x29
@@ -3861,6 +3915,10 @@ let Predicates = [HasVU0] in {
   def VSUBm : VU0_3R_Masked<"vsub", 0b101100, II_VU0_VSUB>;  // 0x2C
   def VMULm : VU0_3R_Masked<"vmul", 0b101010, II_VU0_VMUL>;  // 0x2A
 
+  // VU0 VMOVE (masked move) - opcode 0x33C
+  // VMOVE.dest ft, fs - copies selected lanes from fs to ft
+  def VMOVEm : VU0_MOVE_Masked<"vmove", 0b01100111100, II_VU0_VMOVE>;  // 0x33C
+
   // Patterns for masked operations
   // Match: (VU0_FADD_MASKED base, other, mask) -> VADDm(base, base, other, mask)
   def : Pat<(MipsVU0FADD_MASKED v4f32:$base, v4f32:$other, (i32 imm:$mask)),
@@ -3869,6 +3927,16 @@ let Predicates = [HasVU0] in {
             (VSUBm VFRegs:$base, VFRegs:$base, VFRegs:$other, (i32 imm:$mask))>;
   def : Pat<(MipsVU0FMUL_MASKED v4f32:$base, v4f32:$other, (i32 imm:$mask)),
             (VMULm VFRegs:$base, VFRegs:$base, VFRegs:$other, (i32 imm:$mask))>;
+
+  // Match: (VU0_BLEND base, src, mask) -> VMOVEm(base, src, mask)
+  // VU0_BLEND(base, src, mask) means: result[i] = mask[i] ? src[i] : base[i]
+  def : Pat<(MipsVU0BLEND v4f32:$base, v4f32:$src, (i32 imm:$mask)),
+            (VMOVEm VFRegs:$base, VFRegs:$src, (i32 imm:$mask))>;
+
+  // Patterns for VU0 min/max operations
+  // Note: VU0 min/max don't follow IEEE NaN semantics, use with -ffast-math
+  def : Pat<(fmaxnum v4f32:$fs, v4f32:$ft), (VMAX VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(fminnum v4f32:$fs, v4f32:$ft), (VMINI VFRegs:$fs, VFRegs:$ft)>;
 
 } // Predicates = [HasVU0]
 

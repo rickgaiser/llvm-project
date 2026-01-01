@@ -204,6 +204,10 @@ def II_VU0_VSUBA        : InstrItinClass;  // VU0 vector subtract to ACC
 def II_VU0_VMULA        : InstrItinClass;  // VU0 vector multiply to ACC
 def II_VU0_VMADDA       : InstrItinClass;  // VU0 vector multiply-add to ACC
 def II_VU0_VMSUBA       : InstrItinClass;  // VU0 vector multiply-subtract to ACC
+def II_VU0_VMOVE        : InstrItinClass;  // VU0 vector move
+def II_VU0_VABS         : InstrItinClass;  // VU0 vector absolute value
+def II_VU0_VMAX         : InstrItinClass;  // VU0 vector maximum
+def II_VU0_VMINI        : InstrItinClass;  // VU0 vector minimum
 def II_LDR              : InstrItinClass;
 def II_LDPC             : InstrItinClass;
 def II_LDXC1            : InstrItinClass;

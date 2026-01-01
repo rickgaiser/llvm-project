@@ -218,6 +218,11 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
     setOperationAction(ISD::FMUL, MVT::v4f32, Legal);
 
+    // Enable VU0 abs, min, max operations (VABS, VMINI, VMAX)
+    setOperationAction(ISD::FABS, MVT::v4f32, Legal);
+    setOperationAction(ISD::FMINNUM, MVT::v4f32, Legal);
+    setOperationAction(ISD::FMAXNUM, MVT::v4f32, Legal);
+
     // Enable custom lowering for broadcast pattern recognition
     // This allows recognizing shuffle+fmul -> VMULbc patterns
     setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v4f32, Custom);

@@ -362,10 +362,10 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | `VADD.xyzw` | dest = a + b | **Implemented** |
 | `VSUB.xyzw` | dest = a - b | **Implemented** |
 | `VMUL.xyzw` | dest = a * b | **Implemented** |
-| `VABS.xyzw` | dest = \|a\| | Not Implemented |
-| `VMAX.xyzw` | dest = max(a, b) | Not Implemented |
-| `VMINI.xyzw` | dest = min(a, b) | Not Implemented |
-| `VMOVE.xyzw` | dest = src | Not Implemented |
+| `VABS.xyzw` | dest = \|a\| | **Implemented** |
+| `VMAX.xyzw` | dest = max(a, b) | **Implemented** |
+| `VMINI.xyzw` | dest = min(a, b) | **Implemented** |
+| `VMOVE.xyzw` | dest = src | **Implemented** (masked, for blend ops) |
 
 ### 5.3 Multiply-Accumulate
 
