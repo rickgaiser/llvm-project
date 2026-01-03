@@ -607,6 +607,20 @@ The R5900 scheduling model (`MipsScheduleR5900.td`) defines:
 
 The dual MAC units allow two independent multiply operations to execute in parallel when properly scheduled.
 
+#### VU0 Macro Mode Latencies
+
+Per VU Users Manual sections 3.1.3 and 5.4.2, the VU0 ACC register has no data hazards:
+
+| Instruction Type | Latency | Notes |
+|-----------------|---------|-------|
+| VF arithmetic (VADD, VSUB, VMUL) | 4 cycles | VF register result |
+| ACC-init (VMULA, VADDA, VSUBA) | 1 cycle | ACC has no data hazards |
+| ACC-chain (VMADDA, VMSUBA) | 1 cycle | ACC-to-ACC forwarding |
+| ACC-result (VMADD, VMSUB) | 4 cycles | VF register result |
+| LQC2 | 2 cycles | +1 cycle mandatory stall before next VU0 op |
+
+The scheduler uses these latencies to interleave operations across loop iterations when unrolling, hiding the 4-cycle VF register latency by starting the next iteration's ACC chain while waiting for the previous iteration's result.
+
 ---
 
 ## References

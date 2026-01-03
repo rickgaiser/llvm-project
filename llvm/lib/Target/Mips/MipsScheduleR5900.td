@@ -441,10 +441,18 @@ def : InstRW<[R5900WriteCOP2], (instrs LWC2, LWC3, SWC2, SWC3,
 //===----------------------------------------------------------------------===//
 // VU0 Quadword Load/Store (128-bit)
 //===----------------------------------------------------------------------===//
-// LQC2/SQC2 use the load/store unit with VU0.
+// LQC2/SQC2 use the load/store unit.
+//
+// Per VU Users Manual section 5.4.4: "After a QMTC2/CTC2/LQC2 instruction
+// which transfers data from the EE Core to the VU, the next macroinstruction
+// always stalls for one cycle."
+//
+// We model this by having LQC2 also reserve the VU0 unit for 2 cycles,
+// preventing the next VU0 instruction from issuing until cycle 2.
 
-def R5900WriteVFLoad : SchedWriteRes<[R5900UnitLdSt]> {
+def R5900WriteVFLoad : SchedWriteRes<[R5900UnitLdSt, R5900UnitVU0]> {
   let Latency = 2;
+  let ReleaseAtCycles = [1, 2];  // LdSt released at 1, VU0 at 2 (1-cycle stall)
 }
 
 def R5900WriteVFStore : SchedWriteRes<[R5900UnitLdSt]> {
@@ -458,18 +466,33 @@ def : InstRW<[R5900WriteVFStore], (instrs SQC2)>;
 // VU0 Arithmetic Instructions
 //===----------------------------------------------------------------------===//
 // VU0 macro mode vector arithmetic uses the VU0 unit.
-// Latency is 4 cycles (FMAC pipeline).
+// FMAC pipeline latency is 4 cycles for VF register results.
+//
+// Per VU Users Manual section 3.1.3 and 5.4.2:
+// "Stalls due to data dependency do not occur to the ACC register."
+// "Data hazards do not occur to the special registers (ACC/I/Q/R)."
+//
+// This means ACC-to-ACC chains have effective 1-cycle latency (no stalls),
+// while VF register results have 4-cycle latency.
 
 def R5900WriteVU0Arith : SchedWriteRes<[R5900UnitVU0]> {
   let Latency = 4;
 }
 
-// VU0 ACC-writing instructions have 1-cycle latency for ACC chaining
+// ACC-writing instructions (VMULA, VADDA, VSUBA): write only to ACC
+// ACC has no data hazards, so effective latency is 1 for ACC consumers
 def R5900WriteVU0AccInit : SchedWriteRes<[R5900UnitVU0]> {
   let Latency = 1;
 }
 
-// VU0 ACC-reading instructions have 4-cycle latency
+// ACC-accumulating instructions (VMADDA, VMSUBA): read ACC, write ACC
+// ACC has no data hazards, so effective latency is 1 for ACC consumers
+def R5900WriteVU0AccChain : SchedWriteRes<[R5900UnitVU0]> {
+  let Latency = 1;
+}
+
+// ACC-result instructions (VMADD, VMSUB): read ACC, write VF register
+// VF register result has 4-cycle latency
 def R5900WriteVU0AccResult : SchedWriteRes<[R5900UnitVU0]> {
   let Latency = 4;
 }
@@ -483,13 +506,37 @@ def : InstRW<[R5900WriteVU0AccInit], (instrs VADDA, VSUBA, VMULA)>;
 // VMADD, VMSUB (ACC-reading, VF destination)
 def : InstRW<[R5900WriteVU0AccResult], (instrs VMADD, VMSUB)>;
 
-// VMADDA, VMSUBA (ACC-reading and ACC-writing)
-def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDA, VMSUBA)>;
+// VMADDA, VMSUBA (ACC-reading and ACC-writing, no VF destination)
+def : InstRW<[R5900WriteVU0AccChain], (instrs VMADDA, VMSUBA)>;
 
 // VMOVEm (masked move, VF destination)
 def : InstRW<[R5900WriteVU0Arith], (instrs VMOVEm)>;
 
 // VABS, VMAX, VMINI (VF destination)
 def : InstRW<[R5900WriteVU0Arith], (instrs VABS, VMAX, VMINI)>;
+
+//===----------------------------------------------------------------------===//
+// VU0 Broadcast Variants (VADDbc, VMULbc, VMADDbc, etc.)
+//===----------------------------------------------------------------------===//
+// Broadcast instructions use a single component (x/y/z/w) from the second
+// operand. They have the same latencies as their non-broadcast counterparts.
+
+// VADDbc, VSUBbc, VMULbc (VF destination, 4-cycle latency)
+def : InstRW<[R5900WriteVU0Arith], (instrs VADDbcx, VADDbcy, VADDbcz, VADDbcw,
+                                           VSUBbcx, VSUBbcy, VSUBbcz, VSUBbcw,
+                                           VMULbcx, VMULbcy, VMULbcz, VMULbcw)>;
+
+// VADDAbc, VSUBAbc, VMULAbc (ACC destination, 1-cycle ACC latency)
+def : InstRW<[R5900WriteVU0AccInit], (instrs VADDAbcx, VADDAbcy, VADDAbcz, VADDAbcw,
+                                             VSUBAbcx, VSUBAbcy, VSUBAbcz, VSUBAbcw,
+                                             VMULAbcx, VMULAbcy, VMULAbcz, VMULAbcw)>;
+
+// VMADDAbc, VMSUBAbc (ACC read/write, 1-cycle ACC latency)
+def : InstRW<[R5900WriteVU0AccChain], (instrs VMADDAbcx, VMADDAbcy, VMADDAbcz, VMADDAbcw,
+                                              VMSUBAbcx, VMSUBAbcy, VMSUBAbcz, VMSUBAbcw)>;
+
+// VMADDbc, VMSUBbc (ACC read, VF destination, 4-cycle latency)
+def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDbcx, VMADDbcy, VMADDbcz, VMADDbcw,
+                                               VMSUBbcx, VMSUBbcy, VMSUBbcz, VMSUBbcw)>;
 
 } // SchedModel = MipsR5900Model
