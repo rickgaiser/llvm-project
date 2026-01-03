@@ -49,6 +49,10 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
     DefMips64CPU = "mips3";
   }
 
+  // R5900 is the default for mips64el-*-ps2.
+  if (Triple.getOS() == llvm::Triple::PS2)
+    DefMips64CPU = "r5900";
+
   if (Arg *A = Args.getLastArg(options::OPT_march_EQ, options::OPT_mcpu_EQ))
     CPUName = A->getValue();
 

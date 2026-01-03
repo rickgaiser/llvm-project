@@ -19,6 +19,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 
 | Component | Status | Notes |
 |-----------|--------|-------|
+| Target Triple | **Implemented** | `mips64el-scei-ps2` auto-selects r5900 |
 | ELF Machine Flag | **Implemented** | `EF_MIPS_MACH_5900` in ELF.h |
 | Linker Support | **Partial** | Recognized as MIPS III variant |
 | `-mcpu=r5900` | **Implemented** | `FeatureR5900` in Mips.td |
@@ -38,6 +39,43 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
 
 **R5900 Scheduling**: The post-RA MachineScheduler is enabled by default for R5900, providing optimal load/multiply interleaving based on the scheduling model latencies.
+
+## Target Triple
+
+The recommended target triple for PS2 EE is:
+
+```
+mips64el-scei-ps2
+```
+
+This triple automatically selects `-mcpu=r5900`. Example usage:
+
+```bash
+clang --target=mips64el-scei-ps2 -c file.c
+clang --target=mips64el-scei-ps2 file.c -o file.elf
+```
+
+## Building the Toolchain
+
+A CMake cache file is provided for building a complete PS2 EE toolchain:
+
+```bash
+cmake -G Ninja -C clang/cmake/caches/PS2EE.cmake \
+  -DCMAKE_INSTALL_PREFIX=$PS2DEV \
+  ../llvm
+ninja distribution
+ninja install-distribution
+```
+
+This builds:
+- Clang/LLVM targeting `mips64el-scei-ps2`
+- LLD linker
+- compiler-rt builtins (replaces libgcc)
+- CRT files (crtbegin.o, crtend.o)
+
+To complete the toolchain, you'll also need:
+- **newlib**: C library (compile with clang)
+- **crt0.o**: Startup code (from newlib or custom)
 
 ---
 
