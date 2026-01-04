@@ -82,6 +82,10 @@ def CC_MipsO32 : CallingConv<[
 // Only the return rules are defined here for O32. The rules for argument
 // passing are defined in MipsISelLowering.cpp.
 def RetCC_MipsO32 : CallingConv<[
+  // V4SF (128-bit vector float) returned in VF1 when VU0 is enabled (R5900).
+  // This must come first to handle v4f32 before any type splitting.
+  CCIfType<[v4f32], CCIfSubtarget<"hasVU0()", CCAssignToReg<[VF1]>>>,
+
   // Promote i1/i8/i16 return values to i32.
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
 

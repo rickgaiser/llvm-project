@@ -219,6 +219,17 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
   unsigned CurrOffset = llvm::alignTo(Offset, Align);
   Offset = CurrOffset + llvm::alignTo(TySize, Align * 8) / 8;
 
+  // VU0 v4f32 vectors are passed directly in VF registers.
+  // Handle this before the general vector coercion logic.
+  if (Ty->isVectorType() && TySize == 128 &&
+      getContext().getTargetInfo().hasFeature("vu0")) {
+    if (const auto *VT = Ty->getAs<VectorType>()) {
+      if (VT->getElementType()->isSpecificBuiltinType(BuiltinType::Float) &&
+          VT->getNumElements() == 4)
+        return ABIArgInfo::getDirect();
+    }
+  }
+
   if (isAggregateTypeForABI(Ty) || Ty->isVectorType()) {
     // Ignore empty aggregates.
     if (TySize == 0)
@@ -311,6 +322,17 @@ ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
   // However, N32/N64 ignores zero sized return values.
   if (!IsO32 && Size == 0)
     return ABIArgInfo::getIgnore();
+
+  // VU0 v4f32 vectors are returned directly in VF registers.
+  // Handle this before the general vector coercion logic.
+  if (RetTy->isVectorType() && Size == 128 &&
+      getContext().getTargetInfo().hasFeature("vu0")) {
+    if (const auto *VT = RetTy->getAs<VectorType>()) {
+      if (VT->getElementType()->isSpecificBuiltinType(BuiltinType::Float) &&
+          VT->getNumElements() == 4)
+        return ABIArgInfo::getDirect();
+    }
+  }
 
   if (isAggregateTypeForABI(RetTy) || RetTy->isVectorType()) {
     if (Size <= 128) {
