@@ -3771,6 +3771,30 @@ def vu0destmask : Operand<i32> {
   let ParserMatchClass = VU0DestMaskAsmOperand;
 }
 
+// VU0 ACC operand - for instructions that explicitly specify ACC as destination
+// The ACC is always implicit in the encoding, but assembly may specify it explicitly
+def VU0AccAsmOperand : AsmOperandClass {
+  let Name = "VU0Acc";
+  let RenderMethod = "addVU0AccAsmRegOperands";
+  let ParserMethod = "parseVU0Acc";
+}
+
+def VU0AccOpnd : RegisterOperand<VU0ACCRC> {
+  let ParserMatchClass = VU0AccAsmOperand;
+}
+
+// VU0 Q register operand - for instructions that use the Q result register
+// Used by VDIV, VSQRT, VRSQRT (write to Q) and VMULQ, etc. (read from Q)
+def VU0QAsmOperand : AsmOperandClass {
+  let Name = "VU0Q";
+  let RenderMethod = "addVU0QAsmRegOperands";
+  let ParserMethod = "parseVU0Q";
+}
+
+def VU0QOpnd : RegisterOperand<VU0QRC> {
+  let ParserMatchClass = VU0QAsmOperand;
+}
+
 // SDTypeProfile for VU0 masked operations: (result, base, other, mask)
 // result[i] = (mask[i] ? op(base[i], other[i]) : base[i])
 def SDT_VU0Masked : SDTypeProfile<1, 3, [
@@ -3801,14 +3825,36 @@ def MipsVU0MULw : SDNode<"MipsISD::VU0_MULw", SDT_VU0Broadcast>;
 // - VU0_Type3: 2 VF registers + 11-bit opcode (VADDA, VSUBA, VMULA - ACC dest)
 // - VU0_Type2: 2 VF registers + 9-bit opcode + 2-bit bc (VADDAbc, etc.)
 
-// VU0 Type 1 instruction class: 3 VF registers, 6-bit opcode
-// Used for VADD, VSUB, VMUL, VMADD, VMSUB
-class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin,
-             SDPatternOperator OpNode = null_frag>
+// VU0 Type 1 instruction class: 3 VF registers, 6-bit opcode, variable dest mask
+// Used for VADD, VSUB, VMUL, VMADD, VMSUB - assembly visible with variable mask
+class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, "$dest\t$fd, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = dest;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-0}   = funct;
+}
+
+// VU0 Type 1 ISel variant: hardcoded xyzw mask for code generation
+class VU0_3R_ISel<string opstr, bits<6> funct, InstrItinClass Itin,
+                  SDPatternOperator OpNode>
     : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
              !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
              [(set VFOpnd:$fd, (OpNode VFOpnd:$fs, VFOpnd:$ft))],
              Itin, FrmR, opstr> {
+  let isCodeGenOnly = 1;
   let DecoderNamespace = "R5900";
   let hasSideEffects = 0;
   bits<5> fd;
@@ -3825,11 +3871,12 @@ class VU0_3R<string opstr, bits<6> funct, InstrItinClass Itin,
 }
 
 // VU0 Type 3 instruction class: 2 VF registers, ACC destination, 11-bit opcode
-// Used for VADDA, VSUBA, VMULA, VMADDA, VMSUBA
+// Used for VADDA, VSUBA, VMULA, VMADDA, VMSUBA - assembly visible with variable mask
+// ACC operand is explicit in assembly but implicit in encoding (always ACC)
 class VU0_ACC<string opstr, bits<11> funct, InstrItinClass Itin,
               list<Register> UseRegs = []>
-    : InstSE<(outs), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, ".xyzw\t$fs, $ft"),
+    : InstSE<(outs), (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, "$dest\t$acc, $fs, $ft"),
              [], Itin, FrmR, opstr> {
   let DecoderNamespace = "R5900";
   let Defs = [VU0ACC];
@@ -3837,20 +3884,21 @@ class VU0_ACC<string opstr, bits<11> funct, InstrItinClass Itin,
   let hasSideEffects = 0;
   bits<5> fs;
   bits<5> ft;
+  bits<4> dest;
   bits<32> Inst;
   let Inst{31-26} = 0b010010;  // COP2
   let Inst{25}    = 1;         // co bit
-  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{24-21} = dest;      // Variable destination mask from operand
   let Inst{20-16} = ft;
   let Inst{15-11} = fs;
   let Inst{10-0}  = funct;
 }
 
 // VU0 Type 1 with ACC read: 3 VF registers, uses ACC, 6-bit opcode
-// Used for VMADD, VMSUB (reads ACC, writes VF)
+// Used for VMADD, VMSUB (reads ACC, writes VF) - assembly visible with variable mask
 class VU0_3R_ACC<string opstr, bits<6> funct, InstrItinClass Itin>
-    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, "$dest\t$fd, $fs, $ft"),
              [], Itin, FrmR, opstr> {
   let DecoderNamespace = "R5900";
   let Uses = [VU0ACC];
@@ -3858,10 +3906,11 @@ class VU0_3R_ACC<string opstr, bits<6> funct, InstrItinClass Itin>
   bits<5> fd;
   bits<5> fs;
   bits<5> ft;
+  bits<4> dest;
   bits<32> Inst;
   let Inst{31-26} = 0b010010;  // COP2
   let Inst{25}    = 1;         // co bit
-  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{24-21} = dest;      // Variable destination mask from operand
   let Inst{20-16} = ft;
   let Inst{15-11} = fs;
   let Inst{10-6}  = fd;
@@ -3917,13 +3966,33 @@ class VU0_MOVE_Masked<string opstr, bits<11> funct, InstrItinClass Itin>
 }
 
 // VU0 Type 3 instruction class: 2 VF registers (ft=dest, fs=src), 11-bit opcode
-// Used for VABS - note destination is ft, not fd!
-class VU0_2R<string opstr, bits<11> funct, InstrItinClass Itin,
-             SDPatternOperator OpNode = null_frag>
+// Used for VABS, VMOVE, etc. - variable dest mask
+class VU0_2R<string opstr, bits<11> funct, InstrItinClass Itin>
+    : InstSE<(outs VFOpnd:$ft), (ins vu0destmask:$dest, VFOpnd:$fs),
+             !strconcat(opstr, "$dest\t$ft, $fs"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let hasSideEffects = 0;
+  bits<5> ft;
+  bits<5> fs;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = dest;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-0}  = funct;
+}
+
+// VU0 Type 3 ISel variant: hardcoded xyzw mask for code generation
+class VU0_2R_ISel<string opstr, bits<11> funct, InstrItinClass Itin,
+                  SDPatternOperator OpNode>
     : InstSE<(outs VFOpnd:$ft), (ins VFOpnd:$fs),
              !strconcat(opstr, ".xyzw\t$ft, $fs"),
              [(set VFOpnd:$ft, (OpNode VFOpnd:$fs))],
              Itin, FrmR, opstr> {
+  let isCodeGenOnly = 1;
   let DecoderNamespace = "R5900";
   let hasSideEffects = 0;
   bits<5> ft;
@@ -3938,21 +4007,33 @@ class VU0_2R<string opstr, bits<11> funct, InstrItinClass Itin,
 }
 
 let Predicates = [HasVU0] in {
-  // VU0 Vector Add/Subtract/Multiply (3-register forms, dest mask = xyzw)
+  // VU0 Vector Add/Subtract/Multiply (3-register forms, variable dest mask)
+  // Assembly-visible instructions with variable mask operand
   let isCommutable = 1 in {
-    def VADD  : VU0_3R<"vadd", 0b101000, II_VU0_VADD, fadd>;   // 0x28
-    def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL, fmul>;   // 0x2A
+    def VADD  : VU0_3R<"vadd", 0b101000, II_VU0_VADD>;   // 0x28
+    def VMUL  : VU0_3R<"vmul", 0b101010, II_VU0_VMUL>;   // 0x2A
   }
-  def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB, fsub>;   // 0x2C
+  def VSUB  : VU0_3R<"vsub", 0b101100, II_VU0_VSUB>;   // 0x2C
+
+  // ISel-only variants with hardcoded xyzw mask for code generation patterns
+  let isCommutable = 1 in {
+    def VADD_ISel : VU0_3R_ISel<"vadd", 0b101000, II_VU0_VADD, fadd>;
+    def VMUL_ISel : VU0_3R_ISel<"vmul", 0b101010, II_VU0_VMUL, fmul>;
+  }
+  def VSUB_ISel : VU0_3R_ISel<"vsub", 0b101100, II_VU0_VSUB, fsub>;
 
   // VU0 Vector Min/Max (3-register forms)
   let isCommutable = 1 in {
     def VMAX  : VU0_3R<"vmax", 0b101011, II_VU0_VMAX>;   // 0x2B
     def VMINI : VU0_3R<"vmini", 0b101111, II_VU0_VMINI>; // 0x2F
+    // ISel variants with fixed xyzw mask for patterns
+    def VMAX_ISel  : VU0_3R_ISel<"vmax", 0b101011, II_VU0_VMAX, null_frag>;
+    def VMINI_ISel : VU0_3R_ISel<"vmini", 0b101111, II_VU0_VMINI, null_frag>;
   }
 
   // VU0 Absolute value (2-register form: ft = |fs|)
-  def VABS  : VU0_2R<"vabs", 0b01111111101, II_VU0_VABS, fabs>;  // 0x1FD
+  def VABS  : VU0_2R<"vabs", 0b01111111101, II_VU0_VABS>;  // 0x1FD
+  def VABS_ISel : VU0_2R_ISel<"vabs", 0b01111111101, II_VU0_VABS, fabs>;
 
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001, II_VU0_VMADD>;  // 0x29
@@ -3997,8 +4078,8 @@ let Predicates = [HasVU0] in {
 
   // Patterns for VU0 min/max operations
   // Note: VU0 min/max don't follow IEEE NaN semantics, use with -ffast-math
-  def : Pat<(fmaxnum v4f32:$fs, v4f32:$ft), (VMAX VFRegs:$fs, VFRegs:$ft)>;
-  def : Pat<(fminnum v4f32:$fs, v4f32:$ft), (VMINI VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(fmaxnum v4f32:$fs, v4f32:$ft), (VMAX_ISel VFRegs:$fs, VFRegs:$ft)>;
+  def : Pat<(fminnum v4f32:$fs, v4f32:$ft), (VMINI_ISel VFRegs:$fs, VFRegs:$ft)>;
 
 } // Predicates = [HasVU0]
 
@@ -4013,21 +4094,23 @@ let Predicates = [HasVU0] in {
 // MacroOP field type 2: 2 registers (ACC dest) + 9-bit opcode + 2-bit bc
 
 // VU0 Type 0 instruction class: 3 VF registers + 4-bit opcode + 2-bit bc
-// Used for VADDbc, VSUBbc, VMULbc, VMADDbc, VMSUBbc
+// Used for VADDbc, VSUBbc, VMULbc - assembly visible with variable dest mask
+// Mnemonic includes broadcast suffix (e.g., vaddx, vmuly), dest mask is operand
 class VU0_3R_BC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
                 InstrItinClass Itin>
-    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$dest\t$fd, $fs, $ft"),
              [], Itin, FrmR, opstr> {
   let DecoderNamespace = "R5900";
   let hasSideEffects = 0;
   bits<5> fd;
   bits<5> fs;
   bits<5> ft;
+  bits<4> dest;
   bits<32> Inst;
   let Inst{31-26} = 0b010010;  // COP2
   let Inst{25}    = 1;         // co bit
-  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
+  let Inst{24-21} = dest;      // Variable destination mask from operand
   let Inst{20-16} = ft;
   let Inst{15-11} = fs;
   let Inst{10-6}  = fd;
@@ -4036,14 +4119,64 @@ class VU0_3R_BC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
 }
 
 // VU0 Type 0 with ACC read: 3 VF registers + 4-bit opcode + 2-bit bc
-// Used for VMADDbc, VMSUBbc (reads ACC, writes VF)
+// Used for VMADDbc, VMSUBbc (reads ACC, writes VF) - variable dest mask
 class VU0_3R_BC_ACC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
                     InstrItinClass Itin>
-    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$dest\t$fd, $fs, $ft"),
              [], Itin, FrmR, opstr> {
   let DecoderNamespace = "R5900";
   let Uses = [VU0ACC];
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = dest;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-6}  = fd;
+  let Inst{5-2}   = opcode;
+  let Inst{1-0}   = bc;
+}
+
+// VU0 Type 2 instruction class: 2 VF registers, ACC dest, 9-bit opcode + 2-bit bc
+// Used for VADDAbc, VSUBAbc, VMULAbc, VMADDAbc, VMSUBAbc - variable dest mask
+// ACC operand is explicit in assembly but implicit in encoding
+class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
+                 InstrItinClass Itin, list<Register> UseRegs = []>
+    : InstSE<(outs), (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$dest\t$acc, $fs, $ft"),
+             [], Itin, FrmR, opstr> {
+  let DecoderNamespace = "R5900";
+  let Defs = [VU0ACC];
+  let Uses = UseRegs;
+  let hasSideEffects = 0;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31-26} = 0b010010;  // COP2
+  let Inst{25}    = 1;         // co bit
+  let Inst{24-21} = dest;      // Variable destination mask from operand
+  let Inst{20-16} = ft;
+  let Inst{15-11} = fs;
+  let Inst{10-2}  = opcode;
+  let Inst{1-0}   = bc;
+}
+
+// VU0 Type 0 ISel variant: hardcoded xyzw mask for code generation
+class VU0_3R_BC_ISel<string opstr, string suffix, bits<4> opcode, bits<2> bc,
+                     InstrItinClass Itin, SDPatternOperator OpNode = null_frag>
+    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
+             [(set VFOpnd:$fd, (OpNode VFOpnd:$fs, VFOpnd:$ft))],
+             Itin, FrmR, opstr> {
+  let isCodeGenOnly = 1;
+  let DecoderNamespace = "R5900";
   let hasSideEffects = 0;
   bits<5> fd;
   bits<5> fs;
@@ -4056,29 +4189,6 @@ class VU0_3R_BC_ACC<string opstr, string suffix, bits<4> opcode, bits<2> bc,
   let Inst{15-11} = fs;
   let Inst{10-6}  = fd;
   let Inst{5-2}   = opcode;
-  let Inst{1-0}   = bc;
-}
-
-// VU0 Type 2 instruction class: 2 VF registers, ACC dest, 9-bit opcode + 2-bit bc
-// Used for VADDAbc, VSUBAbc, VMULAbc, VMADDAbc, VMSUBAbc
-class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
-                 InstrItinClass Itin, list<Register> UseRegs = []>
-    : InstSE<(outs), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, suffix, ".xyzw\t$fs, $ft"),
-             [], Itin, FrmR, opstr> {
-  let DecoderNamespace = "R5900";
-  let Defs = [VU0ACC];
-  let Uses = UseRegs;
-  let hasSideEffects = 0;
-  bits<5> fs;
-  bits<5> ft;
-  bits<32> Inst;
-  let Inst{31-26} = 0b010010;  // COP2
-  let Inst{25}    = 1;         // co bit
-  let Inst{24-21} = 0b1111;    // dest = xyzw (all lanes)
-  let Inst{20-16} = ft;
-  let Inst{15-11} = fs;
-  let Inst{10-2}  = opcode;
   let Inst{1-0}   = bc;
 }
 
@@ -4088,6 +4198,16 @@ multiclass VU0_3R_BC_ALL<string opstr, bits<4> opcode, InstrItinClass Itin> {
   def y : VU0_3R_BC<opstr, "y", opcode, 0b01, Itin>;
   def z : VU0_3R_BC<opstr, "z", opcode, 0b10, Itin>;
   def w : VU0_3R_BC<opstr, "w", opcode, 0b11, Itin>;
+}
+
+// Multiclass for ISel variants of broadcast ops (with patterns)
+multiclass VU0_3R_BC_ALL_ISel<string opstr, bits<4> opcode, InstrItinClass Itin,
+                               SDPatternOperator OpX, SDPatternOperator OpY,
+                               SDPatternOperator OpZ, SDPatternOperator OpW> {
+  def x : VU0_3R_BC_ISel<opstr, "x", opcode, 0b00, Itin, OpX>;
+  def y : VU0_3R_BC_ISel<opstr, "y", opcode, 0b01, Itin, OpY>;
+  def z : VU0_3R_BC_ISel<opstr, "z", opcode, 0b10, Itin, OpZ>;
+  def w : VU0_3R_BC_ISel<opstr, "w", opcode, 0b11, Itin, OpW>;
 }
 
 // Multiclass for 3-register ops that read ACC
@@ -4117,6 +4237,10 @@ let Predicates = [HasVU0] in {
 
   // VMULbc: fd = fs * ft[bc] (opcode = 0110)
   defm VMULbc : VU0_3R_BC_ALL<"vmul", 0b0110, II_VU0_VMUL>;
+  // ISel variants with patterns for VU0 broadcast multiply
+  defm VMULbc_ISel : VU0_3R_BC_ALL_ISel<"vmul", 0b0110, II_VU0_VMUL,
+                                         MipsVU0MULx, MipsVU0MULy,
+                                         MipsVU0MULz, MipsVU0MULw>;
 
   // VMADDbc: fd = ACC + fs * ft[bc] (opcode = 0010)
   defm VMADDbc : VU0_3R_BC_ACC_ALL<"vmadd", 0b0010, II_VU0_VMADD>;
@@ -4141,11 +4265,131 @@ let Predicates = [HasVU0] in {
   // VMSUBAbc: ACC = ACC - fs * ft[bc] (opcode = 00011 1111 = 0x3F)
   defm VMSUBAbc : VU0_ACC_BC_ALL<"vmsuba", 0b000111111, II_VU0_VMSUBA, [VU0ACC]>;
 
-  // Patterns to select VMULbc instructions from VU0 SDNodes
-  def : Pat<(MipsVU0MULx VFRegs:$fs, VFRegs:$ft), (VMULbcx VFRegs:$fs, VFRegs:$ft)>;
-  def : Pat<(MipsVU0MULy VFRegs:$fs, VFRegs:$ft), (VMULbcy VFRegs:$fs, VFRegs:$ft)>;
-  def : Pat<(MipsVU0MULz VFRegs:$fs, VFRegs:$ft), (VMULbcz VFRegs:$fs, VFRegs:$ft)>;
-  def : Pat<(MipsVU0MULw VFRegs:$fs, VFRegs:$ft), (VMULbcw VFRegs:$fs, VFRegs:$ft)>;
+  // Patterns for VMULbc are now defined in VMULbc_ISel via the multiclass
+
+  //===--------------------------------------------------------------------===//
+  // VU0 Q-register operations
+  //===--------------------------------------------------------------------===//
+
+  // VWAITQ - Wait for Q register computation to complete
+  // Encoding: COP2 (010010) + dest=xyzw(1111) + 00000 00000 + special(0111011111)
+  def VWAITQ : InstSE<(outs), (ins),
+                      "vwaitq", [], II_VU0_VDIV, FrmR, "vwaitq"> {
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = 0b1111;    // dest = xyzw
+    let Inst{20-0}  = 0b000000000001110111111;  // special + 0111011111
+    let hasSideEffects = 1;
+    let Uses = [VU0Q];
+    let Predicates = [HasVU0];
+  }
+
+  // VNOP - VU0 NOP (no operation)
+  // Encoding: COP2 (010010) + dest=xyzw(1111) + 00000 00000 + special(0101111111)
+  def VNOP : InstSE<(outs), (ins),
+                    "vnop", [], II_VU0_MISC, FrmR, "vnop"> {
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = 0b1111;    // dest = xyzw
+    let Inst{20-0}  = 0b000000000001011111111;  // special + 0101111111
+    let hasSideEffects = 0;
+    let Predicates = [HasVU0];
+  }
+
+  // VMULQ - Multiply by Q register: fd = fs * Q
+  // This is a 2-register instruction where one source is implicitly Q
+  // Encoding: COP2 + dest + ft=0 + fs + fd + special(011100)
+  class VU0_2R_Q<string opstr, bits<6> funct, InstrItinClass Itin>
+      : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VU0QOpnd:$q),
+               !strconcat(opstr, "$dest\t$fd, $fs, $q"), [], Itin, FrmR, opstr> {
+    bits<5> fd;
+    bits<5> fs;
+    bits<4> dest;
+
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = dest;      // destination mask
+    let Inst{20-16} = 0;         // ft = 0 for Q operations
+    let Inst{15-11} = fs;
+    let Inst{10-6}  = fd;
+    let Inst{5-0}   = funct;
+    let Uses = [VU0Q];
+  }
+
+  def VMULQ  : VU0_2R_Q<"vmulq", 0b011100, II_VU0_VMUL>;
+  def VADDQ  : VU0_2R_Q<"vaddq", 0b100000, II_VU0_VADD>;
+  def VSUBQ  : VU0_2R_Q<"vsubq", 0b100100, II_VU0_VSUB>;
+  def VMADDQ : VU0_2R_Q<"vmaddq", 0b100001, II_VU0_VMADD> {
+    let Uses = [VU0Q, VU0ACC];
+  }
+  def VMSUBQ : VU0_2R_Q<"vmsubq", 0b100101, II_VU0_VMSUB> {
+    let Uses = [VU0Q, VU0ACC];
+  }
+
+  //===--------------------------------------------------------------------===//
+  // VU0 Outer Product Instructions
+  //===--------------------------------------------------------------------===//
+
+  // VOPMULA - Outer product multiply-add to ACC
+  // ACC = fs x ft (cross product like operation)
+  // Encoding: COP2 + dest + ft + fs + 0 + special(0101111110)
+  def VOPMULA : InstSE<(outs), (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
+                       "vopmula$dest\t$acc, $fs, $ft", [], II_VU0_VOPMULA, FrmR, "vopmula"> {
+    bits<5> fs;
+    bits<5> ft;
+    bits<4> dest;
+
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = dest;      // destination mask
+    let Inst{20-16} = ft;
+    let Inst{15-11} = fs;
+    let Inst{10-0}  = 0b00001011110;  // special opcode
+    let Defs = [VU0ACC];
+  }
+
+  // VOPMSUB - Outer product multiply-subtract
+  // fd = ACC - fs x ft (cross product like operation)
+  // Encoding: COP2 + dest + ft + fs + fd + special(0101111)
+  def VOPMSUB : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+                       "vopmsub$dest\t$fd, $fs, $ft", [], II_VU0_VOPMSUB, FrmR, "vopmsub"> {
+    bits<5> fd;
+    bits<5> fs;
+    bits<5> ft;
+    bits<4> dest;
+
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = dest;      // destination mask
+    let Inst{20-16} = ft;
+    let Inst{15-11} = fs;
+    let Inst{10-6}  = fd;
+    let Inst{5-0}   = 0b101110;  // special opcode
+    let Uses = [VU0ACC];
+  }
+
+  //===--------------------------------------------------------------------===//
+  // VU0 Clip Detection
+  //===--------------------------------------------------------------------===//
+
+  // VCLIPW - Clip detection
+  // Tests fs.xyz against ft.w and updates clip flags
+  // Encoding: COP2 + dest + ft + fs + 0 + special(0011111111)
+  def VCLIPW : InstSE<(outs), (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft),
+                      "vclipw$dest\t$fs, $ft", [], II_VU0_VCLIP, FrmR, "vclipw"> {
+    bits<5> fs;
+    bits<5> ft;
+    bits<4> dest;
+
+    let Inst{31-26} = 0b010010;  // COP2
+    let Inst{25}    = 1;         // CO bit
+    let Inst{24-21} = dest;      // destination mask
+    let Inst{20-16} = ft;
+    let Inst{15-11} = fs;
+    let Inst{10-0}  = 0b00001111111;  // special opcode
+    let hasSideEffects = 1;
+  }
+
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//

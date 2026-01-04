@@ -207,6 +207,22 @@ class MipsAsmParser : public MCTargetAsmParser {
   ParseStatus parseInvNum(OperandVector &Operands);
   ParseStatus parseRegisterList(OperandVector &Operands);
   ParseStatus parseVU0DestMask(OperandVector &Operands);
+
+  // VU0 mnemonic splitting helpers
+  // Returns true if Name is a VU0 mnemonic with a dest mask suffix (e.g., "vmul.xyz")
+  // Sets BaseMnemonic to the base name (e.g., "vmul") and DestMask to the 4-bit mask
+  bool splitVU0MnemonicAndDestMask(StringRef Name, StringRef &BaseMnemonic,
+                                   unsigned &DestMask);
+  // Parse dest mask string (e.g., "xyz") to 4-bit mask (0b1110)
+  // Returns 0 for invalid mask
+  unsigned parseVU0DestMaskString(StringRef Mask);
+  // Check if base mnemonic is a known VU0 instruction
+  bool isVU0Mnemonic(StringRef Name);
+  // Parse VU0 ACC operand ($ACC or $acc)
+  ParseStatus parseVU0Acc(OperandVector &Operands);
+  // Parse VU0 Q register operand ($Q or $q)
+  ParseStatus parseVU0Q(OperandVector &Operands);
+
   const MCExpr *parseRelocExpr();
 
   bool searchSymbolAlias(OperandVector &Operands);
@@ -778,6 +794,8 @@ public:
     RegKind_COP3 = 512,   /// COP3
     RegKind_COP0 = 1024,  /// COP0
     RegKind_VF = 2048,    /// VF0-VF31 (R5900 VU0 vector float registers)
+    RegKind_VU0ACC = 4096, /// VU0 ACC register (R5900 VU0 accumulator)
+    RegKind_VU0Q = 8192,  /// VU0 Q register (R5900 VU0 division result)
     /// Potentially any (e.g. $1)
     RegKind_Numeric = RegKind_GPR | RegKind_FGR | RegKind_FCC | RegKind_MSA128 |
                       RegKind_MSACtrl | RegKind_COP2 | RegKind_ACC |
@@ -979,6 +997,20 @@ private:
     return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
   }
 
+  /// Return the VU0 ACC register (R5900 VU0 accumulator).
+  MCRegister getVU0AccReg() const {
+    assert(isRegIdx() && (RegIdx.Kind & RegKind_VU0ACC) && "Invalid access!");
+    unsigned ClassID = Mips::VU0ACCRCRegClassID;
+    return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
+  }
+
+  /// Return the VU0 Q register (R5900 VU0 division result).
+  MCRegister getVU0QReg() const {
+    assert(isRegIdx() && (RegIdx.Kind & RegKind_VU0Q) && "Invalid access!");
+    unsigned ClassID = Mips::VU0QRCRegClassID;
+    return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
+  }
+
   /// Coerce the register to ACC64DSP and return the real register for the
   /// current target.
   MCRegister getACC64DSPReg() const {
@@ -1161,6 +1193,16 @@ public:
     Inst.addOperand(MCOperand::createReg(getVFReg()));
   }
 
+  void addVU0AccAsmRegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::createReg(getVU0AccReg()));
+  }
+
+  void addVU0QAsmRegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::createReg(getVU0QReg()));
+  }
+
   void addACC64DSPAsmRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::createReg(getACC64DSPReg()));
@@ -1317,6 +1359,16 @@ public:
   // VU0 destination mask (4-bit: xyzw)
   bool isVU0DestMask() const {
     return isConstantImm() && isUInt<4>(getConstantImm());
+  }
+
+  // VU0 ACC register operand (R5900 VU0 accumulator)
+  bool isVU0Acc() const {
+    return isRegIdx() && (RegIdx.Kind & RegKind_VU0ACC);
+  }
+
+  // VU0 Q register operand (R5900 VU0 division result)
+  bool isVU0Q() const {
+    return isRegIdx() && (RegIdx.Kind & RegKind_VU0Q);
   }
 
   bool isToken() const override {
@@ -1566,6 +1618,18 @@ public:
   createVFReg(unsigned Index, StringRef Str, const MCRegisterInfo *RegInfo,
               SMLoc S, SMLoc E, MipsAsmParser &Parser) {
     return CreateReg(Index, Str, RegKind_VF, RegInfo, S, E, Parser);
+  }
+
+  static std::unique_ptr<MipsOperand>
+  createVU0AccReg(StringRef Str, const MCRegisterInfo *RegInfo,
+                  SMLoc S, SMLoc E, MipsAsmParser &Parser) {
+    return CreateReg(0, Str, RegKind_VU0ACC, RegInfo, S, E, Parser);
+  }
+
+  static std::unique_ptr<MipsOperand>
+  createVU0QReg(StringRef Str, const MCRegisterInfo *RegInfo,
+                SMLoc S, SMLoc E, MipsAsmParser &Parser) {
+    return CreateReg(0, Str, RegKind_VU0Q, RegInfo, S, E, Parser);
   }
 
   static std::unique_ptr<MipsOperand>
@@ -6996,6 +7060,157 @@ ParseStatus MipsAsmParser::parseVU0DestMask(OperandVector &Operands) {
   return ParseStatus::Success;
 }
 
+// Parse a VU0 dest mask string (e.g., "xyz", "xyzw", "w") to 4-bit mask
+// Bit 3 = x, Bit 2 = y, Bit 1 = z, Bit 0 = w
+// Returns 0 for invalid mask string
+unsigned MipsAsmParser::parseVU0DestMaskString(StringRef Mask) {
+  unsigned Result = 0;
+  for (char C : Mask) {
+    switch (C) {
+    case 'x': case 'X': Result |= 0x8; break;
+    case 'y': case 'Y': Result |= 0x4; break;
+    case 'z': case 'Z': Result |= 0x2; break;
+    case 'w': case 'W': Result |= 0x1; break;
+    default: return 0;  // Invalid character
+    }
+  }
+  return Result;
+}
+
+// Check if base mnemonic is a known VU0 instruction (without dest mask suffix)
+bool MipsAsmParser::isVU0Mnemonic(StringRef Name) {
+  // VU0 mnemonics all start with 'v'
+  if (Name.empty() || Name[0] != 'v')
+    return false;
+
+  // Check for known VU0 base mnemonics
+  // Simple operations (no broadcast)
+  static const char *VU0Simple[] = {
+    "vadd", "vsub", "vmul", "vabs",
+    "vmadd", "vmsub", "vmadda", "vmsuba",
+    "vadda", "vsuba", "vmula",
+    "vmax", "vmini", "vmove", "vmr32",
+    "vopmula", "vopmsub", "vclipw",
+    "vitof0", "vitof4", "vitof12", "vitof15",
+    "vftoi0", "vftoi4", "vftoi12", "vftoi15",
+    // Note: vdiv, vsqrt, vrsqrt, vwaitq have special operand formats, not standard dest mask
+    nullptr
+  };
+
+  // Broadcast variants - base mnemonic + broadcast suffix (x/y/z/w)
+  static const char *VU0Broadcast[] = {
+    "vaddx", "vaddy", "vaddz", "vaddw",
+    "vsubx", "vsuby", "vsubz", "vsubw",
+    "vmulx", "vmuly", "vmulz", "vmulw",
+    "vmaddx", "vmaddy", "vmaddz", "vmaddw",
+    "vmsubx", "vmsuby", "vmsubz", "vmsubw",
+    "vmaxx", "vmaxy", "vmaxz", "vmaxw",
+    "vminix", "vminiy", "vminiz", "vminiw",
+    "vmulax", "vmulay", "vmulaz", "vmulaw",
+    "vaddax", "vadday", "vaddaz", "vaddaw",
+    "vsubax", "vsubay", "vsubaz", "vsubaw",
+    "vmaddax", "vmadday", "vmaddaz", "vmaddaw",
+    "vmsubax", "vmsubay", "vmsubaz", "vmsubaw",
+    // Q-register operations with dest mask
+    "vmulq", "vaddq", "vsubq", "vmaddq", "vmsubq",
+    nullptr
+  };
+
+  for (const char **P = VU0Simple; *P; ++P) {
+    if (Name.equals_insensitive(*P))
+      return true;
+  }
+  for (const char **P = VU0Broadcast; *P; ++P) {
+    if (Name.equals_insensitive(*P))
+      return true;
+  }
+
+  return false;
+}
+
+// Parse VU0 ACC operand ($ACC or $acc)
+// The ACC register is the VU0 accumulator used by VADDA, VMULA, etc.
+// Since ACC is always implicit in the encoding, we just parse it and
+// create a placeholder operand.
+ParseStatus MipsAsmParser::parseVU0Acc(OperandVector &Operands) {
+  MCAsmParser &Parser = getParser();
+  SMLoc S = Parser.getTok().getLoc();
+
+  // Expect a register token
+  if (Parser.getTok().isNot(AsmToken::Dollar))
+    return ParseStatus::NoMatch;
+
+  Parser.Lex();  // Consume '$'
+
+  StringRef Name = Parser.getTok().getString();
+  if (!Name.equals_insensitive("acc"))
+    return ParseStatus::NoMatch;
+
+  Parser.Lex();  // Consume 'acc'
+  SMLoc E = Parser.getTok().getLoc();
+
+  // Create VU0 ACC register operand
+  Operands.push_back(MipsOperand::createVU0AccReg(
+      "$acc", getContext().getRegisterInfo(), S, E, *this));
+
+  return ParseStatus::Success;
+}
+
+// Parse VU0 Q register operand ($Q or $q)
+// The Q register holds the result of VDIV, VSQRT, VRSQRT operations
+ParseStatus MipsAsmParser::parseVU0Q(OperandVector &Operands) {
+  MCAsmParser &Parser = getParser();
+  SMLoc S = Parser.getTok().getLoc();
+
+  // Expect a register token
+  if (Parser.getTok().isNot(AsmToken::Dollar))
+    return ParseStatus::NoMatch;
+
+  Parser.Lex();  // Consume '$'
+
+  StringRef Name = Parser.getTok().getString();
+  if (!Name.equals_insensitive("q"))
+    return ParseStatus::NoMatch;
+
+  Parser.Lex();  // Consume 'q'
+  SMLoc E = Parser.getTok().getLoc();
+
+  // Create VU0 Q register operand
+  Operands.push_back(MipsOperand::createVU0QReg(
+      "$Q", getContext().getRegisterInfo(), S, E, *this));
+
+  return ParseStatus::Success;
+}
+
+// Split a VU0 mnemonic with dest mask suffix into base mnemonic and mask
+// E.g., "vmul.xyz" -> BaseMnemonic="vmul", DestMask=0b1110
+// E.g., "vmulax.w" -> BaseMnemonic="vmulax", DestMask=0b0001
+// Returns true if this is a VU0 mnemonic with a valid dest mask
+bool MipsAsmParser::splitVU0MnemonicAndDestMask(StringRef Name,
+                                                 StringRef &BaseMnemonic,
+                                                 unsigned &DestMask) {
+  // Look for '.' in the mnemonic
+  size_t DotPos = Name.find('.');
+  if (DotPos == StringRef::npos)
+    return false;
+
+  StringRef Base = Name.substr(0, DotPos);
+  StringRef Suffix = Name.substr(DotPos + 1);
+
+  // Check if the base is a known VU0 mnemonic
+  if (!isVU0Mnemonic(Base))
+    return false;
+
+  // Parse the dest mask suffix
+  unsigned Mask = parseVU0DestMaskString(Suffix);
+  if (Mask == 0)
+    return false;
+
+  BaseMnemonic = Base;
+  DestMask = Mask;
+  return true;
+}
+
 /// Sometimes (i.e. load/stores) the operand may be followed immediately by
 /// either this.
 /// ::= '(', register, ')'
@@ -7074,39 +7289,64 @@ bool MipsAsmParser::parseInstruction(ParseInstructionInfo &Info, StringRef Name,
   // We have reached first instruction, module directive are now forbidden.
   getTargetStreamer().forbidModuleDirective();
 
+  // Check for VU0 mnemonic with dest mask suffix (e.g., "vmul.xyz")
+  // If found, split into base mnemonic and dest mask operand
+  StringRef BaseMnemonic;
+  unsigned VU0DestMask = 0;
+  bool IsVU0WithMask = splitVU0MnemonicAndDestMask(Name, BaseMnemonic, VU0DestMask);
+  bool IsVU0NoMask = false;
+
+  // Check if the mnemonic itself (without '.') is a VU0 instruction
+  // In this case, default to xyzw mask (0xF)
+  if (!IsVU0WithMask && isVU0Mnemonic(Name)) {
+    IsVU0NoMask = true;
+    VU0DestMask = 0xF;  // Default to xyzw
+  }
+
+  // Use base mnemonic for VU0 instructions, otherwise use original name
+  StringRef MnemonicToMatch = IsVU0WithMask ? BaseMnemonic : Name;
+
   // Check if we have valid mnemonic
-  if (!mnemonicIsValid(Name, 0)) {
+  if (!mnemonicIsValid(MnemonicToMatch, 0)) {
     FeatureBitset FBS = ComputeAvailableFeatures(getSTI().getFeatureBits());
-    std::string Suggestion = MipsMnemonicSpellCheck(Name, FBS);
+    std::string Suggestion = MipsMnemonicSpellCheck(MnemonicToMatch, FBS);
     return Error(NameLoc, "unknown instruction" + Suggestion);
   }
+
   // First operand in MCInst is instruction mnemonic.
-  Operands.push_back(MipsOperand::CreateToken(Name, NameLoc, *this));
+  Operands.push_back(MipsOperand::CreateToken(MnemonicToMatch, NameLoc, *this));
+
+  // For VU0 instructions, add the dest mask as second operand
+  // (either from suffix like .xyz, or default 0xF for no suffix)
+  if (IsVU0WithMask || IsVU0NoMask) {
+    const MCExpr *MaskExpr = MCConstantExpr::create(VU0DestMask, getContext());
+    Operands.push_back(MipsOperand::CreateImm(MaskExpr, NameLoc, NameLoc, *this));
+  }
 
   // Read the remaining operands.
   if (getLexer().isNot(AsmToken::EndOfStatement)) {
     // Read the first operand.
-    if (parseOperand(Operands, Name)) {
+    if (parseOperand(Operands, MnemonicToMatch)) {
       SMLoc Loc = getLexer().getLoc();
       return Error(Loc, "unexpected token in argument list");
     }
-    if (getLexer().is(AsmToken::LBrac) && parseBracketSuffix(Name, Operands))
+    if (getLexer().is(AsmToken::LBrac) && parseBracketSuffix(MnemonicToMatch, Operands))
       return true;
     // AFAIK, parenthesis suffixes are never on the first operand
 
     while (getLexer().is(AsmToken::Comma)) {
       Parser.Lex(); // Eat the comma.
       // Parse and remember the operand.
-      if (parseOperand(Operands, Name)) {
+      if (parseOperand(Operands, MnemonicToMatch)) {
         SMLoc Loc = getLexer().getLoc();
         return Error(Loc, "unexpected token in argument list");
       }
       // Parse bracket and parenthesis suffixes before we iterate
       if (getLexer().is(AsmToken::LBrac)) {
-        if (parseBracketSuffix(Name, Operands))
+        if (parseBracketSuffix(MnemonicToMatch, Operands))
           return true;
       } else if (getLexer().is(AsmToken::LParen) &&
-                 parseParenSuffix(Name, Operands))
+                 parseParenSuffix(MnemonicToMatch, Operands))
         return true;
     }
   }

@@ -219,6 +219,10 @@ let Namespace = "Mips" in {
   // Used by VADDA, VSUBA, VMULA, VMADD, VMSUB, etc.
   def VU0ACC : MipsReg<0, "$acc">, DwarfRegNum<[144]>;
 
+  // R5900 VU0 Q register - 32-bit float result register for division/sqrt
+  // Used by VDIV, VSQRT, VRSQRT, VMULQ, etc.
+  def VU0Q : MipsReg<0, "$Q">, DwarfRegNum<[145]>;
+
   // COP0 registers.
   foreach I = 0-31 in
   def COP0#I : MipsReg<I, ""#I>;
@@ -449,6 +453,9 @@ def FPUACC : RegisterClass<"Mips", [f32], 32, (add FPU_ACC)>, Unallocatable;
 
 // R5900 VU0 Accumulator register class - 128-bit (4x32-bit floats)
 def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>, Unallocatable;
+
+// R5900 VU0 Q register class - 32-bit float result register
+def VU0QRC : RegisterClass<"Mips", [f32], 32, (add VU0Q)>, Unallocatable;
 
 // MIPS32r6/MIPS64r6 store FPU condition codes in normal FGR registers.
 // This class allows us to represent this in codegen patterns.

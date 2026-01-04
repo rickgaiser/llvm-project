@@ -208,6 +208,11 @@ def II_VU0_VMOVE        : InstrItinClass;  // VU0 vector move
 def II_VU0_VABS         : InstrItinClass;  // VU0 vector absolute value
 def II_VU0_VMAX         : InstrItinClass;  // VU0 vector maximum
 def II_VU0_VMINI        : InstrItinClass;  // VU0 vector minimum
+def II_VU0_VDIV         : InstrItinClass;  // VU0 divide/sqrt/rsqrt
+def II_VU0_MISC         : InstrItinClass;  // VU0 miscellaneous (nop, etc.)
+def II_VU0_VOPMULA      : InstrItinClass;  // VU0 outer product multiply-add
+def II_VU0_VOPMSUB      : InstrItinClass;  // VU0 outer product multiply-subtract
+def II_VU0_VCLIP        : InstrItinClass;  // VU0 clip detection
 def II_LDR              : InstrItinClass;
 def II_LDPC             : InstrItinClass;
 def II_LDXC1            : InstrItinClass;
