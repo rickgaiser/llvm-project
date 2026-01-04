@@ -28,7 +28,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
 | 128-bit Registers | **Partial** | GPR128 class and LQ/SQ instructions implemented |
-| MMI Instructions | Not Implemented | |
+| MMI Instructions | **Partial** | HI/LO moves, min/max, abs, logical, compare, PLZCW implemented |
 | VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
@@ -266,15 +266,15 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 | `PHMADH` | Parallel Horizontal Multiply-Add Halfword | Not Implemented |
 | `PHMSBH` | Parallel Horizontal Multiply-Subtract Halfword | Not Implemented |
 | `PDIVBW` | Parallel Divide Broadcast Word | Not Implemented |
-| `PMFHI` | Parallel Move From HI Register | Not Implemented |
-| `PMFLO` | Parallel Move From LO Register | Not Implemented |
-| `PMTHI` | Parallel Move To HI Register | Not Implemented |
-| `PMTLO` | Parallel Move To LO Register | Not Implemented |
+| `PMFHI` | Parallel Move From HI Register | **Implemented** |
+| `PMFLO` | Parallel Move From LO Register | **Implemented** |
+| `PMTHI` | Parallel Move To HI Register | **Implemented** |
+| `PMTLO` | Parallel Move To LO Register | **Implemented** |
 | `PMFHL.LW` | Parallel Move From HI/LO (Low Word) | **Implemented** (used for ACC64 spill to stack) |
-| `PMFHL.UW` | Parallel Move From HI/LO (Upper Word) | Not Implemented |
-| `PMFHL.SLW` | Parallel Move From HI/LO (Signed Low Word) | Not Implemented |
-| `PMFHL.LH` | Parallel Move From HI/LO (Low Halfword) | Not Implemented |
-| `PMFHL.SH` | Parallel Move From HI/LO (Signed Halfword) | Not Implemented |
+| `PMFHL.UW` | Parallel Move From HI/LO (Upper Word) | **Implemented** |
+| `PMFHL.SLW` | Parallel Move From HI/LO (Saturating Low Word) | **Implemented** |
+| `PMFHL.LH` | Parallel Move From HI/LO (Low Halfword) | **Implemented** |
+| `PMFHL.SH` | Parallel Move From HI/LO (Saturating Halfword) | **Implemented** |
 | `PMTHL.LW` | Parallel Move To HI/LO (Low Word) | **Implemented** (used for ACC64 restore from stack) |
 
 ### 2.3 Shift Operations
@@ -305,28 +305,28 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PABSH` | Parallel Absolute Halfword | Not Implemented |
-| `PABSW` | Parallel Absolute Word | Not Implemented |
-| `PMAXH` | Parallel Maximum Halfword | Not Implemented |
-| `PMINH` | Parallel Minimum Halfword | Not Implemented |
-| `PMAXW` | Parallel Maximum Word | Not Implemented |
-| `PMINW` | Parallel Minimum Word | Not Implemented |
-| `PAND` | Parallel AND | Not Implemented |
-| `POR` | Parallel OR | Not Implemented |
-| `PXOR` | Parallel XOR | Not Implemented |
-| `PNOR` | Parallel NOR | Not Implemented |
+| `PABSH` | Parallel Absolute Halfword | **Implemented** |
+| `PABSW` | Parallel Absolute Word | **Implemented** |
+| `PMAXH` | Parallel Maximum Halfword | **Implemented** |
+| `PMINH` | Parallel Minimum Halfword | **Implemented** |
+| `PMAXW` | Parallel Maximum Word | **Implemented** |
+| `PMINW` | Parallel Minimum Word | **Implemented** |
+| `PAND` | Parallel AND | **Implemented** |
+| `POR` | Parallel OR | **Implemented** |
+| `PXOR` | Parallel XOR | **Implemented** |
+| `PNOR` | Parallel NOR | **Implemented** |
 
 ### 2.6 Compare
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PCGTB` | Parallel Compare for Greater Than Byte | Not Implemented |
-| `PCEQB` | Parallel Compare for Equal Byte | Not Implemented |
-| `PCGTH` | Parallel Compare for Greater Than Halfword | Not Implemented |
-| `PCEQH` | Parallel Compare for Equal Halfword | Not Implemented |
-| `PCGTW` | Parallel Compare for Greater Than Word | Not Implemented |
-| `PCEQW` | Parallel Compare for Equal Word | Not Implemented |
-| `PLZCW` | Parallel Leading Zero Count Word | Not Implemented |
+| `PCGTB` | Parallel Compare for Greater Than Byte | **Implemented** |
+| `PCEQB` | Parallel Compare for Equal Byte | **Implemented** |
+| `PCGTH` | Parallel Compare for Greater Than Halfword | **Implemented** |
+| `PCEQH` | Parallel Compare for Equal Halfword | **Implemented** |
+| `PCGTW` | Parallel Compare for Greater Than Word | **Implemented** |
+| `PCEQW` | Parallel Compare for Equal Word | **Implemented** |
+| `PLZCW` | Parallel Leading Zero Count Word | **Implemented** |
 
 ### 2.7 Data Rearrangement
 

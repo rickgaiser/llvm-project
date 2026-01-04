@@ -3611,6 +3611,18 @@ def DIVU1 : InstSE<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
             R5900_MMI_2R_FM<0x1b>;
 
 //===----------------------------------------------------------------------===//
+// PLZCW - Parallel Leading Zero or one Count Word
+// Counts leading zeros/ones in two 32-bit words in parallel
+//===----------------------------------------------------------------------===//
+
+// PLZCW rd, rs - Count leading zeros/ones in rs[31:0] and rs[63:32]
+// Result is (count - 1) stored in rd[31:0] and rd[63:32] respectively
+let DecoderNamespace = "R5900" in
+def PLZCW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs),
+                   "plzcw\t$rd, $rs", [], II_CLZ, FrmR>,
+            R5900_MMI_PLZCW_FM;
+
+//===----------------------------------------------------------------------===//
 // R5900 Pipeline 1 Multiply-Add
 // Note: MADD1/MADDU1 use DecoderNamespace to avoid conflict with CLZ/CLO
 //===----------------------------------------------------------------------===//
@@ -3642,6 +3654,34 @@ def PMFHL_LW : InstSE<(outs GPR64Opnd:$rd), (ins),
                       "pmfhl.lw\t$rd", [], II_MFHI_MFLO, FrmR>,
                R5900_MMI_PMFHL_FM<0b00000>;
 
+// PMFHL.UW - Move HI:LO to GPR64 (upper word units)
+// rd[31:0] = LO[63:32], rd[63:32] = HI[63:32]
+let Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMFHL_UW : InstSE<(outs GPR64Opnd:$rd), (ins),
+                      "pmfhl.uw\t$rd", [], II_MFHI_MFLO, FrmR>,
+               R5900_MMI_PMFHL_FM<0b00001>;
+
+// PMFHL.SLW - Move HI:LO to GPR64 (saturating lower word)
+// rd = saturate(HI:LO[63:0]) to 32-bit signed, sign-extended to 64-bit
+let Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMFHL_SLW : InstSE<(outs GPR64Opnd:$rd), (ins),
+                       "pmfhl.slw\t$rd", [], II_MFHI_MFLO, FrmR>,
+                R5900_MMI_PMFHL_FM<0b00010>;
+
+// PMFHL.LH - Move HI:LO to GPR64 (lower halfwords packed)
+// rd = {LO[47:32], LO[15:0], HI[47:32], HI[15:0]}
+let Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMFHL_LH : InstSE<(outs GPR64Opnd:$rd), (ins),
+                      "pmfhl.lh\t$rd", [], II_MFHI_MFLO, FrmR>,
+               R5900_MMI_PMFHL_FM<0b00011>;
+
+// PMFHL.SH - Move HI:LO to GPR64 (saturating halfwords)
+// rd = saturating pack of HI:LO halfwords
+let Uses = [HI0, LO0], DecoderNamespace = "R5900" in
+def PMFHL_SH : InstSE<(outs GPR64Opnd:$rd), (ins),
+                      "pmfhl.sh\t$rd", [], II_MFHI_MFLO, FrmR>,
+               R5900_MMI_PMFHL_FM<0b00100>;
+
 // PMTHL.LW - Move GPR64 to HI:LO in word units
 // LO[31:0] = rs[31:0], HI[31:0] = rs[63:32]
 // This is the inverse of PMFHL.LW, used for restoring HI:LO from a GPR64.
@@ -3649,6 +3689,39 @@ let Defs = [HI0, LO0], DecoderNamespace = "R5900" in
 def PMTHL_LW : InstSE<(outs), (ins GPR64Opnd:$rs),
                       "pmthl.lw\t$rs", [], II_MTHI_MTLO, FrmR>,
                R5900_MMI_PMTHL_FM<0b00000>;
+
+//===----------------------------------------------------------------------===//
+// PMFHI/PMFLO/PMTHI/PMTLO - Parallel Move From/To HI/LO
+// These operate on the 128-bit HI:LO register pair.
+//===----------------------------------------------------------------------===//
+
+// PMFHI - Parallel Move From HI Register
+// rd = HI (128-bit)
+let Uses = [HI0], DecoderNamespace = "R5900" in
+def PMFHI : InstSE<(outs GPR64Opnd:$rd), (ins),
+                   "pmfhi\t$rd", [], II_MFHI_MFLO, FrmR>,
+            R5900_MMI2_RD_FM<0b01000>;
+
+// PMFLO - Parallel Move From LO Register
+// rd = LO (128-bit)
+let Uses = [LO0], DecoderNamespace = "R5900" in
+def PMFLO : InstSE<(outs GPR64Opnd:$rd), (ins),
+                   "pmflo\t$rd", [], II_MFHI_MFLO, FrmR>,
+            R5900_MMI2_RD_FM<0b01001>;
+
+// PMTHI - Parallel Move To HI Register
+// HI = rs (128-bit)
+let Defs = [HI0], DecoderNamespace = "R5900" in
+def PMTHI : InstSE<(outs), (ins GPR64Opnd:$rs),
+                   "pmthi\t$rs", [], II_MTHI_MTLO, FrmR>,
+            R5900_MMI3_RS_FM<0b01000>;
+
+// PMTLO - Parallel Move To LO Register
+// LO = rs (128-bit)
+let Defs = [LO0], DecoderNamespace = "R5900" in
+def PMTLO : InstSE<(outs), (ins GPR64Opnd:$rs),
+                   "pmtlo\t$rs", [], II_MTHI_MTLO, FrmR>,
+            R5900_MMI3_RS_FM<0b01001>;
 
 //===----------------------------------------------------------------------===//
 // PMULTW/PMADDW - Parallel Multiply/Multiply-Add Word
@@ -3711,6 +3784,140 @@ def PMADDUW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
                      [(set GPR64Opnd:$rd, (MipsPMAddu GPR64Opnd:$rs, GPR64Opnd:$rt))],
                      II_MADD, FrmR>,
               R5900_MMI3_FM<0b00000>;
+
+//===----------------------------------------------------------------------===//
+// PMAX/PMIN - Parallel Maximum/Minimum
+// These perform SIMD max/min operations on packed words or halfwords.
+//===----------------------------------------------------------------------===//
+
+// PMAXW - Parallel Maximum Word
+// rd[31:0] = max(rs[31:0], rt[31:0])
+// rd[63:32] = max(rs[63:32], rt[63:32])
+let DecoderNamespace = "R5900" in
+def PMAXW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pmaxw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI0_FM<0b00011>;
+
+// PMAXH - Parallel Maximum Halfword
+// rd = max of 4 packed signed halfwords
+let DecoderNamespace = "R5900" in
+def PMAXH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pmaxh\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI0_FM<0b00111>;
+
+// PMINW - Parallel Minimum Word
+// rd[31:0] = min(rs[31:0], rt[31:0])
+// rd[63:32] = min(rs[63:32], rt[63:32])
+let DecoderNamespace = "R5900" in
+def PMINW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pminw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_FM<0b00011>;
+
+// PMINH - Parallel Minimum Halfword
+// rd = min of 4 packed signed halfwords
+let DecoderNamespace = "R5900" in
+def PMINH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pminh\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_FM<0b00111>;
+
+//===----------------------------------------------------------------------===//
+// PABS - Parallel Absolute Value
+// Both use MMI1 format (func=0x28) with different sa values
+//===----------------------------------------------------------------------===//
+
+// PABSW - Parallel Absolute Word
+// rd[31:0] = abs(rt[31:0]), rd[63:32] = abs(rt[63:32])
+let DecoderNamespace = "R5900" in
+def PABSW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rt),
+                   "pabsw\t$rd, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_2R_FM<0b00001>;
+
+// PABSH - Parallel Absolute Halfword
+// rd = abs of 4 packed signed halfwords
+let DecoderNamespace = "R5900" in
+def PABSH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rt),
+                   "pabsh\t$rd, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_2R_FM<0b00101>;
+
+//===----------------------------------------------------------------------===//
+// Parallel Logical Operations
+//===----------------------------------------------------------------------===//
+
+// PAND - Parallel AND
+// rd = rs & rt (128-bit)
+let DecoderNamespace = "R5900" in
+def PAND : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                  "pand\t$rd, $rs, $rt", [], II_AND, FrmR>,
+           R5900_MMI2_FM<0b10010>;
+
+// POR - Parallel OR
+// rd = rs | rt (128-bit)
+let DecoderNamespace = "R5900" in
+def POR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                 "por\t$rd, $rs, $rt", [], II_AND, FrmR>,
+          R5900_MMI3_FM<0b10010>;
+
+// PXOR - Parallel XOR
+// rd = rs ^ rt (128-bit)
+let DecoderNamespace = "R5900" in
+def PXOR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                  "pxor\t$rd, $rs, $rt", [], II_AND, FrmR>,
+           R5900_MMI2_FM<0b10011>;
+
+// PNOR - Parallel NOR
+// rd = ~(rs | rt) (128-bit)
+let DecoderNamespace = "R5900" in
+def PNOR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                  "pnor\t$rd, $rs, $rt", [], II_AND, FrmR>,
+           R5900_MMI3_FM<0b10011>;
+
+//===----------------------------------------------------------------------===//
+// Parallel Compare Operations
+//===----------------------------------------------------------------------===//
+
+// PCGTW - Parallel Compare for Greater Than Word
+// rd[31:0] = (rs[31:0] > rt[31:0]) ? 0xFFFFFFFF : 0
+// rd[63:32] = (rs[63:32] > rt[63:32]) ? 0xFFFFFFFF : 0
+let DecoderNamespace = "R5900" in
+def PCGTW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pcgtw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI0_FM<0b00010>;
+
+// PCGTH - Parallel Compare for Greater Than Halfword
+// rd = compare 4 packed signed halfwords
+let DecoderNamespace = "R5900" in
+def PCGTH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pcgth\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI0_FM<0b00110>;
+
+// PCGTB - Parallel Compare for Greater Than Byte
+// rd = compare 8 packed signed bytes
+let DecoderNamespace = "R5900" in
+def PCGTB : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pcgtb\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI0_FM<0b01010>;
+
+// PCEQW - Parallel Compare for Equal Word
+// rd[31:0] = (rs[31:0] == rt[31:0]) ? 0xFFFFFFFF : 0
+// rd[63:32] = (rs[63:32] == rt[63:32]) ? 0xFFFFFFFF : 0
+let DecoderNamespace = "R5900" in
+def PCEQW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pceqw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_FM<0b00010>;
+
+// PCEQH - Parallel Compare for Equal Halfword
+// rd = compare 4 packed halfwords for equality
+let DecoderNamespace = "R5900" in
+def PCEQH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pceqh\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_FM<0b00110>;
+
+// PCEQB - Parallel Compare for Equal Byte
+// rd = compare 8 packed bytes for equality
+let DecoderNamespace = "R5900" in
+def PCEQB : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+                   "pceqb\t$rd, $rs, $rt", [], II_AND, FrmR>,
+            R5900_MMI1_FM<0b01010>;
 
 } // Predicates = [HasR5900]
 

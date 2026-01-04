@@ -1110,6 +1110,24 @@ class R5900_MMI_2R_FM<bits<6> funct> : StdArch {
   let Inst{5-0}   = funct;
 }
 
+// R5900 MMI format for PLZCW: rd = LZC(rs) - 1
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6 | 5-0    |
+// | MMI    | rs    | 0     | rd    | 0    | PLZCW  |
+// | 011100 | rs    | 00000 | rd    | 00000| 000100 |
+class R5900_MMI_PLZCW_FM : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = 0;        // rt = 0
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = 0;        // sa = 0
+  let Inst{5-0}   = 0b000100; // PLZCW function code
+}
+
 // R5900 MMI PMFHL format: rd = HI/LO combined
 // | 31-26  | 25-16 | 15-11 | 10-6 | 5-0    |
 // | MMI    | 0     | rd    | fmt  | PMFHL  |
@@ -1178,6 +1196,114 @@ class R5900_MMI3_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101001; // MMI3 function code
+}
+
+// R5900 MMI0 format: 3-register parallel instructions
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | rd    | funct | MMI0   |
+// | 011100 | rs    | rt    | rd    | func  | 001000 |
+// Used for: PMAXW, PMAXH, etc.
+class R5900_MMI0_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001000; // MMI0 function code
+}
+
+// R5900 MMI1 format: 3-register parallel instructions
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | rd    | funct | MMI1   |
+// | 011100 | rs    | rt    | rd    | func  | 101000 |
+// Used for: PMINW, PMINH, etc.
+class R5900_MMI1_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101000; // MMI1 function code
+}
+
+// R5900 MMI0 2-operand format: for PABSW (rd, rt with rs=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | 0     | rt    | rd    | funct | MMI0   |
+// | 011100 | 00000 | rt    | rd    | func  | 001000 |
+class R5900_MMI0_2R_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = 0;        // rs = 0
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001000; // MMI0 function code
+}
+
+// R5900 MMI1 2-operand format: for PABSH (rd, rt with rs=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | 0     | rt    | rd    | funct | MMI1   |
+// | 011100 | 00000 | rt    | rd    | func  | 101000 |
+class R5900_MMI1_2R_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = 0;        // rs = 0
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101000; // MMI1 function code
+}
+
+// R5900 MMI2 rd-only format: for PMFHI/PMFLO
+// | 31-26  | 25-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | 0     | rd    | funct | MMI2   |
+// | 011100 | 0     | rd    | func  | 001001 |
+class R5900_MMI2_RD_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-16} = 0;        // rs, rt = 0
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001001; // MMI2 function code
+}
+
+// R5900 MMI3 rs-only format: for PMTHI/PMTLO
+// | 31-26  | 25-21 | 20-11 | 10-6  | 5-0    |
+// | MMI    | rs    | 0     | funct | MMI3   |
+// | 011100 | rs    | 0     | func  | 101001 |
+class R5900_MMI3_RS_FM<bits<5> funct> : StdArch {
+  bits<5> rs;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-11} = 0;        // rt, rd = 0
   let Inst{10-6}  = funct;
   let Inst{5-0}   = 0b101001; // MMI3 function code
 }
