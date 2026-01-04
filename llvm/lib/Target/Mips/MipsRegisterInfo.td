@@ -46,6 +46,12 @@ class Mips64GPRReg<bits<16> Enc, string n, list<Register> subregs>
   let SubRegIndices = [sub_32];
 }
 
+// Mips 128-bit CPU Registers (R5900)
+class Mips128GPRReg<bits<16> Enc, string n, list<Register> subregs>
+  : MipsRegWithSubRegs<Enc, n, subregs> {
+  let SubRegIndices = [sub_64];
+}
+
 // Mips 32-bit FPU Registers
 class FPR<bits<16> Enc, string n> : MipsReg<Enc, n>;
 
@@ -152,6 +158,41 @@ let Namespace = "Mips" in {
   def SP_64   : Mips64GPRReg< 29, "sp",  [SP]>, DwarfRegNum<[29]>;
   def FP_64   : Mips64GPRReg< 30, "fp",  [FP]>, DwarfRegNum<[30]>;
   def RA_64   : Mips64GPRReg< 31, "ra",  [RA]>, DwarfRegNum<[31]>;
+
+  // General Purpose 128-bit Registers (R5900)
+  let isConstant = true in
+  def ZERO_128 : Mips128GPRReg< 0, "zero", [ZERO_64]>, DwarfRegNum<[0]>;
+  def AT_128   : Mips128GPRReg< 1, "1",    [AT_64]>, DwarfRegNum<[1]>;
+  def V0_128   : Mips128GPRReg< 2, "2",    [V0_64]>, DwarfRegNum<[2]>;
+  def V1_128   : Mips128GPRReg< 3, "3",    [V1_64]>, DwarfRegNum<[3]>;
+  def A0_128   : Mips128GPRReg< 4, "4",    [A0_64]>, DwarfRegNum<[4]>;
+  def A1_128   : Mips128GPRReg< 5, "5",    [A1_64]>, DwarfRegNum<[5]>;
+  def A2_128   : Mips128GPRReg< 6, "6",    [A2_64]>, DwarfRegNum<[6]>;
+  def A3_128   : Mips128GPRReg< 7, "7",    [A3_64]>, DwarfRegNum<[7]>;
+  def T0_128   : Mips128GPRReg< 8, "8",    [T0_64]>, DwarfRegNum<[8]>;
+  def T1_128   : Mips128GPRReg< 9, "9",    [T1_64]>, DwarfRegNum<[9]>;
+  def T2_128   : Mips128GPRReg< 10, "10",  [T2_64]>, DwarfRegNum<[10]>;
+  def T3_128   : Mips128GPRReg< 11, "11",  [T3_64]>, DwarfRegNum<[11]>;
+  def T4_128   : Mips128GPRReg< 12, "12",  [T4_64]>, DwarfRegNum<[12]>;
+  def T5_128   : Mips128GPRReg< 13, "13",  [T5_64]>, DwarfRegNum<[13]>;
+  def T6_128   : Mips128GPRReg< 14, "14",  [T6_64]>, DwarfRegNum<[14]>;
+  def T7_128   : Mips128GPRReg< 15, "15",  [T7_64]>, DwarfRegNum<[15]>;
+  def S0_128   : Mips128GPRReg< 16, "16",  [S0_64]>, DwarfRegNum<[16]>;
+  def S1_128   : Mips128GPRReg< 17, "17",  [S1_64]>, DwarfRegNum<[17]>;
+  def S2_128   : Mips128GPRReg< 18, "18",  [S2_64]>, DwarfRegNum<[18]>;
+  def S3_128   : Mips128GPRReg< 19, "19",  [S3_64]>, DwarfRegNum<[19]>;
+  def S4_128   : Mips128GPRReg< 20, "20",  [S4_64]>, DwarfRegNum<[20]>;
+  def S5_128   : Mips128GPRReg< 21, "21",  [S5_64]>, DwarfRegNum<[21]>;
+  def S6_128   : Mips128GPRReg< 22, "22",  [S6_64]>, DwarfRegNum<[22]>;
+  def S7_128   : Mips128GPRReg< 23, "23",  [S7_64]>, DwarfRegNum<[23]>;
+  def T8_128   : Mips128GPRReg< 24, "24",  [T8_64]>, DwarfRegNum<[24]>;
+  def T9_128   : Mips128GPRReg< 25, "25",  [T9_64]>, DwarfRegNum<[25]>;
+  def K0_128   : Mips128GPRReg< 26, "26",  [K0_64]>, DwarfRegNum<[26]>;
+  def K1_128   : Mips128GPRReg< 27, "27",  [K1_64]>, DwarfRegNum<[27]>;
+  def GP_128   : Mips128GPRReg< 28, "gp",  [GP_64]>, DwarfRegNum<[28]>;
+  def SP_128   : Mips128GPRReg< 29, "sp",  [SP_64]>, DwarfRegNum<[29]>;
+  def FP_128   : Mips128GPRReg< 30, "fp",  [FP_64]>, DwarfRegNum<[30]>;
+  def RA_128   : Mips128GPRReg< 31, "ra",  [RA_64]>, DwarfRegNum<[31]>;
 
   /// Mips Single point precision FPU Registers
   foreach I = 0-31 in
@@ -386,6 +427,21 @@ def GPR64 : RegisterClass<"Mips", [i64], 64, (add
   // Reserved
   K0_64, K1_64, GP_64, SP_64, FP_64, RA_64)>;
 
+// R5900 128-bit General Purpose Registers
+def GPR128 : RegisterClass<"Mips", [i128], 128, (add
+  // Reserved
+  ZERO_128, AT_128,
+  // Return Values and Arguments
+  V0_128, V1_128, A0_128, A1_128, A2_128, A3_128,
+  // Not preserved across procedure calls
+  T0_128, T1_128, T2_128, T3_128, T4_128, T5_128, T6_128, T7_128,
+  // Callee save
+  S0_128, S1_128, S2_128, S3_128, S4_128, S5_128, S6_128, S7_128,
+  // Not preserved across procedure calls
+  T8_128, T9_128,
+  // Reserved
+  K0_128, K1_128, GP_128, SP_128, FP_128, RA_128)>;
+
 def CPU16Regs : RegisterClass<"Mips", [i32], 32, (add
   // Return Values and Arguments
   V0, V1, A0, A1, A2, A3,
@@ -567,6 +623,11 @@ def GPR64AsmOperand : MipsAsmRegOperand {
   let PredicateMethod = "isGPRAsmReg";
 }
 
+def GPR128AsmOperand : MipsAsmRegOperand {
+  let Name = "GPR128AsmReg";
+  let PredicateMethod = "isGPRAsmReg";
+}
+
 def GPR32ZeroAsmOperand : MipsAsmRegOperand {
   let Name = "GPR32ZeroAsmReg";
   let PredicateMethod = "isGPRZeroAsmReg";
@@ -703,6 +764,10 @@ def GPRMM16OpndMovePPairSecond : RegisterOperand<GPRMM16MovePPairSecond> {
 
 def GPR64Opnd : RegisterOperand<GPR64> {
   let ParserMatchClass = GPR64AsmOperand;
+}
+
+def GPR128Opnd : RegisterOperand<GPR128> {
+  let ParserMatchClass = GPR128AsmOperand;
 }
 
 def DSPROpnd : RegisterOperand<DSPR> {

@@ -109,6 +109,33 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   if (Subtarget.isGP64bit())
     addRegisterClass(MVT::i64, &Mips::GPR64RegClass);
 
+  // R5900 has native 128-bit GPRs accessible via LQ/SQ
+  if (Subtarget.isR5900()) {
+    addRegisterClass(MVT::i128, &Mips::GPR128RegClass);
+
+    // 128-bit load/store are native (LQ/SQ)
+    setOperationAction(ISD::LOAD, MVT::i128, Legal);
+    setOperationAction(ISD::STORE, MVT::i128, Legal);
+
+    // Expand arithmetic to pairs of 64-bit operations
+    setOperationAction(ISD::ADD, MVT::i128, Expand);
+    setOperationAction(ISD::SUB, MVT::i128, Expand);
+    setOperationAction(ISD::MUL, MVT::i128, Expand);
+    setOperationAction(ISD::SDIV, MVT::i128, Expand);
+    setOperationAction(ISD::UDIV, MVT::i128, Expand);
+    setOperationAction(ISD::SREM, MVT::i128, Expand);
+    setOperationAction(ISD::UREM, MVT::i128, Expand);
+    setOperationAction(ISD::AND, MVT::i128, Expand);
+    setOperationAction(ISD::OR, MVT::i128, Expand);
+    setOperationAction(ISD::XOR, MVT::i128, Expand);
+    setOperationAction(ISD::SHL, MVT::i128, Expand);
+    setOperationAction(ISD::SRL, MVT::i128, Expand);
+    setOperationAction(ISD::SRA, MVT::i128, Expand);
+    setOperationAction(ISD::SETCC, MVT::i128, Expand);
+    setOperationAction(ISD::SELECT, MVT::i128, Expand);
+    setOperationAction(ISD::SELECT_CC, MVT::i128, Expand);
+  }
+
   if (Subtarget.hasDSP() || Subtarget.hasMSA()) {
     // Expand all truncating stores and extending loads.
     for (MVT VT0 : MVT::fixedlen_vector_valuetypes()) {

@@ -1518,6 +1518,24 @@ static DecodeStatus DecodeVFMem(MCInst &Inst, unsigned Insn, uint64_t Address,
   return MCDisassembler::Success;
 }
 
+// Decode GPR128 memory operands (R5900 LQ/SQ)
+static DecodeStatus DecodeGPR128Mem(MCInst &Inst, unsigned Insn,
+                                    uint64_t Address,
+                                    const MCDisassembler *Decoder) {
+  int Offset = SignExtend32<16>(Insn & 0xffff);
+  unsigned RegNo = fieldFromInstruction(Insn, 16, 5);
+  unsigned BaseNo = fieldFromInstruction(Insn, 21, 5);
+
+  MCRegister Reg = getReg(Decoder, Mips::GPR128RegClassID, RegNo);
+  MCRegister Base = getReg(Decoder, Mips::GPR64RegClassID, BaseNo);
+
+  Inst.addOperand(MCOperand::createReg(Reg));
+  Inst.addOperand(MCOperand::createReg(Base));
+  Inst.addOperand(MCOperand::createImm(Offset));
+
+  return MCDisassembler::Success;
+}
+
 static DecodeStatus DecodeFMemCop2R6(MCInst &Inst, unsigned Insn,
                                      uint64_t Address,
                                      const MCDisassembler *Decoder) {

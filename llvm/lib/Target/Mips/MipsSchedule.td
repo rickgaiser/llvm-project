@@ -191,6 +191,7 @@ def II_LDC1             : InstrItinClass;
 def II_LDC2             : InstrItinClass;
 def II_LDC3             : InstrItinClass;
 def II_LQC2             : InstrItinClass; // R5900 VU0 quadword load
+def II_LQ               : InstrItinClass; // R5900 GPR 128-bit load
 def II_LDL              : InstrItinClass;
 
 // R5900 VU0 arithmetic instructions
@@ -339,6 +340,7 @@ def II_SDC1             : InstrItinClass;
 def II_SDC2             : InstrItinClass;
 def II_SDC3             : InstrItinClass;
 def II_SQC2             : InstrItinClass; // R5900 VU0 quadword store
+def II_SQ               : InstrItinClass; // R5900 GPR 128-bit store
 def II_SDL              : InstrItinClass;
 def II_SDR              : InstrItinClass;
 def II_SDXC1            : InstrItinClass;

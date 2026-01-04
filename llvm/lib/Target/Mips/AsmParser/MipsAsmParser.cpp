@@ -925,6 +925,14 @@ public:
     return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
   }
 
+  /// Coerce the register to GPR128 and return the real register for the current
+  /// target (R5900).
+  MCRegister getGPR128Reg() const {
+    assert(isRegIdx() && (RegIdx.Kind & RegKind_GPR) && "Invalid access!");
+    unsigned ClassID = Mips::GPR128RegClassID;
+    return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
+  }
+
 private:
   /// Coerce the register to AFGR64 and return the real register for the current
   /// target.
@@ -1129,6 +1137,14 @@ public:
   void addGPR64AsmRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::createReg(getGPR64Reg()));
+  }
+
+  /// Render the operand to an MCInst as a GPR128 (R5900)
+  /// Asserts if the wrong number of operands are requested, or the operand
+  /// is not a k_RegisterIndex compatible with RegKind_GPR
+  void addGPR128AsmRegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::createReg(getGPR128Reg()));
   }
 
   void addAFGR64AsmRegOperands(MCInst &Inst, unsigned N) const {

@@ -463,6 +463,22 @@ def : InstRW<[R5900WriteVFLoad], (instrs LQC2)>;
 def : InstRW<[R5900WriteVFStore], (instrs SQC2)>;
 
 //===----------------------------------------------------------------------===//
+// GPR128 Quadword Load/Store (LQ/SQ)
+//===----------------------------------------------------------------------===//
+// LQ/SQ load/store 128-bit values to/from the extended 128-bit GPRs.
+
+def R5900WriteGPR128Load : SchedWriteRes<[R5900UnitLdSt]> {
+  let Latency = 2;
+}
+
+def R5900WriteGPR128Store : SchedWriteRes<[R5900UnitLdSt]> {
+  let Latency = 1;
+}
+
+def : InstRW<[R5900WriteGPR128Load], (instrs LQ)>;
+def : InstRW<[R5900WriteGPR128Store], (instrs SQ)>;
+
+//===----------------------------------------------------------------------===//
 // VU0 Control Register Transfer (CFC2/CTC2)
 //===----------------------------------------------------------------------===//
 // CFC2/CTC2 transfer between GPR and VU0 control registers (VI16-VI31).

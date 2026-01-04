@@ -3749,6 +3749,42 @@ let Predicates = [HasVU0] in {
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//
+// R5900 128-bit GPR Load/Store Instructions
+//===----------------------------------------------------------------------===//
+// LQ/SQ load/store 128-bit values to/from the extended 128-bit GPRs.
+// These are R5900-specific instructions (not MIPS III/IV).
+
+class LQ_GPR<string opstr, RegisterOperand RC, InstrItinClass Itin,
+             SDPatternOperator OpNode = null_frag> :
+  InstSE<(outs RC:$rt), (ins mem_simm16:$addr),
+         !strconcat(opstr, "\t$rt, $addr"),
+         [(set RC:$rt, (OpNode addrDefault:$addr))], Itin, FrmI, opstr> {
+  let DecoderMethod = "DecodeGPR128Mem";
+  let DecoderNamespace = "R5900";
+  let mayLoad = 1;
+}
+
+class SQ_GPR<string opstr, RegisterOperand RC, InstrItinClass Itin,
+             SDPatternOperator OpNode = null_frag> :
+  InstSE<(outs), (ins RC:$rt, mem_simm16:$addr),
+         !strconcat(opstr, "\t$rt, $addr"),
+         [(OpNode RC:$rt, addrDefault:$addr)], Itin, FrmI, opstr> {
+  let DecoderMethod = "DecodeGPR128Mem";
+  let DecoderNamespace = "R5900";
+  let mayStore = 1;
+}
+
+let Predicates = [HasR5900] in {
+  // LQ - Load Quadword (128-bit memory -> GPR128)
+  // Opcode: 0x1e (bits 31-26 = 011110)
+  def LQ : LQ_GPR<"lq", GPR128Opnd, II_LQ, load>, LW_FM<0x1e>;
+
+  // SQ - Store Quadword (GPR128 -> 128-bit memory)
+  // Opcode: 0x1f (bits 31-26 = 011111)
+  def SQ : SQ_GPR<"sq", GPR128Opnd, II_SQ, store>, LW_FM<0x1f>;
+} // Predicates = [HasR5900]
+
+//===----------------------------------------------------------------------===//
 // VU0 (COP2) Arithmetic Instructions - R5900
 //===----------------------------------------------------------------------===//
 // VU0 macro mode arithmetic instructions use the COP2 encoding with

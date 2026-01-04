@@ -27,7 +27,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No LL/SC Atomics | **Implemented** | Disabled via `setMaxAtomicSizeInBitsSupported(0)` |
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
-| 128-bit Registers | Not Implemented | |
+| 128-bit Registers | **Partial** | GPR128 class and LQ/SQ instructions implemented |
 | MMI Instructions | Not Implemented | |
 | VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
@@ -563,9 +563,9 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 - [x] Add basic scheduling model
 
 ### Phase 2: 128-bit Support
-- [ ] Define 128-bit register class (GPR128) in `MipsRegisterInfo.td`
-- [ ] Implement LQ/SQ instructions
-- [ ] Add TImode (`__int128`) support
+- [x] Define 128-bit register class (GPR128) in `MipsRegisterInfo.td`
+- [x] Implement LQ/SQ instructions
+- [ ] Add TImode (`__int128`) support (load/store via LQ/SQ, arithmetic expands to 64-bit ops)
 
 ### Phase 3: MMI Instructions
 - [ ] Create `MipsR5900MMIInstrInfo.td`
