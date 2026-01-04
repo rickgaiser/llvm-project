@@ -20,6 +20,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Target Triple | **Implemented** | `mips64el-scei-ps2` auto-selects r5900 |
+| Toolchain | **Implemented** | Uses `$PS2DEV` and `$PS2SDK` env vars |
 | ELF Machine Flag | **Implemented** | `EF_MIPS_MACH_5900` in ELF.h |
 | Linker Support | **Partial** | Recognized as MIPS III variant |
 | `-mcpu=r5900` | **Implemented** | `FeatureR5900` in Mips.td |
@@ -37,6 +38,9 @@ The EE Core is based on MIPS III architecture with significant extensions:
 |------|-------------|-------------|
 | `-mcpu=r5900` | Target R5900 processor | **Implemented** |
 | `-mvu0` | Enable VU0 SIMD operations | Not Implemented |
+| `-mabi=n32` | Use n32 ABI | **Default** for PS2 |
+| `-D_EE` | Define _EE macro | **Default** for PS2 |
+| `-D__ps2sdk__` | Define __ps2sdk__ macro | **Default** for PS2 |
 
 **R5900 Scheduling**: The post-RA MachineScheduler is enabled by default for R5900, providing optimal load/multiply interleaving based on the scheduling model latencies.
 
@@ -76,6 +80,46 @@ This builds:
 To complete the toolchain, you'll also need:
 - **newlib**: C library (compile with clang)
 - **crt0.o**: Startup code (from newlib or custom)
+
+## Environment Variables
+
+The PS2 toolchain uses environment variables to locate headers and libraries:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PS2DEV` | Root of PS2 development environment | `/usr/local/ps2dev` |
+| `PS2SDK` | PS2SDK installation directory | `$PS2DEV/ps2sdk` |
+
+### Expected Directory Structure
+
+```
+$PS2DEV/
+  llvm/                              # LLVM toolchain installation
+    bin/                             # clang, lld, etc.
+    lib/clang/<version>/include/     # Clang built-in headers (stddef.h, etc.)
+  mips64el-scei-ps2/                 # Target sysroot
+    include/                         # newlib headers
+    lib/                             # newlib libraries
+
+$PS2SDK/
+  ee/
+    include/                         # PS2SDK EE-specific headers
+    lib/                             # PS2SDK EE libraries
+  common/
+    include/                         # PS2SDK common headers
+```
+
+### Header Search Order
+
+When compiling for `mips64el-scei-ps2`, the toolchain searches for headers in this order:
+
+1. Clang resource directory: `$PS2DEV/llvm/lib/clang/<version>/include`
+2. Explicit sysroot (if `--sysroot` specified): `<sysroot>/include`
+3. Newlib headers: `$PS2DEV/mips64el-scei-ps2/include`
+4. PS2SDK EE headers: `$PS2SDK/ee/include`
+5. PS2SDK common headers: `$PS2SDK/common/include`
+
+Host system headers (`/usr/include`, `/usr/local/include`) are **not** included by default, ensuring a clean cross-compilation environment.
 
 ---
 
@@ -592,6 +636,15 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | FPU accumulator pass | `llvm/lib/Target/Mips/MipsR5900FPUAccChain.cpp` |
 | ISel patterns | `llvm/lib/Target/Mips/MipsISelDAGToDAG.cpp` |
 | ISel lowering | `llvm/lib/Target/Mips/MipsISelLowering.cpp` |
+
+### PS2 Toolchain Files
+
+| Purpose | File Path |
+|---------|-----------|
+| PS2 toolchain header | `clang/lib/Driver/ToolChains/PS2.h` |
+| PS2 toolchain impl | `clang/lib/Driver/ToolChains/PS2.cpp` |
+| Toolchain selection | `clang/lib/Driver/Driver.cpp` |
+| MIPS CPU selection | `clang/lib/Driver/ToolChains/Arch/Mips.cpp` |
 
 ---
 

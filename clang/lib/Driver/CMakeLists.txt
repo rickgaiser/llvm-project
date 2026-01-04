@@ -75,6 +75,7 @@ add_clang_library(clangDriver
   ToolChains/NetBSD.cpp
   ToolChains/OHOS.cpp
   ToolChains/OpenBSD.cpp
+  ToolChains/PS2.cpp
   ToolChains/PS4CPU.cpp
   ToolChains/Solaris.cpp
   ToolChains/SPIRV.cpp

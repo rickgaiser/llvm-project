@@ -85,6 +85,10 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   if (ABIName.empty() && Triple.isABIN32())
     ABIName = "n32";
 
+  // n32 is the default ABI for PS2 Emotion Engine.
+  if (ABIName.empty() && Triple.getOS() == llvm::Triple::PS2)
+    ABIName = "n32";
+
   if (ABIName.empty() &&
       (Triple.getVendor() == llvm::Triple::MipsTechnologies ||
        Triple.getVendor() == llvm::Triple::ImaginationTechnologies)) {
