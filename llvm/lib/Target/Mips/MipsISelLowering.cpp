@@ -325,6 +325,8 @@ const char *MipsTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case MipsISD::VU0_FADD_MASKED:   return "MipsISD::VU0_FADD_MASKED";
   case MipsISD::VU0_FSUB_MASKED:   return "MipsISD::VU0_FSUB_MASKED";
   case MipsISD::VU0_FMUL_MASKED:   return "MipsISD::VU0_FMUL_MASKED";
+  // R5900 MMI
+  case MipsISD::PLZCW:             return "MipsISD::PLZCW";
   }
   return nullptr;
 }

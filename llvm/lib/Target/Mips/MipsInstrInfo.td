@@ -134,6 +134,9 @@ def MipsPMAdd  : SDNode<"MipsISD::PMAdd", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
 def MipsPMAddu : SDNode<"MipsISD::PMAddu", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
 def MipsPMSub  : SDNode<"MipsISD::PMSub", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
 
+// R5900 PLZCW - count leading bits matching MSB, returns (count - 1)
+def MipsPLZCW : SDNode<"MipsISD::PLZCW", SDTIntUnaryOp>;
+
 // DivRem(u) nodes
 def MipsDivRem    : SDNode<"MipsISD::DivRem", SDT_MipsMultDiv>;
 def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsMultDiv>;
@@ -4490,6 +4493,78 @@ def : Pat<(v8i16 (bitconvert v16i8:$src)), (COPY_TO_REGCLASS v16i8:$src, GPR128)
 def : Pat<(v16i8 (bitconvert v4i32:$src)), (COPY_TO_REGCLASS v4i32:$src, GPR128)>;
 def : Pat<(v16i8 (bitconvert v8i16:$src)), (COPY_TO_REGCLASS v8i16:$src, GPR128)>;
 
+//===----------------------------------------------------------------------===//
+// R5900 Scalar MMI Operations
+// These use MMI instructions for scalar operations on i32/i64 values.
+// On R5900, GPR128/GPR64/GPR32 are the same physical registers, so these
+// instructions operate on the lower bits and ignore/produce garbage in upper bits.
+//===----------------------------------------------------------------------===//
+
+// Scalar versions of MMI instructions - same encoding, different register class
+// These are codegen-only; the assembler/disassembler uses the vector versions.
+// We define GPR32 versions since MIPS uses GPR32 for i32 operations.
+let isCodeGenOnly = 1, hasSideEffects = 0 in {
+  // PABSW scalar version - absolute value i32
+  def PABSW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rt),
+                         "pabsw\t$rd, $rt", [], II_AND, FrmR>,
+                  R5900_MMI1_2R_FM<0b00001>;
+
+  // PMAXW/PMINW scalar versions - signed max/min i32
+  let isCommutable = 1 in {
+    def PMAXW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                           "pmaxw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+                    R5900_MMI0_FM<0b00011>;
+
+    def PMINW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                           "pminw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+                    R5900_MMI1_FM<0b00011>;
+  }
+}
+
+// Scalar MMI patterns - use separate Pat definitions to avoid pattern issues
+def : Pat<(i32 (abs GPR32:$rt)), (PABSW_S32 GPR32:$rt)>;
+def : Pat<(i32 (smax GPR32:$rs, GPR32:$rt)), (PMAXW_S32 GPR32:$rs, GPR32:$rt)>;
+def : Pat<(i32 (smin GPR32:$rs, GPR32:$rt)), (PMINW_S32 GPR32:$rs, GPR32:$rt)>;
+
+// Scalar saturating arithmetic instructions
+let isCodeGenOnly = 1, hasSideEffects = 0, isCommutable = 1 in {
+  def PADDSW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                          "paddsw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+                   R5900_MMI0_FM<0b11000>;
+
+  def PADDUW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                          "padduw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+                   R5900_MMI3_FM<0b01000>;
+}
+
+let isCodeGenOnly = 1, hasSideEffects = 0 in {
+  def PSUBSW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                          "psubsw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+                   R5900_MMI0_FM<0b11001>;
+
+  def PSUBUW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+                          "psubuw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+                   R5900_MMI3_FM<0b01001>;
+}
+
+// Scalar saturating arithmetic patterns
+def : Pat<(i32 (saddsat GPR32:$rs, GPR32:$rt)), (PADDSW_S32 GPR32:$rs, GPR32:$rt)>;
+def : Pat<(i32 (ssubsat GPR32:$rs, GPR32:$rt)), (PSUBSW_S32 GPR32:$rs, GPR32:$rt)>;
+def : Pat<(i32 (uaddsat GPR32:$rs, GPR32:$rt)), (PADDUW_S32 GPR32:$rs, GPR32:$rt)>;
+def : Pat<(i32 (usubsat GPR32:$rs, GPR32:$rt)), (PSUBUW_S32 GPR32:$rs, GPR32:$rt)>;
+
+// PLZCW scalar version for CTLZ lowering
+// PLZCW counts leading bits matching MSB (sign bit), returns (count - 1)
+// CTLZ is lowered to: (src < 0) ? 0 : (PLZCW(src) + 1)
+let isCodeGenOnly = 1, hasSideEffects = 0 in {
+  def PLZCW_S32 : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs),
+                         "plzcw\t$rd, $rs", [], II_CLZ, FrmR>,
+                  R5900_MMI_PLZCW_FM;
+}
+
+// Pattern to match MipsISD::PLZCW to PLZCW_S32 instruction
+def : Pat<(i32 (MipsPLZCW GPR32:$rs)), (PLZCW_S32 GPR32:$rs)>;
+
 } // Predicates = [HasR5900]
 
 //===----------------------------------------------------------------------===//
@@ -5427,3 +5502,6 @@ include "MicroMips32r6InstrInfo.td"
 // Micromips DSP
 include "MicroMipsDSPInstrFormats.td"
 include "MicroMipsDSPInstrInfo.td"
+
+// Note: R5900 scalar MMI patterns are defined with the instruction definitions
+// (PABSW_S32, PMAXW_S32, etc.) in the HasR5900 predicate block above.

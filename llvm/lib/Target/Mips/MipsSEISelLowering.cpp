@@ -159,6 +159,18 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::ABS, MVT::v4i32, Legal);
     setOperationAction(ISD::ABS, MVT::v8i16, Legal);
 
+    // Scalar MMI operations - use PABSW/PMAXW/PMINW for i32
+    setOperationAction(ISD::ABS, MVT::i32, Legal);
+    setOperationAction(ISD::SMAX, MVT::i32, Legal);
+    setOperationAction(ISD::SMIN, MVT::i32, Legal);
+    // Scalar saturating arithmetic - use PADDSW/PSUBSW/PADDUW/PSUBUW for i32
+    setOperationAction(ISD::SADDSAT, MVT::i32, Legal);
+    setOperationAction(ISD::SSUBSAT, MVT::i32, Legal);
+    setOperationAction(ISD::UADDSAT, MVT::i32, Legal);
+    setOperationAction(ISD::USUBSAT, MVT::i32, Legal);
+    // CTLZ using PLZCW with conditional (for non-negative) or 0 (for negative)
+    setOperationAction(ISD::CTLZ, MVT::i32, Custom);
+
     // Shift operations: PSLLW/PSRLW/PSRAW (v4i32), PSLLH/PSRLH/PSRAH (v8i16)
     // Note: v16i8 shifts are not available in R5900 MMI
     setOperationAction(ISD::SHL, MVT::v4i32, Legal);
@@ -655,6 +667,7 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::VECTOR_SHUFFLE:     return lowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::SELECT:             return lowerSELECT(Op, DAG);
   case ISD::BITCAST:            return lowerBITCAST(Op, DAG);
+  case ISD::CTLZ:               return lowerCTLZ(Op, DAG);
   }
 
   return MipsTargetLowering::LowerOperation(Op, DAG);
@@ -1648,6 +1661,40 @@ SDValue MipsSETargetLowering::lowerBITCAST(SDValue Op,
 
   // Skip other cases of bitcast and use default lowering.
   return SDValue();
+}
+
+SDValue MipsSETargetLowering::lowerCTLZ(SDValue Op, SelectionDAG &DAG) const {
+  // R5900 PLZCW instruction counts leading bits matching the sign bit.
+  // For non-negative numbers, this equals (leading zeros - 1).
+  // For negative numbers, this equals (leading ones - 1).
+  //
+  // CTLZ always counts leading zeros:
+  // - Non-negative: CTLZ = PLZCW + 1
+  // - Negative: CTLZ = 0 (MSB is 1, so no leading zeros)
+  //
+  // Lower to: (src < 0) ? 0 : (PLZCW(src) + 1)
+
+  SDLoc DL(Op);
+  SDValue Src = Op.getOperand(0);
+  EVT VT = Op.getValueType();
+
+  // Only handle i32 for R5900
+  if (VT != MVT::i32 || !Subtarget.isR5900())
+    return SDValue();
+
+  // Generate PLZCW node - counts leading bits matching MSB, returns (count-1)
+  SDValue PLZCWRes = DAG.getNode(MipsISD::PLZCW, DL, VT, Src);
+
+  // Add 1 to get actual leading zeros count (for non-negative input)
+  SDValue One = DAG.getConstant(1, DL, VT);
+  SDValue CountPlusOne = DAG.getNode(ISD::ADD, DL, VT, PLZCWRes, One);
+
+  // If input is negative (MSB=1), CTLZ result is 0
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue IsNeg = DAG.getSetCC(DL, MVT::i32, Src, Zero, ISD::SETLT);
+
+  // Select: if negative return 0, else return PLZCW+1
+  return DAG.getSelect(DL, VT, IsNeg, Zero, CountPlusOne);
 }
 
 SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,

@@ -12,7 +12,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 - **COP2 (VU0)**: 128-bit vector floating-point unit (4x32-bit floats)
 - **MIPS IV Subset**: Supports MOVN, MOVZ, PREF, and FPU conditional moves
 - **No LL/SC**: Load-Linked/Store-Conditional atomics are not available
-- **No CLZ/CLO**: Count Leading Zeros/Ones instructions are not available
+- **No CLZ/CLO**: Standard CLZ/CLO not available, but PLZCW provides similar functionality
 - **No DMULT/DDIV**: 64-bit multiply/divide instructions are not available (use 32-bit ops)
 
 ## Current Implementation Status
@@ -28,7 +28,7 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
 | 128-bit Registers | **Implemented** | GPR128 class with vector types (v4i32, v8i16, v16i8), LQ/SQ with patterns |
-| MMI Instructions | **Partial** | Arithmetic (PADDW/H/B, PSUBW/H/B), logical (PAND/POR/PXOR/PNOR), min/max, abs, compare, GPR128 register copies (POR $d,$s,$s), bitcast patterns |
+| MMI Instructions | **Partial** | Arithmetic (PADDW/H/B, PSUBW/H/B), logical (PAND/POR/PXOR/PNOR), min/max, abs, compare, GPR128 register copies (POR $d,$s,$s), bitcast patterns, **scalar i32 optimizations** (abs, min/max, saturating arithmetic, ctlz) |
 | VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC, VF register copies (VMOVE.xyzw) |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
@@ -330,7 +330,7 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 | `PCEQH` | Parallel Compare for Equal Halfword | **Implemented** |
 | `PCGTW` | Parallel Compare for Greater Than Word | **Implemented** |
 | `PCEQW` | Parallel Compare for Equal Word | **Implemented** |
-| `PLZCW` | Parallel Leading Zero Count Word | **Implemented** |
+| `PLZCW` | Parallel Leading Zero Count Word | **Implemented** (also used for scalar i32 ctlz) |
 
 ### 2.7 Data Rearrangement
 
@@ -358,6 +358,23 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 | `PINTEH` | Parallel Interleave Even Halfword | **Implemented** (asm-only) |
 | `PINTH` | Parallel Interleave Halfword | **Implemented** (asm-only) |
 | `PROT3W` | Parallel Rotate 3 Words | **Implemented** (asm-only) |
+
+### 2.8 Scalar MMI Optimizations
+
+MMI instructions can also be used for scalar i32 operations, replacing multi-instruction sequences with single instructions. Since GPR32, GPR64, and GPR128 are different views of the same physical register, the MMI instruction operates on the lower 32 bits while ignoring the upper bits.
+
+| Scalar Operation | MMI Instruction | Replaces | LLVM Status |
+|------------------|-----------------|----------|-------------|
+| `abs(i32)` | `PABSW` | SRA+XOR+SUB (3 ops) | **Auto-selected** |
+| `smax(i32,i32)` | `PMAXW` | SLT+MOVN (2+ ops) | **Auto-selected** |
+| `smin(i32,i32)` | `PMINW` | SLT+MOVN (2+ ops) | **Auto-selected** |
+| `saddsat(i32,i32)` | `PADDSW` | Multi-instruction expansion | **Auto-selected** |
+| `ssubsat(i32,i32)` | `PSUBSW` | Multi-instruction expansion | **Auto-selected** |
+| `uaddsat(i32,i32)` | `PADDUW` | Multi-instruction expansion | **Auto-selected** |
+| `usubsat(i32,i32)` | `PSUBUW` | Multi-instruction expansion | **Auto-selected** |
+| `ctlz(i32)` | `PLZCW` + cond | Software expansion (many ops) | **Auto-selected** (4 instructions) |
+
+Note: PLZCW counts leading bits matching the sign bit (zeros for non-negative, ones for negative). The CTLZ lowering uses PLZCW+1 for non-negative values, or 0 for negative values (since negative numbers have no leading zeros).
 
 ---
 

@@ -270,6 +270,9 @@ class TargetRegisterClass;
       // Masked arithmetic: result[i] = (mask[i] ? op(base[i], other[i]) : base[i])
       VU0_FADD_MASKED, VU0_FSUB_MASKED, VU0_FMUL_MASKED,
 
+      // R5900 MMI PLZCW - count leading bits matching sign bit, returns count-1
+      PLZCW,
+
       // Load/Store Left/Right nodes.
       FIRST_MEMORY_OPCODE,
       LWL = FIRST_MEMORY_OPCODE,
