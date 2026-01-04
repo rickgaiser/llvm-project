@@ -1276,6 +1276,78 @@ class R5900_MMI1_2R_FM<bits<5> funct> : StdArch {
   let Inst{5-0}   = 0b101000; // MMI1 function code
 }
 
+// R5900 MMI2 2-operand format: for PEXEH, PEXEW, PREVH, PROT3W (rd, rt with rs=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | 0     | rt    | rd    | funct | MMI2   |
+// | 011100 | 00000 | rt    | rd    | func  | 001001 |
+class R5900_MMI2_2R_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = 0;        // rs = 0
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001001; // MMI2 function code
+}
+
+// R5900 MMI3 2-operand format: for PCPYH, PEXCH, PEXCW (rd, rt with rs=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | 0     | rt    | rd    | funct | MMI3   |
+// | 011100 | 00000 | rt    | rd    | func  | 101001 |
+class R5900_MMI3_2R_FM<bits<5> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = 0;        // rs = 0
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101001; // MMI3 function code
+}
+
+// R5900 MMI2 divide format: for PDIVW, PDIVBW (rs, rt only, rd=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | 0     | funct | MMI2   |
+// | 011100 | rs    | rt    | 00000 | func  | 001001 |
+class R5900_MMI2_DIV_FM<bits<5> funct> : StdArch {
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = 0;        // rd = 0
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b001001; // MMI2 function code
+}
+
+// R5900 MMI3 divide format: for PDIVUW (rs, rt only, rd=0)
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
+// | MMI    | rs    | rt    | 0     | funct | MMI3   |
+// | 011100 | rs    | rt    | 00000 | func  | 101001 |
+class R5900_MMI3_DIV_FM<bits<5> funct> : StdArch {
+  bits<5> rs;
+  bits<5> rt;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = rs;
+  let Inst{20-16} = rt;
+  let Inst{15-11} = 0;        // rd = 0
+  let Inst{10-6}  = funct;
+  let Inst{5-0}   = 0b101001; // MMI3 function code
+}
+
 // R5900 MMI2 rd-only format: for PMFHI/PMFLO
 // | 31-26  | 25-16 | 15-11 | 10-6  | 5-0    |
 // | MMI    | 0     | rd    | funct | MMI2   |
@@ -1306,6 +1378,88 @@ class R5900_MMI3_RS_FM<bits<5> funct> : StdArch {
   let Inst{20-11} = 0;        // rt, rd = 0
   let Inst{10-6}  = funct;
   let Inst{5-0}   = 0b101001; // MMI3 function code
+}
+
+// R5900 MMI Shift format: for PSLLH/PSRLH/PSRAH/PSLLW/PSRLW/PSRAW
+// | 31-26  | 25-21 | 20-16 | 15-11 | 10-6 | 5-0    |
+// | MMI    | 0     | rt    | rd    | sa   | funct  |
+// | 011100 | 00000 | rt    | rd    | sa   | funct  |
+class R5900_MMI_SHIFT_FM<bits<6> funct> : StdArch {
+  bits<5> rd;
+  bits<5> rt;
+  bits<5> sa;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b011100; // MMI opcode
+  let Inst{25-21} = 0;        // rs = 0
+  let Inst{20-16} = rt;
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = sa;       // shift amount
+  let Inst{5-0}   = funct;
+}
+
+// R5900 MFSA format: SPECIAL class, rd only
+// | 31-26   | 25-16 | 15-11 | 10-6  | 5-0    |
+// | SPECIAL | 0     | rd    | 0     | MFSA   |
+// | 000000  | 0     | rd    | 00000 | 101000 |
+class R5900_MFSA_FM : StdArch {
+  bits<5> rd;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0;        // SPECIAL
+  let Inst{25-16} = 0;        // rs, rt = 0
+  let Inst{15-11} = rd;
+  let Inst{10-6}  = 0;        // sa = 0
+  let Inst{5-0}   = 0b101000; // MFSA function
+}
+
+// R5900 MTSA format: SPECIAL class, rs only
+// | 31-26   | 25-21 | 20-6   | 5-0    |
+// | SPECIAL | rs    | 0      | MTSA   |
+// | 000000  | rs    | 0      | 101001 |
+class R5900_MTSA_FM : StdArch {
+  bits<5> rs;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0;        // SPECIAL
+  let Inst{25-21} = rs;
+  let Inst{20-6}  = 0;        // rt, rd, sa = 0
+  let Inst{5-0}   = 0b101001; // MTSA function
+}
+
+// R5900 MTSAB format: REGIMM class
+// | 31-26  | 25-21 | 20-16 | 15-0      |
+// | REGIMM | rs    | MTSAB | immediate |
+// | 000001 | rs    | 11000 | imm       |
+class R5900_MTSAB_FM : StdArch {
+  bits<5> rs;
+  bits<16> imm;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b000001; // REGIMM
+  let Inst{25-21} = rs;
+  let Inst{20-16} = 0b11000;  // MTSAB function
+  let Inst{15-0}  = imm;
+}
+
+// R5900 MTSAH format: REGIMM class
+// | 31-26  | 25-21 | 20-16 | 15-0      |
+// | REGIMM | rs    | MTSAH | immediate |
+// | 000001 | rs    | 11001 | imm       |
+class R5900_MTSAH_FM : StdArch {
+  bits<5> rs;
+  bits<16> imm;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0b000001; // REGIMM
+  let Inst{25-21} = rs;
+  let Inst{20-16} = 0b11001;  // MTSAH function
+  let Inst{15-0}  = imm;
 }
 
 //===----------------------------------------------------------------------===//

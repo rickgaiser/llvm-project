@@ -28,8 +28,8 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
 | 128-bit Registers | **Implemented** | GPR128 class with vector types (v4i32, v8i16, v16i8), LQ/SQ with patterns |
-| MMI Instructions | **Partial** | Arithmetic (PADDW/H/B, PSUBW/H/B), logical (PAND/POR/PXOR/PNOR), min/max, abs, compare implemented with autovectorization support |
-| VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
+| MMI Instructions | **Partial** | Arithmetic (PADDW/H/B, PSUBW/H/B), logical (PAND/POR/PXOR/PNOR), min/max, abs, compare, GPR128 register copies (POR $d,$s,$s), bitcast patterns |
+| VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC, VF register copies (VMOVE.xyzw) |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
 ## Compiler Flags
@@ -146,7 +146,7 @@ Standard MIPS uses 64-bit GP registers; R5900 extends these to 128-bit. Uses TIm
 
 | Register | Size | Purpose | LLVM Status |
 |----------|------|---------|-------------|
-| `SA` | 8-bit | Shift amount for QFSRV (funnel shift) | Not Implemented |
+| `SA` | 8-bit | Shift amount for QFSRV (funnel shift) | **Implemented** (via MFSA/MTSA/MTSAB/MTSAH) |
 
 ### FPU (COP1) Registers
 
@@ -239,19 +239,19 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 | `PSUBH` | Parallel Subtract Halfword | **Implemented** (v8i16 sub pattern) |
 | `PADDW` | Parallel Add Word | **Implemented** (v4i32 add pattern) |
 | `PSUBW` | Parallel Subtract Word | **Implemented** (v4i32 sub pattern) |
-| `PADDSB` | Parallel Add with Signed Saturation Byte | Not Implemented |
-| `PSUBSB` | Parallel Subtract with Signed Saturation Byte | Not Implemented |
-| `PADDSH` | Parallel Add with Signed Saturation Halfword | Not Implemented |
-| `PSUBSH` | Parallel Subtract with Signed Saturation Halfword | Not Implemented |
-| `PADDSW` | Parallel Add with Signed Saturation Word | Not Implemented |
-| `PSUBSW` | Parallel Subtract with Signed Saturation Word | Not Implemented |
-| `PADDUB` | Parallel Add with Unsigned Saturation Byte | Not Implemented |
-| `PSUBUB` | Parallel Subtract with Unsigned Saturation Byte | Not Implemented |
-| `PADDUH` | Parallel Add with Unsigned Saturation Halfword | Not Implemented |
-| `PSUBUH` | Parallel Subtract with Unsigned Saturation Halfword | Not Implemented |
-| `PADDUW` | Parallel Add with Unsigned Saturation Word | Not Implemented |
-| `PSUBUW` | Parallel Subtract with Unsigned Saturation Word | Not Implemented |
-| `PADSBH` | Parallel Add/Subtract Halfword | Not Implemented |
+| `PADDSB` | Parallel Add with Signed Saturation Byte | **Implemented** (saddsat v16i8) |
+| `PSUBSB` | Parallel Subtract with Signed Saturation Byte | **Implemented** (ssubsat v16i8) |
+| `PADDSH` | Parallel Add with Signed Saturation Halfword | **Implemented** (saddsat v8i16) |
+| `PSUBSH` | Parallel Subtract with Signed Saturation Halfword | **Implemented** (ssubsat v8i16) |
+| `PADDSW` | Parallel Add with Signed Saturation Word | **Implemented** (saddsat v4i32) |
+| `PSUBSW` | Parallel Subtract with Signed Saturation Word | **Implemented** (ssubsat v4i32) |
+| `PADDUB` | Parallel Add with Unsigned Saturation Byte | **Implemented** (uaddsat v16i8) |
+| `PSUBUB` | Parallel Subtract with Unsigned Saturation Byte | **Implemented** (usubsat v16i8) |
+| `PADDUH` | Parallel Add with Unsigned Saturation Halfword | **Implemented** (uaddsat v8i16) |
+| `PSUBUH` | Parallel Subtract with Unsigned Saturation Halfword | **Implemented** (usubsat v8i16) |
+| `PADDUW` | Parallel Add with Unsigned Saturation Word | **Implemented** (uaddsat v4i32) |
+| `PSUBUW` | Parallel Subtract with Unsigned Saturation Word | **Implemented** (usubsat v4i32) |
+| `PADSBH` | Parallel Add/Subtract Halfword | **Implemented** (asm-only) |
 
 ### 2.2 Multiply and Divide
 
@@ -259,17 +259,17 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 |-------------|-------------|-------------|
 | `PMULTW` | Parallel Multiply Word | **Implemented** (auto-selected for widening mul chains) |
 | `PMULTUW` | Parallel Multiply Unsigned Word | **Implemented** (auto-selected for widening mul chains) |
-| `PDIVW` | Parallel Divide Word | Not Implemented |
-| `PDIVUW` | Parallel Divide Unsigned Word | Not Implemented |
+| `PDIVW` | Parallel Divide Word | **Implemented** (asm-only) |
+| `PDIVUW` | Parallel Divide Unsigned Word | **Implemented** (asm-only) |
 | `PMADDW` | Parallel Multiply-Add Word | **Implemented** (auto-selected for widening mul chains) |
 | `PMADDUW` | Parallel Multiply-Add Unsigned Word | **Implemented** (auto-selected for widening mul chains) |
 | `PMSUBW` | Parallel Multiply-Subtract Word | **Implemented** (auto-selected for widening mul-sub chains) |
-| `PMULTH` | Parallel Multiply Halfword | Not Implemented |
-| `PMADDH` | Parallel Multiply-Add Halfword | Not Implemented |
-| `PMSUBH` | Parallel Multiply-Subtract Halfword | Not Implemented |
-| `PHMADH` | Parallel Horizontal Multiply-Add Halfword | Not Implemented |
-| `PHMSBH` | Parallel Horizontal Multiply-Subtract Halfword | Not Implemented |
-| `PDIVBW` | Parallel Divide Broadcast Word | Not Implemented |
+| `PMULTH` | Parallel Multiply Halfword | **Implemented** (asm-only) |
+| `PMADDH` | Parallel Multiply-Add Halfword | **Implemented** (asm-only) |
+| `PMSUBH` | Parallel Multiply-Subtract Halfword | **Implemented** (asm-only) |
+| `PHMADH` | Parallel Horizontal Multiply-Add Halfword | **Implemented** (asm-only) |
+| `PHMSBH` | Parallel Horizontal Multiply-Subtract Halfword | **Implemented** (asm-only) |
+| `PDIVBW` | Parallel Divide Broadcast Word | **Implemented** (asm-only) |
 | `PMFHI` | Parallel Move From HI Register | **Implemented** |
 | `PMFLO` | Parallel Move From LO Register | **Implemented** |
 | `PMTHI` | Parallel Move To HI Register | **Implemented** |
@@ -285,25 +285,25 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PSLLH` | Parallel Shift Left Logical Halfword | Not Implemented |
-| `PSRLH` | Parallel Shift Right Logical Halfword | Not Implemented |
-| `PSRAH` | Parallel Shift Right Arithmetic Halfword | Not Implemented |
-| `PSLLW` | Parallel Shift Left Logical Word | Not Implemented |
-| `PSLLVW` | Parallel Shift Left Logical Variable Word | Not Implemented |
-| `PSRLW` | Parallel Shift Right Logical Word | Not Implemented |
-| `PSRLVW` | Parallel Shift Right Logical Variable Word | Not Implemented |
-| `PSRAW` | Parallel Shift Right Arithmetic Word | Not Implemented |
-| `PSRAVW` | Parallel Shift Right Arithmetic Variable Word | Not Implemented |
+| `PSLLH` | Parallel Shift Left Logical Halfword | **Implemented** (shl v8i16) |
+| `PSRLH` | Parallel Shift Right Logical Halfword | **Implemented** (srl v8i16) |
+| `PSRAH` | Parallel Shift Right Arithmetic Halfword | **Implemented** (sra v8i16) |
+| `PSLLW` | Parallel Shift Left Logical Word | **Implemented** (shl v4i32) |
+| `PSLLVW` | Parallel Shift Left Logical Variable Word | **Implemented** (shl v4i32, v4i32) |
+| `PSRLW` | Parallel Shift Right Logical Word | **Implemented** (srl v4i32) |
+| `PSRLVW` | Parallel Shift Right Logical Variable Word | **Implemented** (srl v4i32, v4i32) |
+| `PSRAW` | Parallel Shift Right Arithmetic Word | **Implemented** (sra v4i32) |
+| `PSRAVW` | Parallel Shift Right Arithmetic Variable Word | **Implemented** (sra v4i32, v4i32) |
 
 ### 2.4 SA Register Operations
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `MFSA` | Move From SA Register | Not Implemented |
-| `MTSA` | Move To SA Register | Not Implemented |
-| `MTSAB` | Move Byte Count to SA Register | Not Implemented |
-| `MTSAH` | Move Halfword Count to SA Register | Not Implemented |
-| `QFSRV` | Quadword Funnel Shift Right Variable | Not Implemented |
+| `MFSA` | Move From SA Register | **Implemented** (asm-only) |
+| `MTSA` | Move To SA Register | **Implemented** (asm-only) |
+| `MTSAB` | Move Byte Count to SA Register | **Implemented** (asm-only) |
+| `MTSAH` | Move Halfword Count to SA Register | **Implemented** (asm-only) |
+| `QFSRV` | Quadword Funnel Shift Right Variable | **Implemented** (asm-only) |
 
 ### 2.5 Logical and Min/Max
 
@@ -336,28 +336,28 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PPACB` | Parallel Pack to Byte | Not Implemented |
-| `PPACH` | Parallel Pack to Halfword | Not Implemented |
-| `PPACW` | Parallel Pack to Word | Not Implemented |
-| `PPAC5` | Parallel Pack to 5 bits (RGB555 pack) | Not Implemented |
-| `PEXTLB` | Parallel Extend Lower from Byte | Not Implemented |
-| `PEXTLH` | Parallel Extend Lower from Halfword | Not Implemented |
-| `PEXTLW` | Parallel Extend Lower from Word | Not Implemented |
-| `PEXTUB` | Parallel Extend Upper from Byte | Not Implemented |
-| `PEXTUH` | Parallel Extend Upper from Halfword | Not Implemented |
-| `PEXTUW` | Parallel Extend Upper from Word | Not Implemented |
-| `PEXT5` | Parallel Extend from 5 bits (RGB555 expand) | Not Implemented |
-| `PCPYH` | Parallel Copy Halfword | Not Implemented |
-| `PCPYLD` | Parallel Copy Lower Doubleword | Not Implemented |
-| `PCPYUD` | Parallel Copy Upper Doubleword | Not Implemented |
-| `PEXCH` | Parallel Exchange Center Halfword | Not Implemented |
-| `PEXCW` | Parallel Exchange Center Word | Not Implemented |
-| `PEXEH` | Parallel Exchange Even Halfword | Not Implemented |
-| `PEXEW` | Parallel Exchange Even Word | Not Implemented |
-| `PREVH` | Parallel Reverse Halfword | Not Implemented |
-| `PINTEH` | Parallel Interleave Even Halfword | Not Implemented |
-| `PINTH` | Parallel Interleave Halfword | Not Implemented |
-| `PROT3W` | Parallel Rotate 3 Words | Not Implemented |
+| `PPACB` | Parallel Pack to Byte | **Implemented** (asm-only) |
+| `PPACH` | Parallel Pack to Halfword | **Implemented** (asm-only) |
+| `PPACW` | Parallel Pack to Word | **Implemented** (asm-only) |
+| `PPAC5` | Parallel Pack to 5 bits (RGB555 pack) | **Implemented** (asm-only) |
+| `PEXTLB` | Parallel Extend Lower from Byte | **Implemented** (asm-only) |
+| `PEXTLH` | Parallel Extend Lower from Halfword | **Implemented** (asm-only) |
+| `PEXTLW` | Parallel Extend Lower from Word | **Implemented** (asm-only) |
+| `PEXTUB` | Parallel Extend Upper from Byte | **Implemented** (asm-only) |
+| `PEXTUH` | Parallel Extend Upper from Halfword | **Implemented** (asm-only) |
+| `PEXTUW` | Parallel Extend Upper from Word | **Implemented** (asm-only) |
+| `PEXT5` | Parallel Extend from 5 bits (RGB555 expand) | **Implemented** (asm-only) |
+| `PCPYH` | Parallel Copy Halfword | **Implemented** (asm-only) |
+| `PCPYLD` | Parallel Copy Lower Doubleword | **Implemented** (asm-only) |
+| `PCPYUD` | Parallel Copy Upper Doubleword | **Implemented** (asm-only) |
+| `PEXCH` | Parallel Exchange Center Halfword | **Implemented** (asm-only) |
+| `PEXCW` | Parallel Exchange Center Word | **Implemented** (asm-only) |
+| `PEXEH` | Parallel Exchange Even Halfword | **Implemented** (asm-only) |
+| `PEXEW` | Parallel Exchange Even Word | **Implemented** (asm-only) |
+| `PREVH` | Parallel Reverse Halfword | **Implemented** (asm-only) |
+| `PINTEH` | Parallel Interleave Even Halfword | **Implemented** (asm-only) |
+| `PINTH` | Parallel Interleave Halfword | **Implemented** (asm-only) |
+| `PROT3W` | Parallel Rotate 3 Words | **Implemented** (asm-only) |
 
 ---
 
@@ -474,8 +474,8 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 |-------------|-------------|-------------|
 | `LQC2` | Load Quadword to COP2 (128-bit load to VF) | **Implemented** |
 | `SQC2` | Store Quadword from COP2 (VF to 128-bit memory) | **Implemented** |
-| `QMFC2` | Quadword Move From COP2 to GP | Not Implemented (requires 128-bit GP) |
-| `QMTC2` | Quadword Move To COP2 from GP | Not Implemented (requires 128-bit GP) |
+| `QMFC2` | Quadword Move From COP2 to GP | **Implemented** (GPR128 ← VF) |
+| `QMTC2` | Quadword Move To COP2 from GP | **Implemented** (VF ← GPR128) |
 | `CFC2` | Control Transfer from VU to EE Core | **Implemented** |
 | `CTC2` | Control Transfer from EE Core to VU | **Implemented** |
 
@@ -489,7 +489,8 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | `VABS.xyzw` | dest = \|a\| | **Implemented** |
 | `VMAX.xyzw` | dest = max(a, b) | **Implemented** |
 | `VMINI.xyzw` | dest = min(a, b) | **Implemented** |
-| `VMOVE.xyzw` | dest = src | **Implemented** (masked, for blend ops) |
+| `VMOVE.xyzw` | dest = src | **Implemented** (masked blend ops and VF register copies) |
+| `VMR32.xyzw` | dest = rotate(src) by 32 bits | **Implemented** |
 
 ### 5.3 Multiply-Accumulate
 
@@ -580,9 +581,13 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 - [x] Implement absolute (PABSW, PABSH) with abs patterns
 - [x] Implement compare (PCGTW/H/B, PCEQW/H/B) updated to GPR128
 - [x] Add TTI hooks for autovectorization (getNumberOfRegisters, getRegisterBitWidth, getArithmeticInstrCost)
-- [ ] Implement data rearrangement (PPAC*, PEXT*, etc.)
+- [x] Implement data rearrangement (PPAC*, PEXT*, PCPY*, PEX*, PREV*, PINT*, PROT3W)
+- [x] Implement saturating arithmetic (PADDS*, PSUBS*, PADDU*, PSUBU*) with autovectorization patterns
+- [x] Implement shift operations (PSLLH/W, PSRLH/W, PSRAH/W, PSLLVW, PSRLVW, PSRAVW)
+- [x] Implement halfword multiply (PMULTH, PMADDH, PMSUBH, PHMADH, PHMSBH)
+- [x] Implement parallel divide (PDIVW, PDIVUW, PDIVBW)
+- [x] Implement PADSBH special instruction
 - [ ] Add intrinsics for all MMI instructions
-- [ ] Implement saturating arithmetic (PADDS*, PSUBS*, PADDU*, PSUBU*)
 
 ### Phase 4: FPU Extensions
 - [x] FPU accumulator (ACC) register
@@ -600,9 +605,8 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 - [x] Pipeline 1 instructions available in inline assembly
 
 ### Phase 6: SA Register
-- [ ] SA register definition
-- [ ] MFSA, MTSA, MTSAB, MTSAH
-- [ ] QFSRV (quadword funnel shift)
+- [x] SA register instructions (MFSA, MTSA, MTSAB, MTSAH, QFSRV)
+- Note: SA register is implemented as assembly-only (no dedicated register definition needed)
 
 ### Phase 7: VU0 (COP2)
 - [x] Vector register class ($vf0-$vf31)

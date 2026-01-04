@@ -231,6 +231,25 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     if (Mips::MSA128BRegClass.contains(SrcReg))
       Opc = Mips::MOVE_V;
   }
+  else if (Mips::VFRegsRegClass.contains(DestReg)) { // Copy to VF reg (R5900 VU0)
+    if (Mips::VFRegsRegClass.contains(SrcReg)) {
+      // VU0 VMOVE requires a dest mask operand, use xyzw (0xF) for full copy
+      BuildMI(MBB, I, DL, get(Mips::VMOVE), DestReg)
+          .addImm(0xF) // xyzw mask - copy all 4 components
+          .addReg(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
+  else if (Mips::GPR128RegClass.contains(DestReg)) { // Copy to GPR128 (R5900 MMI)
+    if (Mips::GPR128RegClass.contains(SrcReg)) {
+      // Use POR to copy 128-bit registers: POR $dest, $src, $src
+      // Only the second use gets the kill flag
+      BuildMI(MBB, I, DL, get(Mips::POR), DestReg)
+          .addReg(SrcReg)
+          .addReg(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  }
 
   // FCMP + FSEL for MIPSr6 may emit
   // $d0_64 = COPY killed renamable $f0

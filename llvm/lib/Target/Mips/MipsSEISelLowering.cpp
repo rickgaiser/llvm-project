@@ -158,6 +158,25 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // Absolute value: PABSW (v4i32), PABSH (v8i16)
     setOperationAction(ISD::ABS, MVT::v4i32, Legal);
     setOperationAction(ISD::ABS, MVT::v8i16, Legal);
+
+    // Shift operations: PSLLW/PSRLW/PSRAW (v4i32), PSLLH/PSRLH/PSRAH (v8i16)
+    // Note: v16i8 shifts are not available in R5900 MMI
+    setOperationAction(ISD::SHL, MVT::v4i32, Legal);
+    setOperationAction(ISD::SRL, MVT::v4i32, Legal);
+    setOperationAction(ISD::SRA, MVT::v4i32, Legal);
+    setOperationAction(ISD::SHL, MVT::v8i16, Legal);
+    setOperationAction(ISD::SRL, MVT::v8i16, Legal);
+    setOperationAction(ISD::SRA, MVT::v8i16, Legal);
+
+    // Saturating arithmetic: Available for all vector sizes
+    // Signed: PADDSW/PSUBSW (v4i32), PADDSH/PSUBSH (v8i16), PADDSB/PSUBSB (v16i8)
+    // Unsigned: PADDUW/PSUBUW (v4i32), PADDUH/PSUBUH (v8i16), PADDUB/PSUBUB (v16i8)
+    for (MVT VT : {MVT::v4i32, MVT::v8i16, MVT::v16i8}) {
+      setOperationAction(ISD::SADDSAT, VT, Legal);
+      setOperationAction(ISD::SSUBSAT, VT, Legal);
+      setOperationAction(ISD::UADDSAT, VT, Legal);
+      setOperationAction(ISD::USUBSAT, VT, Legal);
+    }
   }
 
   if (Subtarget.hasDSP() || Subtarget.hasMSA()) {

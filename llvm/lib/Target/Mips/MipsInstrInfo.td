@@ -3824,7 +3824,7 @@ def PSUBH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "psubh\t$rd, $rs, $rt",
                    [(set v8i16:$rd, (sub v8i16:$rs, v8i16:$rt))],
                    II_ADD, FrmR>,
-            R5900_MMI1_FM<0b00100>;
+            R5900_MMI0_FM<0b00101>;
 
 // PADDB - Parallel Add Byte
 // rd = rs + rt for each of 16 packed 8-bit bytes
@@ -4006,6 +4006,489 @@ let DecoderNamespace = "R5900" in
 def PCEQB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pceqb\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI1_FM<0b01010>;
+
+//===----------------------------------------------------------------------===//
+// Parallel Shift Operations (Immediate)
+// These perform SIMD shifts on packed words or halfwords with immediate amount.
+//===----------------------------------------------------------------------===//
+
+// PSLLH - Parallel Shift Left Logical Halfword
+// rd = rt << sa for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSLLH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
+                   "psllh\t$rd, $rt, $sa", [], II_SLL, FrmR>,
+            R5900_MMI_SHIFT_FM<0b110100>;
+
+// PSRLH - Parallel Shift Right Logical Halfword
+// rd = rt >> sa (logical) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSRLH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
+                   "psrlh\t$rd, $rt, $sa", [], II_SRL, FrmR>,
+            R5900_MMI_SHIFT_FM<0b110110>;
+
+// PSRAH - Parallel Shift Right Arithmetic Halfword
+// rd = rt >> sa (arithmetic) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSRAH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
+                   "psrah\t$rd, $rt, $sa", [], II_SRA, FrmR>,
+            R5900_MMI_SHIFT_FM<0b110111>;
+
+// PSLLW - Parallel Shift Left Logical Word
+// rd = rt << sa for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSLLW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
+                   "psllw\t$rd, $rt, $sa", [], II_SLL, FrmR>,
+            R5900_MMI_SHIFT_FM<0b111100>;
+
+// PSRLW - Parallel Shift Right Logical Word
+// rd = rt >> sa (logical) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSRLW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
+                   "psrlw\t$rd, $rt, $sa", [], II_SRL, FrmR>,
+            R5900_MMI_SHIFT_FM<0b111110>;
+
+// PSRAW - Parallel Shift Right Arithmetic Word
+// rd = rt >> sa (arithmetic) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSRAW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
+                   "psraw\t$rd, $rt, $sa", [], II_SRA, FrmR>,
+            R5900_MMI_SHIFT_FM<0b111111>;
+
+//===----------------------------------------------------------------------===//
+// Parallel Shift Operations (Variable)
+// These perform SIMD shifts on packed words with variable shift amount.
+//===----------------------------------------------------------------------===//
+
+// PSLLVW - Parallel Shift Left Logical Variable Word
+// rd = rt << rs[4:0] for each of 4 packed 32-bit words
+// Note: Each word uses the same shift amount from the lower 5 bits of rs
+let DecoderNamespace = "R5900" in
+def PSLLVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
+                    "psllvw\t$rd, $rt, $rs", [], II_SLL, FrmR>,
+             R5900_MMI2_FM<0b00010>;
+
+// PSRLVW - Parallel Shift Right Logical Variable Word
+// rd = rt >> rs[4:0] (logical) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSRLVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
+                    "psrlvw\t$rd, $rt, $rs", [], II_SRL, FrmR>,
+             R5900_MMI2_FM<0b00011>;
+
+// PSRAVW - Parallel Shift Right Arithmetic Variable Word
+// rd = rt >> rs[4:0] (arithmetic) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSRAVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
+                    "psravw\t$rd, $rt, $rs", [], II_SRA, FrmR>,
+             R5900_MMI3_FM<0b00011>;
+
+// R5900 Shift patterns for autovectorization
+// These match (shl/srl/sra v4i32, v4i32) and (shl/srl/sra v8i16, v8i16) patterns
+// Note: R5900 variable shifts use the same shift amount for all elements,
+// so these patterns match when the shift vector is uniform (all same value).
+
+// Variable shift patterns (use low bits of each word's shift amount)
+def : Pat<(v4i32 (shl v4i32:$rt, v4i32:$rs)), (PSLLVW $rt, $rs)>;
+def : Pat<(v4i32 (srl v4i32:$rt, v4i32:$rs)), (PSRLVW $rt, $rs)>;
+def : Pat<(v4i32 (sra v4i32:$rt, v4i32:$rs)), (PSRAVW $rt, $rs)>;
+
+//===----------------------------------------------------------------------===//
+// Parallel Saturating Add/Subtract Operations
+// These perform SIMD add/subtract with saturation on packed elements.
+//===----------------------------------------------------------------------===//
+
+// Signed Saturation - MMI0 class
+
+// PADDSW - Parallel Add with Signed Saturation Word
+// rd = saturate_signed(rs + rt) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PADDSW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "paddsw\t$rd, $rs, $rt",
+                    [(set v4i32:$rd, (saddsat v4i32:$rs, v4i32:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10000>;
+
+// PSUBSW - Parallel Subtract with Signed Saturation Word
+// rd = saturate_signed(rs - rt) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSUBSW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubsw\t$rd, $rs, $rt",
+                    [(set v4i32:$rd, (ssubsat v4i32:$rs, v4i32:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10001>;
+
+// PADDSH - Parallel Add with Signed Saturation Halfword
+// rd = saturate_signed(rs + rt) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PADDSH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "paddsh\t$rd, $rs, $rt",
+                    [(set v8i16:$rd, (saddsat v8i16:$rs, v8i16:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10100>;
+
+// PSUBSH - Parallel Subtract with Signed Saturation Halfword
+// rd = saturate_signed(rs - rt) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSUBSH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubsh\t$rd, $rs, $rt",
+                    [(set v8i16:$rd, (ssubsat v8i16:$rs, v8i16:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10101>;
+
+// PADDSB - Parallel Add with Signed Saturation Byte
+// rd = saturate_signed(rs + rt) for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PADDSB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "paddsb\t$rd, $rs, $rt",
+                    [(set v16i8:$rd, (saddsat v16i8:$rs, v16i8:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b11000>;
+
+// PSUBSB - Parallel Subtract with Signed Saturation Byte
+// rd = saturate_signed(rs - rt) for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PSUBSB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubsb\t$rd, $rs, $rt",
+                    [(set v16i8:$rd, (ssubsat v16i8:$rs, v16i8:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI0_FM<0b11001>;
+
+// Unsigned Saturation - MMI1 class
+
+// PADDUW - Parallel Add with Unsigned Saturation Word
+// rd = saturate_unsigned(rs + rt) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PADDUW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "padduw\t$rd, $rs, $rt",
+                    [(set v4i32:$rd, (uaddsat v4i32:$rs, v4i32:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10000>;
+
+// PSUBUW - Parallel Subtract with Unsigned Saturation Word
+// rd = saturate_unsigned(rs - rt) for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSUBUW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubuw\t$rd, $rs, $rt",
+                    [(set v4i32:$rd, (usubsat v4i32:$rs, v4i32:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10001>;
+
+// PADDUH - Parallel Add with Unsigned Saturation Halfword
+// rd = saturate_unsigned(rs + rt) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PADDUH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "padduh\t$rd, $rs, $rt",
+                    [(set v8i16:$rd, (uaddsat v8i16:$rs, v8i16:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10100>;
+
+// PSUBUH - Parallel Subtract with Unsigned Saturation Halfword
+// rd = saturate_unsigned(rs - rt) for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSUBUH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubuh\t$rd, $rs, $rt",
+                    [(set v8i16:$rd, (usubsat v8i16:$rs, v8i16:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10101>;
+
+// PADDUB - Parallel Add with Unsigned Saturation Byte
+// rd = saturate_unsigned(rs + rt) for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PADDUB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "paddub\t$rd, $rs, $rt",
+                    [(set v16i8:$rd, (uaddsat v16i8:$rs, v16i8:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b11000>;
+
+// PSUBUB - Parallel Subtract with Unsigned Saturation Byte
+// rd = saturate_unsigned(rs - rt) for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PSUBUB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "psubub\t$rd, $rs, $rt",
+                    [(set v16i8:$rd, (usubsat v16i8:$rs, v16i8:$rt))],
+                    II_ADD, FrmR>,
+             R5900_MMI1_FM<0b11001>;
+
+//===----------------------------------------------------------------------===//
+// R5900 SA Register Instructions
+//===----------------------------------------------------------------------===//
+
+// MFSA - Move From Shift Amount register
+// rd = SA (used for context save)
+let DecoderNamespace = "R5900" in
+def MFSA : InstSE<(outs GPR64Opnd:$rd), (ins),
+                  "mfsa\t$rd", [], II_MFHI_MFLO, FrmR>,
+           R5900_MFSA_FM;
+
+// MTSA - Move To Shift Amount register
+// SA = rs (used for context restore)
+let DecoderNamespace = "R5900" in
+def MTSA : InstSE<(outs), (ins GPR64Opnd:$rs),
+                  "mtsa\t$rs", [], II_MTHI_MTLO, FrmR>,
+           R5900_MTSA_FM;
+
+// MTSAB - Move Byte count To Shift Amount register
+// SA = (rs XOR imm) * 8 (for byte alignment)
+let DecoderNamespace = "R5900" in
+def MTSAB : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
+                   "mtsab\t$rs, $imm", [], II_MTHI_MTLO, FrmI>,
+            R5900_MTSAB_FM;
+
+// MTSAH - Move Halfword count To Shift Amount register
+// SA = (rs XOR imm) * 16 (for halfword alignment)
+let DecoderNamespace = "R5900" in
+def MTSAH : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
+                   "mtsah\t$rs, $imm", [], II_MTHI_MTLO, FrmI>,
+            R5900_MTSAH_FM;
+
+// QFSRV - Quadword Funnel Shift Right Variable
+// rd = (rs || rt) >> SA (concatenate rs and rt, shift right by SA bits)
+let DecoderNamespace = "R5900" in
+def QFSRV : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "qfsrv\t$rd, $rs, $rt", [], II_SRL, FrmR>,
+            R5900_MMI1_FM<0b11011>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Data Rearrangement Instructions
+//===----------------------------------------------------------------------===//
+
+// --- Parallel Extend Lower (interleave with zeros) ---
+// PEXTLW - Parallel Extend Lower from Word
+// Interleaves lower words from rs and rt
+let DecoderNamespace = "R5900" in
+def PEXTLW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextlw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10010>;
+
+// PEXTLH - Parallel Extend Lower from Halfword
+let DecoderNamespace = "R5900" in
+def PEXTLH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextlh\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI0_FM<0b10110>;
+
+// PEXTLB - Parallel Extend Lower from Byte
+let DecoderNamespace = "R5900" in
+def PEXTLB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextlb\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI0_FM<0b11010>;
+
+// --- Parallel Extend Upper ---
+// PEXTUW - Parallel Extend Upper from Word
+let DecoderNamespace = "R5900" in
+def PEXTUW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextuw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10010>;
+
+// PEXTUH - Parallel Extend Upper from Halfword
+let DecoderNamespace = "R5900" in
+def PEXTUH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextuh\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI1_FM<0b10110>;
+
+// PEXTUB - Parallel Extend Upper from Byte
+let DecoderNamespace = "R5900" in
+def PEXTUB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pextub\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI1_FM<0b11010>;
+
+// --- Parallel Pack ---
+// PPACW - Parallel Pack to Word
+let DecoderNamespace = "R5900" in
+def PPACW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "ppacw\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+            R5900_MMI0_FM<0b10011>;
+
+// PPACH - Parallel Pack to Halfword
+let DecoderNamespace = "R5900" in
+def PPACH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "ppach\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+            R5900_MMI0_FM<0b10111>;
+
+// PPACB - Parallel Pack to Byte
+let DecoderNamespace = "R5900" in
+def PPACB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "ppacb\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+            R5900_MMI0_FM<0b11011>;
+
+// --- Parallel Copy ---
+// PCPYLD - Parallel Copy Lower Doubleword
+let DecoderNamespace = "R5900" in
+def PCPYLD : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pcpyld\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI2_FM<0b01110>;
+
+// PCPYUD - Parallel Copy Upper Doubleword
+let DecoderNamespace = "R5900" in
+def PCPYUD : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pcpyud\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI3_FM<0b01110>;
+
+// PCPYH - Parallel Copy Halfword
+let DecoderNamespace = "R5900" in
+def PCPYH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pcpyh\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI3_2R_FM<0b11011>;
+
+// --- Parallel Interleave ---
+// PINTH - Parallel Interleave Halfword
+let DecoderNamespace = "R5900" in
+def PINTH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pinth\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+            R5900_MMI2_FM<0b01010>;
+
+// PINTEH - Parallel Interleave Even Halfword
+let DecoderNamespace = "R5900" in
+def PINTEH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pinteh\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI3_FM<0b01010>;
+
+// --- Parallel Exchange ---
+// PEXEH - Parallel Exchange Even Halfword
+let DecoderNamespace = "R5900" in
+def PEXEH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pexeh\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI2_2R_FM<0b11010>;
+
+// PEXEW - Parallel Exchange Even Word
+let DecoderNamespace = "R5900" in
+def PEXEW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pexew\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI2_2R_FM<0b11110>;
+
+// PEXCH - Parallel Exchange Center Halfword
+let DecoderNamespace = "R5900" in
+def PEXCH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pexch\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI3_2R_FM<0b11010>;
+
+// PEXCW - Parallel Exchange Center Word
+let DecoderNamespace = "R5900" in
+def PEXCW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pexcw\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI3_2R_FM<0b11110>;
+
+// --- Other Rearrangement ---
+// PREVH - Parallel Reverse Halfword
+let DecoderNamespace = "R5900" in
+def PREVH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "prevh\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI2_2R_FM<0b11011>;
+
+// PROT3W - Parallel Rotate 3 Words Left
+let DecoderNamespace = "R5900" in
+def PROT3W : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                    "prot3w\t$rd, $rt", [], II_ADD, FrmR>,
+             R5900_MMI2_2R_FM<0b11111>;
+
+// --- RGB Packing/Unpacking ---
+// PEXT5 - Parallel Extend from 5 bits (RGB555 to RGBA32)
+let DecoderNamespace = "R5900" in
+def PEXT5 : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pext5\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI0_2R_FM<0b11110>;
+
+// PPAC5 - Parallel Pack to 5 bits (RGBA32 to RGB555)
+let DecoderNamespace = "R5900" in
+def PPAC5 : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "ppac5\t$rd, $rt", [], II_ADD, FrmR>,
+            R5900_MMI0_2R_FM<0b11111>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Halfword Multiply Instructions
+//===----------------------------------------------------------------------===//
+// These instructions produce results in rd, HI, and LO registers.
+// Assembly-only for now (no autovectorization patterns).
+
+// PMULTH - Parallel Multiply Halfword
+// Multiplies 8 pairs of 16-bit signed integers, stores 32-bit results in rd/HI/LO
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PMULTH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pmulth\t$rd, $rs, $rt", [], II_MULT, FrmR>,
+             R5900_MMI2_FM<0b11100>;
+
+// PMADDH - Parallel Multiply-Add Halfword
+// Multiplies and accumulates 8 pairs of halfwords into HI/LO/rd
+let DecoderNamespace = "R5900",
+    Uses = [HI0, LO0, HI0_64, LO0_64],
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PMADDH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pmaddh\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+             R5900_MMI2_FM<0b10000>;
+
+// PMSUBH - Parallel Multiply-Subtract Halfword
+// Multiplies and subtracts 8 pairs of halfwords from HI/LO
+let DecoderNamespace = "R5900",
+    Uses = [HI0, LO0, HI0_64, LO0_64],
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PMSUBH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pmsubh\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+             R5900_MMI2_FM<0b10100>;
+
+// PHMADH - Parallel Horizontal Multiply-Add Halfword
+// Horizontal multiply-add pairs of halfwords
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PHMADH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "phmadh\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+             R5900_MMI2_FM<0b10001>;
+
+// PHMSBH - Parallel Horizontal Multiply-Subtract Halfword
+// Horizontal multiply-subtract pairs of halfwords
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PHMSBH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "phmsbh\t$rd, $rs, $rt", [], II_MADD, FrmR>,
+             R5900_MMI2_FM<0b10101>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Parallel Divide Instructions
+//===----------------------------------------------------------------------===//
+// These instructions write results to HI and LO only (no rd).
+
+// PDIVW - Parallel Divide Word (signed)
+// Divides 2 pairs of 32-bit signed integers, results in HI/LO
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PDIVW : InstSE<(outs), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pdivw\t$rs, $rt", [], II_DIV, FrmR>,
+            R5900_MMI2_DIV_FM<0b01101>;
+
+// PDIVUW - Parallel Divide Unsigned Word
+// Divides 2 pairs of 32-bit unsigned integers, results in HI/LO
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PDIVUW : InstSE<(outs), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pdivuw\t$rs, $rt", [], II_DIV, FrmR>,
+             R5900_MMI3_DIV_FM<0b01101>;
+
+// PDIVBW - Parallel Divide Broadcast Word
+// Divides 4 words by lowest halfword of rt, results in HI/LO
+let DecoderNamespace = "R5900",
+    Defs = [HI0, LO0, HI0_64, LO0_64] in
+def PDIVBW : InstSE<(outs), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "pdivbw\t$rs, $rt", [], II_DIV, FrmR>,
+             R5900_MMI2_DIV_FM<0b11101>;
+
+//===----------------------------------------------------------------------===//
+// R5900 Special Parallel Instructions
+//===----------------------------------------------------------------------===//
+
+// PADSBH - Parallel Add/Subtract Halfword
+// Lower 4 halfwords: subtract, Upper 4 halfwords: add
+// No direct LLVM pattern - this is a unique hybrid operation
+let DecoderNamespace = "R5900" in
+def PADSBH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                    "padsbh\t$rd, $rs, $rt", [], II_ADD, FrmR>,
+             R5900_MMI1_FM<0b00100>;
+
+// R5900 GPR128 vector bitcast patterns
+// Bitcasts between v4i32, v8i16, v16i8 are free (same register class)
+def : Pat<(v4i32 (bitconvert v16i8:$src)), (COPY_TO_REGCLASS v16i8:$src, GPR128)>;
+def : Pat<(v4i32 (bitconvert v8i16:$src)), (COPY_TO_REGCLASS v8i16:$src, GPR128)>;
+def : Pat<(v8i16 (bitconvert v4i32:$src)), (COPY_TO_REGCLASS v4i32:$src, GPR128)>;
+def : Pat<(v8i16 (bitconvert v16i8:$src)), (COPY_TO_REGCLASS v16i8:$src, GPR128)>;
+def : Pat<(v16i8 (bitconvert v4i32:$src)), (COPY_TO_REGCLASS v4i32:$src, GPR128)>;
+def : Pat<(v16i8 (bitconvert v8i16:$src)), (COPY_TO_REGCLASS v8i16:$src, GPR128)>;
 
 } // Predicates = [HasR5900]
 
