@@ -5823,7 +5823,8 @@ unsigned MipsAsmParser::checkTargetMatchPredicate(MCInst &Inst) {
       return Match_RequiresDifferentSrcAndDst;
     return Match_Success;
   case Mips::SYNC:
-    if (Inst.getOperand(0).getImm() != 0 && !hasMips32())
+    // R5900 also supports sync stype (sync.p uses stype=0x10)
+    if (Inst.getOperand(0).getImm() != 0 && !hasMips32() && !isR5900())
       return Match_NonZeroOperandForSync;
     return Match_Success;
   case Mips::MFC0:

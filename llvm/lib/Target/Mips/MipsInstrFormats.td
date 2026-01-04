@@ -674,6 +674,50 @@ class EI_FM_R5900<bits<6> funct> : StdArch
 }
 
 //===----------------------------------------------------------------------===//
+//  R5900 Breakpoint register move instruction formats
+//  MF*: COP0 rs=0, MT*: COP0 rs=4, with rd=24 and function code
+//  mfbpc $rt = 0x4002c000 | (rt << 16)
+//  mtbpc $rt = 0x4084c000 | (rt << 16)
+//===----------------------------------------------------------------------===//
+
+class MFBP_FM_R5900<bits<3> funct> : StdArch {
+  bits<5> rt;
+  bits<32> Inst;
+  let Inst{31-26} = 0x10;  // COP0
+  let Inst{25-21} = 0;     // MF
+  let Inst{20-16} = rt;
+  let Inst{15-11} = 0x18;  // rd = 24
+  let Inst{10-3}  = 0;
+  let Inst{2-0}   = funct;
+}
+
+class MTBP_FM_R5900<bits<3> funct> : StdArch {
+  bits<5> rt;
+  bits<32> Inst;
+  let Inst{31-26} = 0x10;  // COP0
+  let Inst{25-21} = 4;     // MT
+  let Inst{20-16} = rt;
+  let Inst{15-11} = 0x18;  // rd = 24
+  let Inst{10-3}  = 0;
+  let Inst{2-0}   = funct;
+}
+
+//===----------------------------------------------------------------------===//
+//  R5900 COP0 Branch instruction format
+//  BC0F: 0x41000000 | offset, BC0T: 0x41010000 | offset
+//===----------------------------------------------------------------------===//
+
+class BC0F_FM_R5900<bit tf> : StdArch {
+  bits<16> offset;
+  bits<32> Inst;
+  let Inst{31-26} = 0x10;  // COP0
+  let Inst{25-21} = 0x8;   // BC
+  let Inst{20-17} = 0;
+  let Inst{16}    = tf;
+  let Inst{15-0}  = offset;
+}
+
+//===----------------------------------------------------------------------===//
 //
 //  FLOATING POINT INSTRUCTION FORMATS
 //

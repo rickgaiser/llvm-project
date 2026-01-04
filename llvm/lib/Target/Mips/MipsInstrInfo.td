@@ -2284,6 +2284,51 @@ let Predicates = [HasR5900] in {
   }
 }
 
+// R5900 Breakpoint register instructions
+// MFBPC/MFIAB/MFIABM/MFDAB/MFDABM/MFDVB/MFDVBM - move from breakpoint registers
+// MTBPC/MTIAB/MTIABM/MTDAB/MTDABM/MTDVB/MTDVBM - move to breakpoint registers
+let Predicates = [HasR5900] in {
+  let DecoderNamespace = "R5900" in {
+    // Move from breakpoint registers (read breakpoint reg to GPR)
+    def MFBPC : InstSE<(outs GPR32Opnd:$rt), (ins), "mfbpc\t$rt", [], II_MFC0,
+                       FrmFR, "mfbpc">, MFBP_FM_R5900<0>;
+    def MFIAB : InstSE<(outs GPR32Opnd:$rt), (ins), "mfiab\t$rt", [], II_MFC0,
+                       FrmFR, "mfiab">, MFBP_FM_R5900<2>;
+    def MFIABM : InstSE<(outs GPR32Opnd:$rt), (ins), "mfiabm\t$rt", [], II_MFC0,
+                        FrmFR, "mfiabm">, MFBP_FM_R5900<3>;
+    def MFDAB : InstSE<(outs GPR32Opnd:$rt), (ins), "mfdab\t$rt", [], II_MFC0,
+                       FrmFR, "mfdab">, MFBP_FM_R5900<4>;
+    def MFDABM : InstSE<(outs GPR32Opnd:$rt), (ins), "mfdabm\t$rt", [], II_MFC0,
+                        FrmFR, "mfdabm">, MFBP_FM_R5900<5>;
+    def MFDVB : InstSE<(outs GPR32Opnd:$rt), (ins), "mfdvb\t$rt", [], II_MFC0,
+                       FrmFR, "mfdvb">, MFBP_FM_R5900<6>;
+    def MFDVBM : InstSE<(outs GPR32Opnd:$rt), (ins), "mfdvbm\t$rt", [], II_MFC0,
+                        FrmFR, "mfdvbm">, MFBP_FM_R5900<7>;
+    // Move to breakpoint registers (write GPR to breakpoint reg)
+    def MTBPC : InstSE<(outs), (ins GPR32Opnd:$rt), "mtbpc\t$rt", [], II_MTC0,
+                       FrmFR, "mtbpc">, MTBP_FM_R5900<0>;
+    def MTIAB : InstSE<(outs), (ins GPR32Opnd:$rt), "mtiab\t$rt", [], II_MTC0,
+                       FrmFR, "mtiab">, MTBP_FM_R5900<2>;
+    def MTIABM : InstSE<(outs), (ins GPR32Opnd:$rt), "mtiabm\t$rt", [], II_MTC0,
+                        FrmFR, "mtiabm">, MTBP_FM_R5900<3>;
+    def MTDAB : InstSE<(outs), (ins GPR32Opnd:$rt), "mtdab\t$rt", [], II_MTC0,
+                       FrmFR, "mtdab">, MTBP_FM_R5900<4>;
+    def MTDABM : InstSE<(outs), (ins GPR32Opnd:$rt), "mtdabm\t$rt", [], II_MTC0,
+                        FrmFR, "mtdabm">, MTBP_FM_R5900<5>;
+    def MTDVB : InstSE<(outs), (ins GPR32Opnd:$rt), "mtdvb\t$rt", [], II_MTC0,
+                       FrmFR, "mtdvb">, MTBP_FM_R5900<6>;
+    def MTDVBM : InstSE<(outs), (ins GPR32Opnd:$rt), "mtdvbm\t$rt", [], II_MTC0,
+                        FrmFR, "mtdvbm">, MTBP_FM_R5900<7>;
+    // COP0 conditional branches (branch on COP0 condition)
+    let isBranch = 1, isTerminator = 1, hasDelaySlot = 1 in {
+      def BC0F : InstSE<(outs), (ins brtarget:$offset), "bc0f\t$offset", [],
+                        II_BC, FrmI, "bc0f">, BC0F_FM_R5900<0>;
+      def BC0T : InstSE<(outs), (ins brtarget:$offset), "bc0t\t$offset", [],
+                        II_BC, FrmI, "bc0t">, BC0F_FM_R5900<1>;
+    }
+  }
+}
+
 let AdditionalPredicates = [NotInMicroMips] in {
 /// Load-linked, Store-conditional
 def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;
@@ -2969,6 +3014,10 @@ let AdditionalPredicates = [NotInMicroMips] in {
                       (SRAV GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
   def : MipsInstAlias<"srl $rd, $rt",
                       (SRLV GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+  def : MipsInstAlias<"slt $rd, $rt",
+                      (SLT GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+  def : MipsInstAlias<"sltu $rd, $rt",
+                      (SLTu GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
   def : MipsInstAlias<"seh $rd", (SEH GPR32Opnd:$rd, GPR32Opnd:$rd), 0>,
                      ISA_MIPS32R2;
   def : MipsInstAlias<"seb $rd", (SEB GPR32Opnd:$rd, GPR32Opnd:$rd), 0>,
@@ -2977,6 +3026,11 @@ let AdditionalPredicates = [NotInMicroMips] in {
 def : MipsInstAlias<"sdbbp", (SDBBP 0)>, ISA_MIPS32_NOT_32R6_64R6;
 let AdditionalPredicates = [NotInMicroMips] in
   def : MipsInstAlias<"sync", (SYNC 0), 1>, ISA_MIPS2;
+// R5900 sync variants: sync.l (stype=0) and sync.p (stype=0x10)
+let Predicates = [HasR5900] in {
+  def : MipsInstAlias<"sync.l", (SYNC 0), 1>;
+  def : MipsInstAlias<"sync.p", (SYNC 0x10), 1>;
+}
 
 def : MipsInstAlias<"mulo $rs, $rt",
                     (MULOMacro GPR32Opnd:$rs, GPR32Opnd:$rs, GPR32Opnd:$rt), 0>,
