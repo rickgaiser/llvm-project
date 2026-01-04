@@ -518,11 +518,18 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `VDIV` | Q = fs.bc / ft.bc | Not Implemented |
-| `VSQRT` | Q = sqrt(ft.bc) | Not Implemented |
-| `VRSQRT` | Q = fs.bc / sqrt(ft.bc) | Not Implemented |
-| `VWAITQ` | Wait for Q register ready | Not Implemented |
-| `VMULq.xyzw` | dest = a * Q | Not Implemented |
+| `VDIV` | Q = fs.bc / ft.bc | **Implemented** |
+| `VSQRT` | Q = sqrt(ft.bc) | **Implemented** |
+| `VRSQRT` | Q = fs.bc / sqrt(ft.bc) | **Implemented** |
+| `VWAITQ` | Wait for Q register ready | **Implemented** |
+| `VMULq.xyzw` | dest = a * Q | **Implemented** |
+
+**Field Selection Syntax**: VDIV, VSQRT, and VRSQRT use field selector syntax where the component is appended to the VF register name:
+```asm
+vdiv    $Q, $vf0w, $vf1w    # Q = vf0.w / vf1.w
+vrsqrt  $Q, $vf0w, $vf2w    # Q = vf0.w / sqrt(vf2.w)
+vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
+```
 
 ### 5.6 Conversion Operations
 
