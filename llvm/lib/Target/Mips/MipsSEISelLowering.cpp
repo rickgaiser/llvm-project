@@ -133,9 +133,10 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       for (unsigned Opc = 0; Opc < ISD::BUILTIN_OP_END; ++Opc)
         setOperationAction(Opc, VT, Expand);
 
-      // Load/Store via LQ/SQ
-      setOperationAction(ISD::LOAD, VT, Legal);
-      setOperationAction(ISD::STORE, VT, Legal);
+      // Load/Store: Custom to handle alignment requirements
+      // LQ/SQ require 16-byte alignment; unaligned accesses are scalarized
+      setOperationAction(ISD::LOAD, VT, Custom);
+      setOperationAction(ISD::STORE, VT, Custom);
       setOperationAction(ISD::BITCAST, VT, Legal);
 
       // Arithmetic: PADDW/PSUBW (v4i32), PADDH/PSUBH (v8i16), PADDB/PSUBB (v16i8)
@@ -575,8 +576,21 @@ SDValue MipsSETargetLowering::lowerSELECT(SDValue Op, SelectionDAG &DAG) const {
 }
 
 bool MipsSETargetLowering::allowsMisalignedMemoryAccesses(
-    EVT VT, unsigned, Align, MachineMemOperand::Flags, unsigned *Fast) const {
+    EVT VT, unsigned, Align Alignment, MachineMemOperand::Flags,
+    unsigned *Fast) const {
   MVT::SimpleValueType SVT = VT.getSimpleVT().SimpleTy;
+
+  // R5900 LQ/SQ require 16-byte alignment to avoid TLB misses.
+  // Reject unaligned accesses for 128-bit vector types.
+  if (Subtarget.isR5900() && VT.isVector() &&
+      VT.getSizeInBits() == 128) {
+    if (Alignment < Align(16))
+      return false;
+    // Aligned 128-bit accesses are fine
+    if (Fast)
+      *Fast = 1;
+    return true;
+  }
 
   if (Subtarget.systemSupportsUnalignedAccess()) {
     // MIPS32r6/MIPS64r6 is required to support unaligned access. It's
@@ -1455,8 +1469,46 @@ getOpndList(SmallVectorImpl<SDValue> &Ops,
 
 SDValue MipsSETargetLowering::lowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   LoadSDNode &Nd = *cast<LoadSDNode>(Op);
+  EVT MemVT = Nd.getMemoryVT();
 
-  if (Nd.getMemoryVT() != MVT::f64 || !NoDPLoadStore)
+  // R5900 vector load handling: LQ requires 16-byte alignment
+  if (Subtarget.isR5900() && MemVT.isVector() &&
+      MemVT.getSizeInBits() == 128) {
+    if (Nd.getAlign() >= Align(16)) {
+      // Aligned: let the pattern match LQ
+      return SDValue();
+    }
+
+    // Unaligned: scalarize to multiple 32-bit loads
+    SDLoc DL(Op);
+    SDValue Ptr = Nd.getBasePtr();
+    SDValue Chain = Nd.getChain();
+    EVT PtrVT = Ptr.getValueType();
+
+    // Load 4x i32 and build vector
+    SmallVector<SDValue, 4> Loads;
+    for (unsigned i = 0; i < 4; ++i) {
+      SDValue Offset = DAG.getConstant(i * 4, DL, PtrVT);
+      SDValue EltPtr = DAG.getNode(ISD::ADD, DL, PtrVT, Ptr, Offset);
+      SDValue Elt = DAG.getLoad(
+          MVT::i32, DL, Chain, EltPtr, MachinePointerInfo(),
+          commonAlignment(Nd.getAlign(), 4), Nd.getMemOperand()->getFlags());
+      Loads.push_back(Elt);
+      Chain = Elt.getValue(1);
+    }
+
+    // Build the v4i32 vector
+    SDValue Vec = DAG.getBuildVector(MVT::v4i32, DL, Loads);
+
+    // Bitcast to the requested type if needed
+    if (MemVT != MVT::v4i32)
+      Vec = DAG.getBitcast(MemVT, Vec);
+
+    SDValue Ops[2] = {Vec, Chain};
+    return DAG.getMergeValues(Ops, DL);
+  }
+
+  if (MemVT != MVT::f64 || !NoDPLoadStore)
     return MipsTargetLowering::lowerLOAD(Op, DAG);
 
   // Replace a double precision load with two i32 loads and a buildpair64.
@@ -1484,8 +1536,42 @@ SDValue MipsSETargetLowering::lowerLOAD(SDValue Op, SelectionDAG &DAG) const {
 
 SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   StoreSDNode &Nd = *cast<StoreSDNode>(Op);
+  EVT MemVT = Nd.getMemoryVT();
 
-  if (Nd.getMemoryVT() != MVT::f64 || !NoDPLoadStore)
+  // R5900 vector store handling: SQ requires 16-byte alignment
+  if (Subtarget.isR5900() && MemVT.isVector() &&
+      MemVT.getSizeInBits() == 128) {
+    if (Nd.getAlign() >= Align(16)) {
+      // Aligned: let the pattern match SQ
+      return SDValue();
+    }
+
+    // Unaligned: scalarize to multiple 32-bit stores
+    SDLoc DL(Op);
+    SDValue Val = Nd.getValue();
+    SDValue Ptr = Nd.getBasePtr();
+    SDValue Chain = Nd.getChain();
+    EVT PtrVT = Ptr.getValueType();
+
+    // Bitcast to v4i32 if needed
+    if (MemVT != MVT::v4i32)
+      Val = DAG.getBitcast(MVT::v4i32, Val);
+
+    // Store 4x i32 elements
+    for (unsigned i = 0; i < 4; ++i) {
+      SDValue Elt = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::i32, Val,
+                                DAG.getConstant(i, DL, MVT::i32));
+      SDValue Offset = DAG.getConstant(i * 4, DL, PtrVT);
+      SDValue EltPtr = DAG.getNode(ISD::ADD, DL, PtrVT, Ptr, Offset);
+      Chain = DAG.getStore(Chain, DL, Elt, EltPtr, MachinePointerInfo(),
+                           commonAlignment(Nd.getAlign(), 4),
+                           Nd.getMemOperand()->getFlags(), Nd.getAAInfo());
+    }
+
+    return Chain;
+  }
+
+  if (MemVT != MVT::f64 || !NoDPLoadStore)
     return MipsTargetLowering::lowerSTORE(Op, DAG);
 
   // Replace a double precision store with two extractelement64s and i32 stores.

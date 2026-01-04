@@ -4069,26 +4069,40 @@ class SQ_GPR<string opstr, RegisterOperand RC, InstrItinClass Itin,
   let mayStore = 1;
 }
 
+// Aligned load/store pattern fragments for R5900 LQ/SQ (require 16-byte alignment)
+// These are required because LQ/SQ cause TLB misses on unaligned accesses
+def aligned_load_128 : PatFrag<(ops node:$ptr), (load node:$ptr)> {
+  let IsLoad = true;
+  let IsNonExtLoad = true;
+  let MinAlignment = 16;
+}
+
+def aligned_store_128 : PatFrag<(ops node:$val, node:$ptr), (store node:$val, node:$ptr)> {
+  let IsStore = true;
+  let IsTruncStore = false;
+  let MinAlignment = 16;
+}
+
 let Predicates = [HasR5900] in {
   // LQ - Load Quadword (128-bit memory -> GPR128)
   // Opcode: 0x1e (bits 31-26 = 011110)
-  // Note: Pattern set separately for each vector type
+  // Note: Requires 16-byte alignment to avoid TLB misses
   def LQ : LQ_GPR<"lq", GPR128Opnd, II_LQ>, LW_FM<0x1e>;
 
   // SQ - Store Quadword (GPR128 -> 128-bit memory)
   // Opcode: 0x1f (bits 31-26 = 011111)
-  // Note: Pattern set separately for each vector type
+  // Note: Requires 16-byte alignment to avoid TLB misses
   def SQ : SQ_GPR<"sq", GPR128Opnd, II_SQ>, LW_FM<0x1f>;
 
-  // LQ patterns for each vector type
-  def : Pat<(v4i32 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
-  def : Pat<(v8i16 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
-  def : Pat<(v16i8 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
+  // LQ patterns for each vector type (only match 16-byte aligned loads)
+  def : Pat<(v4i32 (aligned_load_128 addrDefault:$addr)), (LQ addrDefault:$addr)>;
+  def : Pat<(v8i16 (aligned_load_128 addrDefault:$addr)), (LQ addrDefault:$addr)>;
+  def : Pat<(v16i8 (aligned_load_128 addrDefault:$addr)), (LQ addrDefault:$addr)>;
 
-  // SQ patterns for each vector type
-  def : Pat<(store v4i32:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
-  def : Pat<(store v8i16:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
-  def : Pat<(store v16i8:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
+  // SQ patterns for each vector type (only match 16-byte aligned stores)
+  def : Pat<(aligned_store_128 v4i32:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
+  def : Pat<(aligned_store_128 v8i16:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
+  def : Pat<(aligned_store_128 v16i8:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
 } // Predicates = [HasR5900]
 
 //===----------------------------------------------------------------------===//
@@ -4410,6 +4424,14 @@ let Predicates = [HasVU0] in {
   // VU0 Absolute value (2-register form: ft = |fs|)
   def VABS  : VU0_2R<"vabs", 0b01111111101, II_VU0_VABS>;  // 0x1FD
   def VABS_ISel : VU0_2R_ISel<"vabs", 0b01111111101, II_VU0_VABS, fabs>;
+
+  // VU0 VMOVE (move) - opcode 0x33C
+  // VMOVE.dest ft, fs - copies selected lanes from fs to ft
+  def VMOVE : VU0_2R<"vmove", 0b01100111100, II_VU0_VMOVE>;  // 0x33C
+
+  // VU0 VMR32 (move rotate 32) - opcode 0x33D
+  // VMR32.dest ft, fs - rotates components: ft.x=fs.y, ft.y=fs.z, ft.z=fs.w, ft.w=fs.x
+  def VMR32 : VU0_2R<"vmr32", 0b01100111101, II_VU0_VMOVE>;  // 0x33D
 
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001, II_VU0_VMADD>;  // 0x29
@@ -4854,6 +4876,24 @@ let Predicates = [HasVU0] in {
   def CTC2 : InstSE<(outs COP2Opnd:$rd), (ins GPR32Opnd:$rt),
                     "ctc2\t$rt, $rd", [], II_CTC2, FrmFR, "ctc2">,
              MFC2_FM<0b00110> {
+    let DecoderNamespace = "R5900";
+  }
+
+  // QMFC2 - Quadword Move From Coprocessor 2: GPR128 = VF
+  // Transfers 128-bit data from VF register to GPR128
+  // Encoding: COP2(6) | 00001(5) | rt(5) | rd(5) | 0(11)
+  def QMFC2 : InstSE<(outs GPR128Opnd:$rt), (ins VFOpnd:$rd),
+                     "qmfc2\t$rt, $rd", [], II_CFC2, FrmFR, "qmfc2">,
+              MFC2_FM<0b00001> {
+    let DecoderNamespace = "R5900";
+  }
+
+  // QMTC2 - Quadword Move To Coprocessor 2: VF = GPR128
+  // Transfers 128-bit data from GPR128 to VF register
+  // Encoding: COP2(6) | 00101(5) | rt(5) | rd(5) | 0(11)
+  def QMTC2 : InstSE<(outs VFOpnd:$rd), (ins GPR128Opnd:$rt),
+                     "qmtc2\t$rt, $rd", [], II_CTC2, FrmFR, "qmtc2">,
+              MFC2_FM<0b00101> {
     let DecoderNamespace = "R5900";
   }
 

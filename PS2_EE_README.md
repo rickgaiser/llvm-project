@@ -218,8 +218,12 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `LQ` | Load Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns) |
-| `SQ` | Store Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns) |
+| `LQ` | Load Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns, 16-byte alignment enforced) |
+| `SQ` | Store Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns, 16-byte alignment enforced) |
+
+**Alignment Requirement**: LQ and SQ require 16-byte (128-bit) alignment to avoid TLB misses. The compiler automatically enforces this:
+- Aligned (>= 16 bytes): Uses LQ/SQ directly
+- Unaligned (< 16 bytes): Scalarizes to multiple smaller loads/stores via the stack
 
 ---
 

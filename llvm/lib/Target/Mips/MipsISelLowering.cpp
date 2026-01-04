@@ -4724,6 +4724,11 @@ MipsTargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
            (VT == MVT::f64 && Subtarget.isSingleFloat())) &&
           Subtarget.isGP64bit())
         return std::make_pair(0U, &Mips::GPR64RegClass);
+      // R5900: Support 128-bit vector types with 'r' constraint
+      if (Subtarget.isR5900() &&
+          (VT == MVT::v4i32 || VT == MVT::v4f32 || VT == MVT::v8i16 ||
+           VT == MVT::v16i8 || VT == MVT::i128))
+        return std::make_pair(0U, &Mips::GPR128RegClass);
       // This will generate an error message
       return std::make_pair(0U, nullptr);
     case 'f': // FPU or MSA register

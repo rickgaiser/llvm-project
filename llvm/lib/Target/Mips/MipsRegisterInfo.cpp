@@ -246,6 +246,20 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::VF0);
   }
 
+  // Reserve GPR128 registers for R5900: ZERO, AT, K0, K1, SP
+  if (Subtarget.isR5900()) {
+    Reserved.set(Mips::ZERO_128);
+    Reserved.set(Mips::AT_128);
+    Reserved.set(Mips::K0_128);
+    Reserved.set(Mips::K1_128);
+    Reserved.set(Mips::SP_128);
+    // Also reserve GP and FP if needed
+    if (!Subtarget.isABICalls() || Subtarget.useSmallSection())
+      Reserved.set(Mips::GP_128);
+    if (Subtarget.getFrameLowering()->hasFP(MF))
+      Reserved.set(Mips::FP_128);
+  }
+
   return Reserved;
 }
 
