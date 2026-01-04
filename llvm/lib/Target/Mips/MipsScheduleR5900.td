@@ -463,6 +463,24 @@ def : InstRW<[R5900WriteVFLoad], (instrs LQC2)>;
 def : InstRW<[R5900WriteVFStore], (instrs SQC2)>;
 
 //===----------------------------------------------------------------------===//
+// VU0 Control Register Transfer (CFC2/CTC2)
+//===----------------------------------------------------------------------===//
+// CFC2/CTC2 transfer between GPR and VU0 control registers (VI16-VI31).
+// Similar to QMFC2/QMTC2 but for control registers only.
+
+def R5900WriteCFC2 : SchedWriteRes<[R5900UnitLdSt]> {
+  let Latency = 2;
+}
+
+def R5900WriteCTC2 : SchedWriteRes<[R5900UnitLdSt, R5900UnitVU0]> {
+  let Latency = 2;
+  let ReleaseAtCycles = [1, 2];  // Similar to LQC2 - 1-cycle stall for next VU0 op
+}
+
+def : InstRW<[R5900WriteCFC2], (instrs CFC2)>;
+def : InstRW<[R5900WriteCTC2], (instrs CTC2)>;
+
+//===----------------------------------------------------------------------===//
 // VU0 Arithmetic Instructions
 //===----------------------------------------------------------------------===//
 // VU0 macro mode vector arithmetic uses the VU0 unit.

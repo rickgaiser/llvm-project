@@ -472,8 +472,8 @@ VU0 operates on 128-bit vectors containing 4x32-bit single-precision floats (V4S
 | `SQC2` | Store Quadword from COP2 (VF to 128-bit memory) | **Implemented** |
 | `QMFC2` | Quadword Move From COP2 to GP | Not Implemented (requires 128-bit GP) |
 | `QMTC2` | Quadword Move To COP2 from GP | Not Implemented (requires 128-bit GP) |
-| `CFC2` | Control Transfer from VU to EE Core | Not Implemented |
-| `CTC2` | Control Transfer from EE Core to VU | Not Implemented |
+| `CFC2` | Control Transfer from VU to EE Core | **Implemented** |
+| `CTC2` | Control Transfer from EE Core to VU | **Implemented** |
 
 ### 5.2 Vector Arithmetic
 

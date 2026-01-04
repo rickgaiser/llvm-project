@@ -4492,6 +4492,28 @@ let Predicates = [HasVU0] in {
     let hasSideEffects = 1;
   }
 
+  //===--------------------------------------------------------------------===//
+  // VU0 Control Register Transfer (CFC2/CTC2)
+  // These transfer data between GPRs and VU0 control registers (VI16-VI31)
+  // Control registers include Status flag, MAC flag, Clip flag, etc.
+  //===--------------------------------------------------------------------===//
+
+  // CFC2 - Copy From Coprocessor 2 Control: GPR = VU0_CR
+  // Reads from VU0 control register (VI16-VI31) to GPR
+  def CFC2 : InstSE<(outs GPR32Opnd:$rt), (ins COP2Opnd:$rd),
+                    "cfc2\t$rt, $rd", [], II_CFC2, FrmFR, "cfc2">,
+             MFC2_FM<0b00010> {
+    let DecoderNamespace = "R5900";
+  }
+
+  // CTC2 - Copy To Coprocessor 2 Control: VU0_CR = GPR
+  // Writes to VU0 control register (VI16-VI31) from GPR
+  def CTC2 : InstSE<(outs COP2Opnd:$rd), (ins GPR32Opnd:$rt),
+                    "ctc2\t$rt, $rd", [], II_CTC2, FrmFR, "ctc2">,
+             MFC2_FM<0b00110> {
+    let DecoderNamespace = "R5900";
+  }
+
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//
