@@ -32,13 +32,17 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
 }
 
 //===----------------------------------------------------------------------===//
-// R5900 VU0 Vectorization Support
+// R5900 Vectorization Support (VU0 and MMI)
 //===----------------------------------------------------------------------===//
 
 unsigned MipsTTIImpl::getNumberOfRegisters(unsigned ClassID) const {
   bool Vector = (ClassID == 1);
-  if (Vector && ST->hasVU0())
-    return 32; // VF0-VF31 (though VF0 is a constant register)
+  if (Vector) {
+    if (ST->hasVU0())
+      return 32; // VF0-VF31 (though VF0 is a constant register)
+    if (ST->isR5900())
+      return 30; // GPR128 vector registers (excluding $zero, $at)
+  }
   return 32; // GP registers
 }
 
@@ -48,8 +52,8 @@ MipsTTIImpl::getRegisterBitWidth(TargetTransformInfo::RegisterKind K) const {
   case TargetTransformInfo::RGK_Scalar:
     return TypeSize::getFixed(ST->isGP64bit() ? 64 : 32);
   case TargetTransformInfo::RGK_FixedWidthVector:
-    if (ST->hasVU0())
-      return TypeSize::getFixed(128); // VU0 has 128-bit VF registers
+    if (ST->hasVU0() || ST->isR5900())
+      return TypeSize::getFixed(128); // VU0 VF regs or R5900 GPR128
     return TypeSize::getFixed(0);
   case TargetTransformInfo::RGK_ScalableVector:
     return TypeSize::getScalable(0); // No scalable vector support
@@ -58,7 +62,9 @@ MipsTTIImpl::getRegisterBitWidth(TargetTransformInfo::RegisterKind K) const {
 }
 
 unsigned MipsTTIImpl::getMinVectorRegisterBitWidth() const {
-  return ST->hasVU0() ? 128 : 0;
+  if (ST->hasVU0() || ST->isR5900())
+    return 128;
+  return 0;
 }
 
 InstructionCost MipsTTIImpl::getArithmeticInstrCost(
@@ -81,6 +87,39 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
       }
     }
   }
+
+  // R5900 MMI native integer vector operations
+  if (ST->isR5900() && Ty->isVectorTy()) {
+    auto *VTy = cast<VectorType>(Ty);
+    unsigned BitWidth = VTy->getPrimitiveSizeInBits();
+
+    // Only 128-bit vectors are supported
+    if (BitWidth == 128) {
+      Type *EltTy = VTy->getElementType();
+      if (EltTy->isIntegerTy()) {
+        unsigned EltBits = EltTy->getIntegerBitWidth();
+
+        switch (Opcode) {
+        case Instruction::Add:
+        case Instruction::Sub:
+          // PADDW/PSUBW (32-bit), PADDH/PSUBH (16-bit), PADDB/PSUBB (8-bit)
+          if (EltBits == 8 || EltBits == 16 || EltBits == 32)
+            return 1; // Native MMI operation
+          break;
+
+        case Instruction::And:
+        case Instruction::Or:
+        case Instruction::Xor:
+          // PAND, POR, PXOR - all element sizes use same instruction
+          return 1; // Native MMI operation
+
+        default:
+          break;
+        }
+      }
+    }
+  }
+
   return BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind, Op1Info, Op2Info,
                                        Args, CxtI);
 }

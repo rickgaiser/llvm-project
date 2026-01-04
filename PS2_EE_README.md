@@ -27,8 +27,8 @@ The EE Core is based on MIPS III architecture with significant extensions:
 | No LL/SC Atomics | **Implemented** | Disabled via `setMaxAtomicSizeInBitsSupported(0)` |
 | No DMULT/DDIV | **Implemented** | 64-bit mul/div expanded to 32-bit ops |
 | MIPS IV Subset | **Implemented** | MOVN, MOVZ, PREF, MOVN.S, MOVZ.S |
-| 128-bit Registers | **Partial** | GPR128 class and LQ/SQ instructions implemented |
-| MMI Instructions | **Partial** | HI/LO moves, min/max, abs, logical, compare, PLZCW implemented |
+| 128-bit Registers | **Implemented** | GPR128 class with vector types (v4i32, v8i16, v16i8), LQ/SQ with patterns |
+| MMI Instructions | **Partial** | Arithmetic (PADDW/H/B, PSUBW/H/B), logical (PAND/POR/PXOR/PNOR), min/max, abs, compare implemented with autovectorization support |
 | VU0 (COP2) | **Partial** | VF registers, load/store, arithmetic, ACC implemented |
 | Dual Pipeline | **Implemented** | 3-op MULT/MADD auto-selected; Pipeline 1 available in inline assembly |
 
@@ -182,12 +182,12 @@ Note: `$vf0` is a constant register with value `{0.0, 0.0, 0.0, 1.0}` (w=1.0) an
 | `SImode` | 32-bit | `int` | GP | **Implemented** |
 | `SFmode` | 32-bit | `float` | FPU (COP1) | **Implemented** |
 | `DImode` | 64-bit | `long long` | GP | **Implemented** |
-| `TImode` | 128-bit | `__int128` | GP | Not Implemented |
+| `TImode` | 128-bit | `__int128` | GP | Not Implemented (use vector types instead) |
 | `V4SF` | 128-bit | 4 x 32-bit float | VU0 (COP2) | **Partial** (load/store/arithmetic) |
-| `V16QI` | 128-bit | 16 x 8-bit int | GP (MMI) | Not Implemented |
-| `V8HI` | 128-bit | 8 x 16-bit int | GP (MMI) | Not Implemented |
-| `V4SI` | 128-bit | 4 x 32-bit int | GP (MMI) | Not Implemented |
-| `V2DI` | 128-bit | 2 x 64-bit int | GP (MMI) | Not Implemented |
+| `V16QI` | 128-bit | 16 x 8-bit int | GP (MMI) | **Implemented** (PADDB/PSUBB, PAND/POR/PXOR) |
+| `V8HI` | 128-bit | 8 x 16-bit int | GP (MMI) | **Implemented** (PADDH/PSUBH, PMAXH/PMINH, PABSH, PAND/POR/PXOR) |
+| `V4SI` | 128-bit | 4 x 32-bit int | GP (MMI) | **Implemented** (PADDW/PSUBW, PMAXW/PMINW, PABSW, PAND/POR/PXOR) |
+| `V2DI` | 128-bit | 2 x 64-bit int | GP (MMI) | Not Implemented (no native 64-bit element SIMD) |
 
 ---
 
@@ -218,8 +218,8 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `LQ` | Load Quadword (128-bit) | Not Implemented |
-| `SQ` | Store Quadword (128-bit) | Not Implemented |
+| `LQ` | Load Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns) |
+| `SQ` | Store Quadword (128-bit) | **Implemented** (with v4i32/v8i16/v16i8 patterns) |
 
 ---
 
@@ -229,12 +229,12 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PADDB` | Parallel Add Byte | Not Implemented |
-| `PSUBB` | Parallel Subtract Byte | Not Implemented |
-| `PADDH` | Parallel Add Halfword | Not Implemented |
-| `PSUBH` | Parallel Subtract Halfword | Not Implemented |
-| `PADDW` | Parallel Add Word | Not Implemented |
-| `PSUBW` | Parallel Subtract Word | Not Implemented |
+| `PADDB` | Parallel Add Byte | **Implemented** (v16i8 add pattern) |
+| `PSUBB` | Parallel Subtract Byte | **Implemented** (v16i8 sub pattern) |
+| `PADDH` | Parallel Add Halfword | **Implemented** (v8i16 add pattern) |
+| `PSUBH` | Parallel Subtract Halfword | **Implemented** (v8i16 sub pattern) |
+| `PADDW` | Parallel Add Word | **Implemented** (v4i32 add pattern) |
+| `PSUBW` | Parallel Subtract Word | **Implemented** (v4i32 sub pattern) |
 | `PADDSB` | Parallel Add with Signed Saturation Byte | Not Implemented |
 | `PSUBSB` | Parallel Subtract with Signed Saturation Byte | Not Implemented |
 | `PADDSH` | Parallel Add with Signed Saturation Halfword | Not Implemented |
@@ -565,16 +565,20 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 ### Phase 2: 128-bit Support
 - [x] Define 128-bit register class (GPR128) in `MipsRegisterInfo.td`
 - [x] Implement LQ/SQ instructions
-- [ ] Add TImode (`__int128`) support (load/store via LQ/SQ, arithmetic expands to 64-bit ops)
+- [x] Register vector types (v4i32, v8i16, v16i8) with GPR128
+- [ ] Add TImode (`__int128`) support (optional - vector types preferred)
 
 ### Phase 3: MMI Instructions
-- [ ] Create `MipsR5900MMIInstrInfo.td`
-- [ ] Implement arithmetic (PADDW, PSUBW, etc.)
-- [ ] Implement logical (PAND, POR, PXOR, PNOR)
-- [ ] Implement compare (PCEQ*, PCGT*)
+- [x] Register vector types in `MipsSEISelLowering.cpp`
+- [x] Implement arithmetic (PADDW/H/B, PSUBW/H/B) with autovectorization patterns
+- [x] Implement logical (PAND, POR, PXOR, PNOR) with patterns for all vector types
+- [x] Implement min/max (PMAXW/H, PMINW/H) with smax/smin patterns
+- [x] Implement absolute (PABSW, PABSH) with abs patterns
+- [x] Implement compare (PCGTW/H/B, PCEQW/H/B) updated to GPR128
+- [x] Add TTI hooks for autovectorization (getNumberOfRegisters, getRegisterBitWidth, getArithmeticInstrCost)
 - [ ] Implement data rearrangement (PPAC*, PEXT*, etc.)
 - [ ] Add intrinsics for all MMI instructions
-- [ ] Add autovectorization patterns
+- [ ] Implement saturating arithmetic (PADDS*, PSUBS*, PADDU*, PSUBU*)
 
 ### Phase 4: FPU Extensions
 - [x] FPU accumulator (ACC) register

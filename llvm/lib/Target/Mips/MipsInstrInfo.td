@@ -3786,38 +3786,103 @@ def PMADDUW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
               R5900_MMI3_FM<0b00000>;
 
 //===----------------------------------------------------------------------===//
+// PADD/PSUB - Parallel Add/Subtract
+// These perform SIMD add/subtract on packed words, halfwords, or bytes.
+//===----------------------------------------------------------------------===//
+
+// PADDW - Parallel Add Word
+// rd = rs + rt for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PADDW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "paddw\t$rd, $rs, $rt",
+                   [(set v4i32:$rd, (add v4i32:$rs, v4i32:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI0_FM<0b00000>;
+
+// PSUBW - Parallel Subtract Word
+// rd = rs - rt for each of 4 packed 32-bit words
+let DecoderNamespace = "R5900" in
+def PSUBW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "psubw\t$rd, $rs, $rt",
+                   [(set v4i32:$rd, (sub v4i32:$rs, v4i32:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI1_FM<0b00000>;
+
+// PADDH - Parallel Add Halfword
+// rd = rs + rt for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PADDH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "paddh\t$rd, $rs, $rt",
+                   [(set v8i16:$rd, (add v8i16:$rs, v8i16:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI0_FM<0b00100>;
+
+// PSUBH - Parallel Subtract Halfword
+// rd = rs - rt for each of 8 packed 16-bit halfwords
+let DecoderNamespace = "R5900" in
+def PSUBH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "psubh\t$rd, $rs, $rt",
+                   [(set v8i16:$rd, (sub v8i16:$rs, v8i16:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI1_FM<0b00100>;
+
+// PADDB - Parallel Add Byte
+// rd = rs + rt for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PADDB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "paddb\t$rd, $rs, $rt",
+                   [(set v16i8:$rd, (add v16i8:$rs, v16i8:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI0_FM<0b01000>;
+
+// PSUBB - Parallel Subtract Byte
+// rd = rs - rt for each of 16 packed 8-bit bytes
+let DecoderNamespace = "R5900" in
+def PSUBB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "psubb\t$rd, $rs, $rt",
+                   [(set v16i8:$rd, (sub v16i8:$rs, v16i8:$rt))],
+                   II_ADD, FrmR>,
+            R5900_MMI1_FM<0b01000>;
+
+//===----------------------------------------------------------------------===//
 // PMAX/PMIN - Parallel Maximum/Minimum
 // These perform SIMD max/min operations on packed words or halfwords.
 //===----------------------------------------------------------------------===//
 
 // PMAXW - Parallel Maximum Word
-// rd[31:0] = max(rs[31:0], rt[31:0])
-// rd[63:32] = max(rs[63:32], rt[63:32])
+// rd = max(rs, rt) for each of 4 packed 32-bit signed words
 let DecoderNamespace = "R5900" in
-def PMAXW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                   "pmaxw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PMAXW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pmaxw\t$rd, $rs, $rt",
+                   [(set v4i32:$rd, (smax v4i32:$rs, v4i32:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI0_FM<0b00011>;
 
 // PMAXH - Parallel Maximum Halfword
-// rd = max of 4 packed signed halfwords
+// rd = max(rs, rt) for each of 8 packed 16-bit signed halfwords
 let DecoderNamespace = "R5900" in
-def PMAXH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                   "pmaxh\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PMAXH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pmaxh\t$rd, $rs, $rt",
+                   [(set v8i16:$rd, (smax v8i16:$rs, v8i16:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI0_FM<0b00111>;
 
 // PMINW - Parallel Minimum Word
-// rd[31:0] = min(rs[31:0], rt[31:0])
-// rd[63:32] = min(rs[63:32], rt[63:32])
+// rd = min(rs, rt) for each of 4 packed 32-bit signed words
 let DecoderNamespace = "R5900" in
-def PMINW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                   "pminw\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PMINW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pminw\t$rd, $rs, $rt",
+                   [(set v4i32:$rd, (smin v4i32:$rs, v4i32:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI1_FM<0b00011>;
 
 // PMINH - Parallel Minimum Halfword
-// rd = min of 4 packed signed halfwords
+// rd = min(rs, rt) for each of 8 packed 16-bit signed halfwords
 let DecoderNamespace = "R5900" in
-def PMINH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                   "pminh\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PMINH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                   "pminh\t$rd, $rs, $rt",
+                   [(set v8i16:$rd, (smin v8i16:$rs, v8i16:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI1_FM<0b00111>;
 
 //===----------------------------------------------------------------------===//
@@ -3826,17 +3891,21 @@ def PMINH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
 //===----------------------------------------------------------------------===//
 
 // PABSW - Parallel Absolute Word
-// rd[31:0] = abs(rt[31:0]), rd[63:32] = abs(rt[63:32])
+// rd = abs(rt) for each of 4 packed 32-bit signed words
 let DecoderNamespace = "R5900" in
-def PABSW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rt),
-                   "pabsw\t$rd, $rt", [], II_AND, FrmR>,
+def PABSW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pabsw\t$rd, $rt",
+                   [(set v4i32:$rd, (abs v4i32:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI1_2R_FM<0b00001>;
 
 // PABSH - Parallel Absolute Halfword
-// rd = abs of 4 packed signed halfwords
+// rd = abs(rt) for each of 8 packed 16-bit signed halfwords
 let DecoderNamespace = "R5900" in
-def PABSH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rt),
-                   "pabsh\t$rd, $rt", [], II_AND, FrmR>,
+def PABSH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
+                   "pabsh\t$rd, $rt",
+                   [(set v8i16:$rd, (abs v8i16:$rt))],
+                   II_AND, FrmR>,
             R5900_MMI1_2R_FM<0b00101>;
 
 //===----------------------------------------------------------------------===//
@@ -3846,76 +3915,95 @@ def PABSH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rt),
 // PAND - Parallel AND
 // rd = rs & rt (128-bit)
 let DecoderNamespace = "R5900" in
-def PAND : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                  "pand\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PAND : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                  "pand\t$rd, $rs, $rt",
+                  [(set v4i32:$rd, (and v4i32:$rs, v4i32:$rt))],
+                  II_AND, FrmR>,
            R5900_MMI2_FM<0b10010>;
 
 // POR - Parallel OR
 // rd = rs | rt (128-bit)
 let DecoderNamespace = "R5900" in
-def POR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                 "por\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def POR : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                 "por\t$rd, $rs, $rt",
+                 [(set v4i32:$rd, (or v4i32:$rs, v4i32:$rt))],
+                 II_AND, FrmR>,
           R5900_MMI3_FM<0b10010>;
 
 // PXOR - Parallel XOR
 // rd = rs ^ rt (128-bit)
 let DecoderNamespace = "R5900" in
-def PXOR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
-                  "pxor\t$rd, $rs, $rt", [], II_AND, FrmR>,
+def PXOR : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
+                  "pxor\t$rd, $rs, $rt",
+                  [(set v4i32:$rd, (xor v4i32:$rs, v4i32:$rt))],
+                  II_AND, FrmR>,
            R5900_MMI2_FM<0b10011>;
 
 // PNOR - Parallel NOR
 // rd = ~(rs | rt) (128-bit)
 let DecoderNamespace = "R5900" in
-def PNOR : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PNOR : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                   "pnor\t$rd, $rs, $rt", [], II_AND, FrmR>,
            R5900_MMI3_FM<0b10011>;
 
+// Patterns for other vector types (v8i16, v16i8) - bitcast through v4i32
+def : Pat<(v8i16 (and v8i16:$rs, v8i16:$rt)),
+          (PAND (v8i16 $rs), (v8i16 $rt))>;
+def : Pat<(v16i8 (and v16i8:$rs, v16i8:$rt)),
+          (PAND (v16i8 $rs), (v16i8 $rt))>;
+def : Pat<(v8i16 (or v8i16:$rs, v8i16:$rt)),
+          (POR (v8i16 $rs), (v8i16 $rt))>;
+def : Pat<(v16i8 (or v16i8:$rs, v16i8:$rt)),
+          (POR (v16i8 $rs), (v16i8 $rt))>;
+def : Pat<(v8i16 (xor v8i16:$rs, v8i16:$rt)),
+          (PXOR (v8i16 $rs), (v8i16 $rt))>;
+def : Pat<(v16i8 (xor v16i8:$rs, v16i8:$rt)),
+          (PXOR (v16i8 $rs), (v16i8 $rt))>;
+
 //===----------------------------------------------------------------------===//
 // Parallel Compare Operations
+// These return masks: 0xFFFFFFFF (word), 0xFFFF (halfword), 0xFF (byte) for true
 //===----------------------------------------------------------------------===//
 
 // PCGTW - Parallel Compare for Greater Than Word
-// rd[31:0] = (rs[31:0] > rt[31:0]) ? 0xFFFFFFFF : 0
-// rd[63:32] = (rs[63:32] > rt[63:32]) ? 0xFFFFFFFF : 0
+// rd = (rs > rt) ? 0xFFFFFFFF : 0 for each of 4 packed 32-bit signed words
 let DecoderNamespace = "R5900" in
-def PCGTW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCGTW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pcgtw\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI0_FM<0b00010>;
 
 // PCGTH - Parallel Compare for Greater Than Halfword
-// rd = compare 4 packed signed halfwords
+// rd = (rs > rt) ? 0xFFFF : 0 for each of 8 packed 16-bit signed halfwords
 let DecoderNamespace = "R5900" in
-def PCGTH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCGTH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pcgth\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI0_FM<0b00110>;
 
 // PCGTB - Parallel Compare for Greater Than Byte
-// rd = compare 8 packed signed bytes
+// rd = (rs > rt) ? 0xFF : 0 for each of 16 packed 8-bit signed bytes
 let DecoderNamespace = "R5900" in
-def PCGTB : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCGTB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pcgtb\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI0_FM<0b01010>;
 
 // PCEQW - Parallel Compare for Equal Word
-// rd[31:0] = (rs[31:0] == rt[31:0]) ? 0xFFFFFFFF : 0
-// rd[63:32] = (rs[63:32] == rt[63:32]) ? 0xFFFFFFFF : 0
+// rd = (rs == rt) ? 0xFFFFFFFF : 0 for each of 4 packed 32-bit words
 let DecoderNamespace = "R5900" in
-def PCEQW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCEQW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pceqw\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI1_FM<0b00010>;
 
 // PCEQH - Parallel Compare for Equal Halfword
-// rd = compare 4 packed halfwords for equality
+// rd = (rs == rt) ? 0xFFFF : 0 for each of 8 packed 16-bit halfwords
 let DecoderNamespace = "R5900" in
-def PCEQH : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCEQH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pceqh\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI1_FM<0b00110>;
 
 // PCEQB - Parallel Compare for Equal Byte
-// rd = compare 8 packed bytes for equality
+// rd = (rs == rt) ? 0xFF : 0 for each of 16 packed 8-bit bytes
 let DecoderNamespace = "R5900" in
-def PCEQB : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+def PCEQB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "pceqb\t$rd, $rs, $rt", [], II_AND, FrmR>,
             R5900_MMI1_FM<0b01010>;
 
@@ -3984,11 +4072,23 @@ class SQ_GPR<string opstr, RegisterOperand RC, InstrItinClass Itin,
 let Predicates = [HasR5900] in {
   // LQ - Load Quadword (128-bit memory -> GPR128)
   // Opcode: 0x1e (bits 31-26 = 011110)
-  def LQ : LQ_GPR<"lq", GPR128Opnd, II_LQ, load>, LW_FM<0x1e>;
+  // Note: Pattern set separately for each vector type
+  def LQ : LQ_GPR<"lq", GPR128Opnd, II_LQ>, LW_FM<0x1e>;
 
   // SQ - Store Quadword (GPR128 -> 128-bit memory)
   // Opcode: 0x1f (bits 31-26 = 011111)
-  def SQ : SQ_GPR<"sq", GPR128Opnd, II_SQ, store>, LW_FM<0x1f>;
+  // Note: Pattern set separately for each vector type
+  def SQ : SQ_GPR<"sq", GPR128Opnd, II_SQ>, LW_FM<0x1f>;
+
+  // LQ patterns for each vector type
+  def : Pat<(v4i32 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
+  def : Pat<(v8i16 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
+  def : Pat<(v16i8 (load addrDefault:$addr)), (LQ addrDefault:$addr)>;
+
+  // SQ patterns for each vector type
+  def : Pat<(store v4i32:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
+  def : Pat<(store v8i16:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
+  def : Pat<(store v16i8:$rt, addrDefault:$addr), (SQ $rt, addrDefault:$addr)>;
 } // Predicates = [HasR5900]
 
 //===----------------------------------------------------------------------===//

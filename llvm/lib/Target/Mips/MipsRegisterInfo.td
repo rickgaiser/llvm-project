@@ -428,7 +428,8 @@ def GPR64 : RegisterClass<"Mips", [i64], 64, (add
   K0_64, K1_64, GP_64, SP_64, FP_64, RA_64)>;
 
 // R5900 128-bit General Purpose Registers
-def GPR128 : RegisterClass<"Mips", [i128], 128, (add
+// Used for MMI vector operations: v4i32 (4x32-bit), v8i16 (8x16-bit), v16i8 (16x8-bit)
+def GPR128 : RegisterClass<"Mips", [v4i32, v8i16, v16i8], 128, (add
   // Reserved
   ZERO_128, AT_128,
   // Return Values and Arguments

@@ -109,31 +109,54 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   if (Subtarget.isGP64bit())
     addRegisterClass(MVT::i64, &Mips::GPR64RegClass);
 
-  // R5900 has native 128-bit GPRs accessible via LQ/SQ
+  // R5900 MMI: Register vector types with GPR128 for SIMD operations
+  // v4i32 (4x32-bit words), v8i16 (8x16-bit halfwords), v16i8 (16x8-bit bytes)
   if (Subtarget.isR5900()) {
-    addRegisterClass(MVT::i128, &Mips::GPR128RegClass);
+    // Register vector types with GPR128 (no v2i64 - no native 64-bit element SIMD)
+    addRegisterClass(MVT::v4i32, &Mips::GPR128RegClass);
+    addRegisterClass(MVT::v8i16, &Mips::GPR128RegClass);
+    addRegisterClass(MVT::v16i8, &Mips::GPR128RegClass);
 
-    // 128-bit load/store are native (LQ/SQ)
-    setOperationAction(ISD::LOAD, MVT::i128, Legal);
-    setOperationAction(ISD::STORE, MVT::i128, Legal);
+    // Expand all truncating stores and extending loads for R5900 vectors
+    for (MVT VT0 : MVT::fixedlen_vector_valuetypes()) {
+      for (MVT VT1 : MVT::fixedlen_vector_valuetypes()) {
+        setTruncStoreAction(VT0, VT1, Expand);
+        setLoadExtAction(ISD::SEXTLOAD, VT0, VT1, Expand);
+        setLoadExtAction(ISD::ZEXTLOAD, VT0, VT1, Expand);
+        setLoadExtAction(ISD::EXTLOAD, VT0, VT1, Expand);
+      }
+    }
 
-    // Expand arithmetic to pairs of 64-bit operations
-    setOperationAction(ISD::ADD, MVT::i128, Expand);
-    setOperationAction(ISD::SUB, MVT::i128, Expand);
-    setOperationAction(ISD::MUL, MVT::i128, Expand);
-    setOperationAction(ISD::SDIV, MVT::i128, Expand);
-    setOperationAction(ISD::UDIV, MVT::i128, Expand);
-    setOperationAction(ISD::SREM, MVT::i128, Expand);
-    setOperationAction(ISD::UREM, MVT::i128, Expand);
-    setOperationAction(ISD::AND, MVT::i128, Expand);
-    setOperationAction(ISD::OR, MVT::i128, Expand);
-    setOperationAction(ISD::XOR, MVT::i128, Expand);
-    setOperationAction(ISD::SHL, MVT::i128, Expand);
-    setOperationAction(ISD::SRL, MVT::i128, Expand);
-    setOperationAction(ISD::SRA, MVT::i128, Expand);
-    setOperationAction(ISD::SETCC, MVT::i128, Expand);
-    setOperationAction(ISD::SELECT, MVT::i128, Expand);
-    setOperationAction(ISD::SELECT_CC, MVT::i128, Expand);
+    // Set up operation actions for each vector type
+    for (MVT VT : {MVT::v4i32, MVT::v8i16, MVT::v16i8}) {
+      // Expand all builtin opcodes by default
+      for (unsigned Opc = 0; Opc < ISD::BUILTIN_OP_END; ++Opc)
+        setOperationAction(Opc, VT, Expand);
+
+      // Load/Store via LQ/SQ
+      setOperationAction(ISD::LOAD, VT, Legal);
+      setOperationAction(ISD::STORE, VT, Legal);
+      setOperationAction(ISD::BITCAST, VT, Legal);
+
+      // Arithmetic: PADDW/PSUBW (v4i32), PADDH/PSUBH (v8i16), PADDB/PSUBB (v16i8)
+      setOperationAction(ISD::ADD, VT, Legal);
+      setOperationAction(ISD::SUB, VT, Legal);
+
+      // Logical: PAND, POR, PXOR (all sizes use same instruction)
+      setOperationAction(ISD::AND, VT, Legal);
+      setOperationAction(ISD::OR, VT, Legal);
+      setOperationAction(ISD::XOR, VT, Legal);
+    }
+
+    // Min/Max: Only available for v4i32 (PMAXW/PMINW) and v8i16 (PMAXH/PMINH)
+    setOperationAction(ISD::SMAX, MVT::v4i32, Legal);
+    setOperationAction(ISD::SMIN, MVT::v4i32, Legal);
+    setOperationAction(ISD::SMAX, MVT::v8i16, Legal);
+    setOperationAction(ISD::SMIN, MVT::v8i16, Legal);
+
+    // Absolute value: PABSW (v4i32), PABSH (v8i16)
+    setOperationAction(ISD::ABS, MVT::v4i32, Legal);
+    setOperationAction(ISD::ABS, MVT::v8i16, Legal);
   }
 
   if (Subtarget.hasDSP() || Subtarget.hasMSA()) {
