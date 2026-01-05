@@ -5455,6 +5455,11 @@ let Predicates = [HasVU0] in {
     let DecoderNamespace = "R5900";
   }
 
+  // Bitcast patterns between v4f32 (VF register) and v4i32 (GPR128)
+  // Used for EXTRACT_VECTOR_ELT and INSERT_VECTOR_ELT lowering
+  def : Pat<(v4i32 (bitconvert v4f32:$src)), (QMFC2 v4f32:$src)>;
+  def : Pat<(v4f32 (bitconvert v4i32:$src)), (QMTC2 v4i32:$src)>;
+
 } // Predicates = [HasVU0]
 
 //===----------------------------------------------------------------------===//

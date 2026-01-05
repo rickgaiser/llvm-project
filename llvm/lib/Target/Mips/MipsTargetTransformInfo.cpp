@@ -81,7 +81,14 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
       case Instruction::FAdd:
       case Instruction::FSub:
       case Instruction::FMul:
-        return 1; // Native VU0 operation
+        return 1; // Native VU0 operation (4 cycle latency, 1 throughput)
+      case Instruction::FDiv:
+        // VDIV is sequential per component: Q = fs[fsf] / ft[ftf]
+        // Must execute 4 times with VWAITQ between each
+        return 29; // 4 * (7 cycle latency) + overhead
+      case Instruction::FRem:
+        // No native FRem support - very expensive scalarization
+        return 100;
       default:
         break;
       }
@@ -122,4 +129,131 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
 
   return BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind, Op1Info, Op2Info,
                                        Args, CxtI);
+}
+
+InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
+                                             Align Alignment,
+                                             unsigned AddressSpace,
+                                             TTI::TargetCostKind CostKind,
+                                             TTI::OperandValueInfo OpInfo,
+                                             const Instruction *I) const {
+  // VU0 v4f32 load/store via LQC2/SQC2
+  if (ST->hasVU0() && Src->isVectorTy()) {
+    auto *VTy = cast<VectorType>(Src);
+    if (VTy->getElementType()->isFloatTy() &&
+        VTy->getElementCount() == ElementCount::getFixed(4)) {
+      // LQC2/SQC2 require 16-byte alignment
+      if (Alignment >= Align(16))
+        return 1; // Single aligned 128-bit load/store
+      // Unaligned access requires scalar fallback
+      return 8;
+    }
+  }
+
+  // R5900 MMI 128-bit integer vector load/store via LQ/SQ
+  if (ST->isR5900() && Src->isVectorTy()) {
+    auto *VTy = cast<VectorType>(Src);
+    if (VTy->getPrimitiveSizeInBits() == 128) {
+      if (Alignment >= Align(16))
+        return 1; // Single aligned 128-bit load/store
+      return 8;   // Unaligned requires scalar fallback
+    }
+  }
+
+  return BaseT::getMemoryOpCost(Opcode, Src, Alignment, AddressSpace, CostKind,
+                                OpInfo, I);
+}
+
+InstructionCost MipsTTIImpl::getVectorInstrCost(unsigned Opcode, Type *Val,
+                                                TTI::TargetCostKind CostKind,
+                                                unsigned Index, const Value *Op0,
+                                                const Value *Op1) const {
+  // VU0 v4f32 extract/insert costs
+  if (ST->hasVU0() && Val->isVectorTy()) {
+    auto *VTy = cast<VectorType>(Val);
+    if (VTy->getElementType()->isFloatTy() &&
+        VTy->getElementCount() == ElementCount::getFixed(4)) {
+      if (Opcode == Instruction::ExtractElement) {
+        // QMFC2 + shift + truncate + MTC1
+        // Constant index is slightly cheaper
+        return (Index == -1U) ? 5 : 3;
+      }
+      if (Opcode == Instruction::InsertElement) {
+        // QMFC2 + shift + insert + QMTC2
+        return (Index == -1U) ? 7 : 5;
+      }
+    }
+  }
+
+  // R5900 MMI integer vector extract/insert costs
+  if (ST->isR5900() && Val->isVectorTy()) {
+    auto *VTy = cast<VectorType>(Val);
+    if (VTy->getPrimitiveSizeInBits() == 128 &&
+        VTy->getElementType()->isIntegerTy()) {
+      if (Opcode == Instruction::ExtractElement)
+        return 2; // Shift + truncate
+      if (Opcode == Instruction::InsertElement)
+        return 4; // More complex manipulation
+    }
+  }
+
+  return BaseT::getVectorInstrCost(Opcode, Val, CostKind, Index, Op0, Op1);
+}
+
+InstructionCost MipsTTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
+                                            VectorType *DstTy, VectorType *SrcTy,
+                                            ArrayRef<int> Mask,
+                                            TTI::TargetCostKind CostKind,
+                                            int Index, VectorType *SubTp,
+                                            ArrayRef<const Value *> Args,
+                                            const Instruction *CxtI) const {
+  // VU0 v4f32 shuffle costs
+  VectorType *Tp = SrcTy ? SrcTy : DstTy;
+  if (ST->hasVU0() && Tp && Tp->getElementType()->isFloatTy() &&
+      Tp->getElementCount() == ElementCount::getFixed(4)) {
+    switch (Kind) {
+    case TTI::SK_Broadcast:
+      // Splat: need to replicate one element to all positions
+      // QMFC2 + shift + replicate (PCPYH/PCPYLD) + QMTC2
+      return 4;
+    case TTI::SK_Select:
+      // Blend/select between two vectors using VU0 masked move
+      return 1;
+    case TTI::SK_PermuteSingleSrc:
+      // Permute within single vector: QMFC2 + GPR shuffle + QMTC2
+      return 6;
+    case TTI::SK_PermuteTwoSrc:
+      // Permute from two vectors: more complex
+      return 12;
+    case TTI::SK_Reverse:
+      // Reverse order: GPR manipulation
+      return 6;
+    case TTI::SK_Splice:
+      // Concatenate and extract: expensive
+      return 10;
+    default:
+      break;
+    }
+  }
+
+  // R5900 MMI integer vector shuffle costs
+  if (ST->isR5900() && Tp->getPrimitiveSizeInBits() == 128 &&
+      Tp->getElementType()->isIntegerTy()) {
+    switch (Kind) {
+    case TTI::SK_Broadcast:
+      // Use PCPYH/PCPYLD for replication
+      return 2;
+    case TTI::SK_Select:
+      return 2; // AND/OR masking
+    case TTI::SK_PermuteSingleSrc:
+      return 4;
+    case TTI::SK_PermuteTwoSrc:
+      return 8;
+    default:
+      break;
+    }
+  }
+
+  return BaseT::getShuffleCost(Kind, DstTy, SrcTy, Mask, CostKind, Index, SubTp,
+                               Args, CxtI);
 }

@@ -54,6 +54,25 @@ public:
       ArrayRef<const Value *> Args = {},
       const Instruction *CxtI = nullptr) const override;
 
+  InstructionCost getMemoryOpCost(unsigned Opcode, Type *Src,
+                                  Align Alignment, unsigned AddressSpace,
+                                  TTI::TargetCostKind CostKind,
+                                  TTI::OperandValueInfo OpInfo = {TTI::OK_AnyValue, TTI::OP_None},
+                                  const Instruction *I = nullptr) const override;
+
+  using BaseT::getVectorInstrCost;
+  InstructionCost getVectorInstrCost(unsigned Opcode, Type *Val,
+                                     TTI::TargetCostKind CostKind,
+                                     unsigned Index, const Value *Op0,
+                                     const Value *Op1) const override;
+
+  InstructionCost getShuffleCost(TTI::ShuffleKind Kind, VectorType *DstTy,
+                                 VectorType *SrcTy, ArrayRef<int> Mask,
+                                 TTI::TargetCostKind CostKind, int Index,
+                                 VectorType *SubTp,
+                                 ArrayRef<const Value *> Args = {},
+                                 const Instruction *CxtI = nullptr) const override;
+
   /// @}
 };
 

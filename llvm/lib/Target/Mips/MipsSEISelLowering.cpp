@@ -106,8 +106,12 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   // Set up the register classes
   addRegisterClass(MVT::i32, &Mips::GPR32RegClass);
 
-  if (Subtarget.isGP64bit())
+  if (Subtarget.isGP64bit()) {
     addRegisterClass(MVT::i64, &Mips::GPR64RegClass);
+    // BUILD_PAIR combines two i32 into i64, needs to expand to shifts+OR
+    // since there's no native instruction for this on MIPS64
+    setOperationAction(ISD::BUILD_PAIR, MVT::i64, Expand);
+  }
 
   // R5900 MMI: Register vector types with GPR128 for SIMD operations
   // v4i32 (4x32-bit words), v8i16 (8x16-bit halfwords), v16i8 (16x8-bit bytes)
@@ -171,14 +175,16 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // CTLZ using PLZCW with conditional (for non-negative) or 0 (for negative)
     setOperationAction(ISD::CTLZ, MVT::i32, Custom);
 
-    // Shift operations: PSLLW/PSRLW/PSRAW (v4i32), PSLLH/PSRLH/PSRAH (v8i16)
-    // Note: v16i8 shifts are not available in R5900 MMI
+    // Shift operations: PSLLVW/PSRLVW/PSRAVW (v4i32) - variable vector shifts
+    // Note: v8i16 only has immediate shifts (PSLLH/PSRLH/PSRAH) without
+    // patterns, so we expand them. v16i8 shifts are not available.
     setOperationAction(ISD::SHL, MVT::v4i32, Legal);
     setOperationAction(ISD::SRL, MVT::v4i32, Legal);
     setOperationAction(ISD::SRA, MVT::v4i32, Legal);
-    setOperationAction(ISD::SHL, MVT::v8i16, Legal);
-    setOperationAction(ISD::SRL, MVT::v8i16, Legal);
-    setOperationAction(ISD::SRA, MVT::v8i16, Legal);
+    // v8i16 shifts must expand - no variable shift instructions available
+    setOperationAction(ISD::SHL, MVT::v8i16, Expand);
+    setOperationAction(ISD::SRL, MVT::v8i16, Expand);
+    setOperationAction(ISD::SRA, MVT::v8i16, Expand);
 
     // Saturating arithmetic: Available for all vector sizes
     // Signed: PADDSW/PSUBSW (v4i32), PADDSH/PSUBSH (v8i16), PADDSB/PSUBSB (v16i8)
@@ -309,6 +315,15 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // This allows recognizing shuffle+fmul -> VMULbc patterns
     setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v4f32, Custom);
     setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
+
+    // Enable extract/insert for element access
+    // VU0 has no native element access, so we use QMFC2/QMTC2 + GPR ops
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v4f32, Custom);
+    setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v4f32, Custom);
+
+    // Enable FMA lowering - lower to FMUL + FADD since VU0 has no direct FMA
+    // (VMADD requires ACC setup which is handled separately by the ACC chain pass)
+    setOperationAction(ISD::FMA, MVT::v4f32, Custom);
 
     // Enable DAG combine for broadcast multiply patterns
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
@@ -663,6 +678,8 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::INTRINSIC_W_CHAIN:  return lowerINTRINSIC_W_CHAIN(Op, DAG);
   case ISD::INTRINSIC_VOID:     return lowerINTRINSIC_VOID(Op, DAG);
   case ISD::EXTRACT_VECTOR_ELT: return lowerEXTRACT_VECTOR_ELT(Op, DAG);
+  case ISD::INSERT_VECTOR_ELT:  return lowerINSERT_VECTOR_ELT(Op, DAG);
+  case ISD::FMA:                return lowerFMA(Op, DAG);
   case ISD::BUILD_VECTOR:       return lowerBUILD_VECTOR(Op, DAG);
   case ISD::VECTOR_SHUFFLE:     return lowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::SELECT:             return lowerSELECT(Op, DAG);
@@ -2846,19 +2863,126 @@ lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
   EVT ResTy = Op->getValueType(0);
   SDValue Op0 = Op->getOperand(0);
+  SDValue Op1 = Op->getOperand(1);
   EVT VecTy = Op0->getValueType(0);
 
   if (!VecTy.is128BitVector())
     return SDValue();
 
+  // VU0 v4f32 extraction: emit machine nodes directly
+  // This avoids the MipsISD::VEXTRACT_SEXT_ELT node which has no patterns for VU0
+  if (Subtarget.hasVU0() && VecTy == MVT::v4f32 && ResTy == MVT::f32) {
+    // For now, only handle constant indices
+    ConstantSDNode *IdxConst = dyn_cast<ConstantSDNode>(Op1);
+    if (!IdxConst)
+      return SDValue(); // Variable index not supported yet
+
+    unsigned Idx = IdxConst->getZExtValue();
+    if (Idx > 3)
+      return SDValue();
+
+    // QMFC2: Move VF register to GPR128
+    SDValue GPR128Val = SDValue(DAG.getMachineNode(Mips::QMFC2, DL,
+                                MVT::v4i32, Op0), 0);
+
+    SDValue Result;
+    if (Idx == 0) {
+      // Element 0: lower 32 bits - just use the register as-is
+      // Extract sub_64 from GPR128 to get GPR64
+      SDValue GPR64Val = DAG.getTargetExtractSubreg(Mips::sub_64, DL,
+                                                     MVT::i64, GPR128Val);
+      // Extract sub_32 from GPR64 to get GPR32
+      Result = DAG.getTargetExtractSubreg(Mips::sub_32, DL, MVT::i32, GPR64Val);
+    } else if (Idx == 1) {
+      // Element 1: bits 32-63 - shift right by 32
+      SDValue GPR64Val = DAG.getTargetExtractSubreg(Mips::sub_64, DL,
+                                                     MVT::i64, GPR128Val);
+      // DSRL32 shifts by sa+32, so sa=0 gives 32-bit shift
+      SDValue ShiftAmt = DAG.getTargetConstant(0, DL, MVT::i32);
+      SDValue Shifted = SDValue(DAG.getMachineNode(Mips::DSRL32, DL,
+                                MVT::i64, GPR64Val, ShiftAmt), 0);
+      Result = DAG.getTargetExtractSubreg(Mips::sub_32, DL, MVT::i32, Shifted);
+    } else if (Idx == 2) {
+      // Element 2: bits 64-95 - PCPYUD to move upper to lower
+      SDValue Copied = SDValue(DAG.getMachineNode(Mips::PCPYUD, DL,
+                               MVT::v4i32, GPR128Val, GPR128Val), 0);
+      SDValue GPR64Val = DAG.getTargetExtractSubreg(Mips::sub_64, DL,
+                                                     MVT::i64, Copied);
+      Result = DAG.getTargetExtractSubreg(Mips::sub_32, DL, MVT::i32, GPR64Val);
+    } else { // Idx == 3
+      // Element 3: bits 96-127 - PCPYUD then shift right by 32
+      SDValue Copied = SDValue(DAG.getMachineNode(Mips::PCPYUD, DL,
+                               MVT::v4i32, GPR128Val, GPR128Val), 0);
+      SDValue GPR64Val = DAG.getTargetExtractSubreg(Mips::sub_64, DL,
+                                                     MVT::i64, Copied);
+      SDValue ShiftAmt = DAG.getTargetConstant(0, DL, MVT::i32);
+      SDValue Shifted = SDValue(DAG.getMachineNode(Mips::DSRL32, DL,
+                                MVT::i64, GPR64Val, ShiftAmt), 0);
+      Result = DAG.getTargetExtractSubreg(Mips::sub_32, DL, MVT::i32, Shifted);
+    }
+
+    // Move i32 to FPU register via MTC1, then bitcast
+    SDValue FPRVal = SDValue(DAG.getMachineNode(Mips::MTC1, DL,
+                             MVT::f32, Result), 0);
+    return FPRVal;
+  }
+
   if (ResTy.isInteger()) {
-    SDValue Op1 = Op->getOperand(1);
     EVT EltTy = VecTy.getVectorElementType();
     return DAG.getNode(MipsISD::VEXTRACT_SEXT_ELT, DL, ResTy, Op0, Op1,
                        DAG.getValueType(EltTy));
   }
 
   return Op;
+}
+
+SDValue MipsSETargetLowering::
+lowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VecTy = Op->getValueType(0);
+  SDValue Vec = Op->getOperand(0);
+  SDValue Val = Op->getOperand(1);
+  SDValue Idx = Op->getOperand(2);
+  EVT ValTy = Val.getValueType();
+
+  if (!VecTy.is128BitVector())
+    return SDValue();
+
+  // VU0 v4f32 insertion: bitcast to v4i32, insert i32, bitcast back to v4f32
+  if (Subtarget.hasVU0() && VecTy == MVT::v4f32 && ValTy == MVT::f32) {
+    // Bitcast v4f32 -> v4i32 (VF register -> GPR128 via QMFC2)
+    SDValue IntVec = DAG.getNode(ISD::BITCAST, DL, MVT::v4i32, Vec);
+    // Bitcast f32 -> i32
+    SDValue IntVal = DAG.getNode(ISD::BITCAST, DL, MVT::i32, Val);
+    // Insert i32 element using existing VINSERT_VECTOR_ELT support
+    SDValue Result = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v4i32,
+                                 IntVec, IntVal, Idx);
+    // Bitcast v4i32 -> v4f32 (GPR128 -> VF register via QMTC2)
+    return DAG.getNode(ISD::BITCAST, DL, MVT::v4f32, Result);
+  }
+
+  return SDValue();
+}
+
+// Lower ISD::FMA for VU0 v4f32.
+// VU0 has VMADD (fd = ACC + fs * ft) but it requires ACC setup, which is
+// handled by the ACC chain optimization pass for suitable patterns.
+// For standalone FMA, we lower to FMUL + FADD which are both Legal.
+SDValue MipsSETargetLowering::lowerFMA(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+
+  // Only handle VU0 v4f32
+  if (!Subtarget.hasVU0() || VT != MVT::v4f32)
+    return SDValue();
+
+  SDValue A = Op.getOperand(0);
+  SDValue B = Op.getOperand(1);
+  SDValue C = Op.getOperand(2);
+
+  // FMA(a, b, c) = a * b + c
+  SDValue Mul = DAG.getNode(ISD::FMUL, DL, VT, A, B);
+  return DAG.getNode(ISD::FADD, DL, VT, Mul, C);
 }
 
 static bool isConstantOrUndef(const SDValue Op) {
@@ -2899,6 +3023,28 @@ SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,
   APInt SplatValue, SplatUndef;
   unsigned SplatBitSize;
   bool HasAnyUndefs;
+
+  // VU0 v4f32 BUILD_VECTOR handling
+  if (Subtarget.hasVU0() && ResTy == MVT::v4f32) {
+    // Check for constant vector - let it use constant pool + LQC2
+    if (isConstantOrUndefBUILD_VECTOR(Node)) {
+      // Return SDValue() to use default constant pool handling
+      return SDValue();
+    }
+
+    // Non-constant: use INSERT_VECTOR_ELT sequence
+    // This handles splats and general cases uniformly
+    unsigned NumElts = ResTy.getVectorNumElements();
+    SDValue Vector = DAG.getUNDEF(ResTy);
+    for (unsigned i = 0; i < NumElts; ++i) {
+      SDValue Elt = Node->getOperand(i);
+      if (!Elt.isUndef()) {
+        Vector = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, ResTy, Vector,
+                             Elt, DAG.getConstant(i, DL, MVT::i32));
+      }
+    }
+    return Vector;
+  }
 
   if (!Subtarget.hasMSA() || !ResTy.is128BitVector())
     return SDValue();
@@ -3478,7 +3624,101 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
       return DAG.getNode(MipsISD::VU0_BLEND, DL, ResTy, V2, V1, MaskVal);
     }
 
-    // If not a blend, fall through to scalar expansion
+    // Check for identity shuffle <0,1,2,3> - just return V1
+    bool IsIdentity = true;
+    for (unsigned i = 0; i < 4; ++i) {
+      if (Mask[i] >= 0 && Mask[i] != (int)i) {
+        IsIdentity = false;
+        break;
+      }
+    }
+    if (IsIdentity)
+      return V1;
+
+    // Check for all-V2 shuffle <4,5,6,7> - just return V2
+    bool IsV2Identity = true;
+    for (unsigned i = 0; i < 4; ++i) {
+      if (Mask[i] >= 0 && Mask[i] != (int)(i + 4)) {
+        IsV2Identity = false;
+        break;
+      }
+    }
+    if (IsV2Identity)
+      return V2;
+
+    // Check if all indices come from V1 (indices < 4) or are undef
+    // This indicates a single-source shuffle where V2 isn't used
+    bool IsSingleSource = true;
+    for (unsigned i = 0; i < 4; ++i) {
+      if (Mask[i] >= 4) {
+        IsSingleSource = false;
+        break;
+      }
+    }
+
+    // Check for splat pattern (all non-undef indices are the same)
+    // Splat can be implemented as: VSUB zero, v, v; VADDbc result, zero, v
+    if (IsSingleSource) {
+      int SplatIdx = -1;
+      bool IsSplat = true;
+      for (unsigned i = 0; i < 4; ++i) {
+        if (Mask[i] >= 0) {
+          if (SplatIdx < 0) {
+            SplatIdx = Mask[i];
+          } else if (Mask[i] != SplatIdx) {
+            IsSplat = false;
+            break;
+          }
+        }
+      }
+      if (IsSplat && SplatIdx >= 0 && SplatIdx < 4) {
+        // Create zero vector: zero = V1 - V1
+        SDValue Zero = SDValue(DAG.getMachineNode(Mips::VSUB_ISel, DL,
+                               MVT::v4f32, V1, V1), 0);
+        // Broadcast using VADDbc: result = zero + V1[SplatIdx]
+        unsigned VADDbcOpc;
+        switch (SplatIdx) {
+        case 0: VADDbcOpc = Mips::VADDbcx; break;
+        case 1: VADDbcOpc = Mips::VADDbcy; break;
+        case 2: VADDbcOpc = Mips::VADDbcz; break;
+        case 3: VADDbcOpc = Mips::VADDbcw; break;
+        default: llvm_unreachable("Invalid splat index");
+        }
+        return SDValue(DAG.getMachineNode(VADDbcOpc, DL, MVT::v4f32,
+                       DAG.getTargetConstant(0xF, DL, MVT::i32), Zero, V1), 0);
+      }
+    }
+
+    // Check for VMR32 rotation pattern <1,2,3,0> (rotate left by 1)
+    // VMR32.xyzw ft, fs: ft.x=fs.y, ft.y=fs.z, ft.z=fs.w, ft.w=fs.x
+    if (IsSingleSource || V1 == V2 || V2.isUndef()) {
+      bool IsVMR32 = (Mask[0] == 1 || Mask[0] < 0) &&
+                     (Mask[1] == 2 || Mask[1] < 0) &&
+                     (Mask[2] == 3 || Mask[2] < 0) &&
+                     (Mask[3] == 0 || Mask[3] < 0);
+      if (IsVMR32) {
+        // Use VMR32 instruction
+        return SDValue(DAG.getMachineNode(Mips::VMR32, DL, MVT::v4f32,
+                       DAG.getTargetConstant(0xF, DL, MVT::i32), V1), 0);
+      }
+
+      // Check for reverse rotation <3,0,1,2> (rotate right by 1 = VMR32 x 3)
+      bool IsRevRot = (Mask[0] == 3 || Mask[0] < 0) &&
+                      (Mask[1] == 0 || Mask[1] < 0) &&
+                      (Mask[2] == 1 || Mask[2] < 0) &&
+                      (Mask[3] == 2 || Mask[3] < 0);
+      if (IsRevRot) {
+        // Three VMR32 operations = rotate right by 1
+        SDValue Rot1 = SDValue(DAG.getMachineNode(Mips::VMR32, DL, MVT::v4f32,
+                               DAG.getTargetConstant(0xF, DL, MVT::i32), V1), 0);
+        SDValue Rot2 = SDValue(DAG.getMachineNode(Mips::VMR32, DL, MVT::v4f32,
+                               DAG.getTargetConstant(0xF, DL, MVT::i32), Rot1), 0);
+        return SDValue(DAG.getMachineNode(Mips::VMR32, DL, MVT::v4f32,
+                       DAG.getTargetConstant(0xF, DL, MVT::i32), Rot2), 0);
+      }
+    }
+
+    // If not a handled pattern, fall through to scalar expansion
     // (broadcast patterns are handled by DAG combine on FMUL)
     return SDValue();
   }

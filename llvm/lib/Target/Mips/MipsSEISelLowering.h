@@ -86,6 +86,8 @@ class TargetRegisterClass;
     SDValue lowerINTRINSIC_W_CHAIN(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerFMA(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     /// Lower VECTOR_SHUFFLE into one of a number of instructions
     /// depending on the indices in the shuffle.
