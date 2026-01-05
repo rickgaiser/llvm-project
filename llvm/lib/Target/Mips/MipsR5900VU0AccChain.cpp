@@ -68,24 +68,33 @@ private:
   bool optimizeBasicBlock(MachineBasicBlock &MBB);
 
   /// Check if an instruction is VADD (v4f32 vector add)
+  /// Recognizes both assembly and ISel variants
   bool isVADD(const MachineInstr &MI) const {
-    return MI.getOpcode() == Mips::VADD;
+    unsigned Opc = MI.getOpcode();
+    return Opc == Mips::VADD || Opc == Mips::VADD_ISel;
   }
 
   /// Check if an instruction is a VU0 broadcast multiply (VMULbcx/y/z/w)
+  /// Recognizes both assembly and ISel variants
   bool isVMULbc(const MachineInstr &MI) const {
     unsigned Opc = MI.getOpcode();
     return Opc == Mips::VMULbcx || Opc == Mips::VMULbcy ||
-           Opc == Mips::VMULbcz || Opc == Mips::VMULbcw;
+           Opc == Mips::VMULbcz || Opc == Mips::VMULbcw ||
+           Opc == Mips::VMULbc_ISelx || Opc == Mips::VMULbc_ISely ||
+           Opc == Mips::VMULbc_ISelz || Opc == Mips::VMULbc_ISelw;
   }
 
   /// Get the broadcast component (0=x, 1=y, 2=z, 3=w) from a VMULbc instruction
   unsigned getBroadcastComponent(const MachineInstr &MI) const {
     switch (MI.getOpcode()) {
-    case Mips::VMULbcx: return 0;
-    case Mips::VMULbcy: return 1;
-    case Mips::VMULbcz: return 2;
-    case Mips::VMULbcw: return 3;
+    case Mips::VMULbcx:
+    case Mips::VMULbc_ISelx: return 0;
+    case Mips::VMULbcy:
+    case Mips::VMULbc_ISely: return 1;
+    case Mips::VMULbcz:
+    case Mips::VMULbc_ISelz: return 2;
+    case Mips::VMULbcw:
+    case Mips::VMULbc_ISelw: return 3;
     default: llvm_unreachable("Not a VMULbc instruction");
     }
   }
@@ -314,22 +323,33 @@ void MipsR5900VU0AccChain::transformChain(MachineBasicBlock &MBB,
   MachineBasicBlock::iterator InsertPt = Root;
   Register ResultReg = Root.getOperand(0).getReg();
 
+  // Destination mask for full xyzw operation (0b1111 = 15)
+  unsigned DestMask = 15;
+
   // First multiply -> VMULAbc (ACC = fs * ft[bc])
+  // Operands: destmask, $ACC, $fs, $ft (ACC is explicit, VU0ACC is implicit def)
   BuildMI(MBB, InsertPt, DL, TII->get(getVMULAbcOpcode(Leaves[0].BroadcastComp)))
-      .addReg(Leaves[0].LHS)
-      .addReg(Leaves[0].RHS);
+      .addImm(DestMask)           // dest mask (xyzw)
+      .addReg(Mips::VU0ACC)       // ACC operand (explicit)
+      .addReg(Leaves[0].LHS)      // fs
+      .addReg(Leaves[0].RHS);     // ft
 
   // Middle multiplies -> VMADDAbc (ACC += fs * ft[bc])
+  // Operands: destmask, $ACC, $fs, $ft (ACC is explicit, VU0ACC is implicit use/def)
   for (size_t i = 1; i < Leaves.size() - 1; ++i) {
     BuildMI(MBB, InsertPt, DL, TII->get(getVMADDAbcOpcode(Leaves[i].BroadcastComp)))
-        .addReg(Leaves[i].LHS)
-        .addReg(Leaves[i].RHS);
+        .addImm(DestMask)           // dest mask (xyzw)
+        .addReg(Mips::VU0ACC)       // ACC operand (explicit)
+        .addReg(Leaves[i].LHS)      // fs
+        .addReg(Leaves[i].RHS);     // ft
   }
 
   // Last multiply -> VMADDbc (fd = ACC + fs * ft[bc])
+  // Operands: $fd, destmask, $fs, $ft (VU0ACC is implicit use)
   BuildMI(MBB, InsertPt, DL, TII->get(getVMADDbcOpcode(Leaves.back().BroadcastComp)), ResultReg)
-      .addReg(Leaves.back().LHS)
-      .addReg(Leaves.back().RHS);
+      .addImm(DestMask)           // dest mask (xyzw)
+      .addReg(Leaves.back().LHS)  // fs
+      .addReg(Leaves.back().RHS); // ft
 
   // Remove the original instructions
   for (BroadcastMulLeaf &Leaf : Leaves)

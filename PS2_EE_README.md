@@ -604,6 +604,8 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 - [x] Implement halfword multiply (PMULTH, PMADDH, PMSUBH, PHMADH, PHMSBH)
 - [x] Implement parallel divide (PDIVW, PDIVUW, PDIVBW)
 - [x] Implement PADSBH special instruction
+- [x] Add scheduling for all MMI instructions (MipsScheduleR5900.td)
+- [x] Add TTI cost methods: getArithmeticReductionCost, getMinMaxReductionCost, getCastInstrCost, getCmpSelInstrCost, getInterleavedMemoryOpCost
 - [ ] Add intrinsics for all MMI instructions
 
 ### Phase 4: FPU Extensions
@@ -639,6 +641,8 @@ vsqrt   $Q, $vf3w           # Q = sqrt(vf3.w)
 - [x] TTI methods for autovectorization (getNumberOfRegisters, getRegisterBitWidth, getArithmeticInstrCost)
 - [x] Broadcast pattern recognition: shufflevector+fmul -> VMULbc
 - [x] ACC-based FMA chain optimization (VMULA/VMADD sequences via MipsR5900VU0AccChain pass)
+- [x] Add scheduling for VU0 ISel variants (VADD_ISel, VMUL_ISel, etc.)
+- [x] Add TTI cost methods: getArithmeticReductionCost, getMinMaxReductionCost, getCastInstrCost, getCmpSelInstrCost, getInterleavedMemoryOpCost
 - [ ] Q and I register definitions
 - [ ] Division and square root operations
 - [ ] Conversion operations

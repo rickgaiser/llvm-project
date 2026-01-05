@@ -573,4 +573,93 @@ def : InstRW<[R5900WriteVU0AccChain], (instrs VMADDAbcx, VMADDAbcy, VMADDAbcz, V
 def : InstRW<[R5900WriteVU0AccResult], (instrs VMADDbcx, VMADDbcy, VMADDbcz, VMADDbcw,
                                                VMSUBbcx, VMSUBbcy, VMSUBbcz, VMSUBbcw)>;
 
+//===----------------------------------------------------------------------===//
+// VU0 ISel Variants (used by autovectorization patterns)
+//===----------------------------------------------------------------------===//
+// These are instruction selection wrappers that generate the actual VU0
+// instructions. They have the same timing as the underlying operations.
+
+def : InstRW<[R5900WriteVU0Arith], (instrs VADD_ISel, VSUB_ISel, VMUL_ISel,
+                                           VMAX_ISel, VMINI_ISel, VABS_ISel)>;
+
+//===----------------------------------------------------------------------===//
+// MMI (Multimedia Instructions) - 128-bit Integer SIMD
+//===----------------------------------------------------------------------===//
+// MMI instructions operate on 128-bit GPR registers with SIMD parallelism.
+// Most have 1-cycle latency and execute on the integer pipeline.
+
+def R5900WriteMMI : SchedWriteRes<[R5900UnitALU]> {
+  let Latency = 1;
+}
+
+// Parallel add/subtract (8/16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PADDW, PSUBW, PADDH, PSUBH, PADDB, PSUBB)>;
+
+// Parallel logical operations
+def : InstRW<[R5900WriteMMI], (instrs PAND, POR, PXOR, PNOR)>;
+
+// Parallel min/max (16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PMAXW, PMINW, PMAXH, PMINH)>;
+
+// Parallel absolute value (16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PABSW, PABSH)>;
+
+// Parallel shifts (immediate, 16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PSLLW, PSRLW, PSRAW, PSLLH, PSRLH, PSRAH)>;
+
+// Parallel shifts (variable, 32-bit elements only)
+def : InstRW<[R5900WriteMMI], (instrs PSLLVW, PSRLVW, PSRAVW)>;
+
+// Parallel compare (8/16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PCGTW, PCEQW, PCGTH, PCEQH, PCGTB, PCEQB)>;
+
+// Parallel leading zero count (32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PLZCW)>;
+
+// Parallel saturating add/subtract (signed, 8/16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PADDSW, PSUBSW, PADDSH, PSUBSH, PADDSB, PSUBSB)>;
+
+// Parallel saturating add/subtract (unsigned, 8/16/32-bit elements)
+def : InstRW<[R5900WriteMMI], (instrs PADDUW, PSUBUW, PADDUH, PSUBUH, PADDUB, PSUBUB)>;
+
+// Parallel add/subtract halfword (special mixed operation)
+def : InstRW<[R5900WriteMMI], (instrs PADSBH)>;
+
+// Data rearrangement (extend, pack, copy, interleave, exchange, reverse)
+def : InstRW<[R5900WriteMMI], (instrs PEXTLW, PEXTLH, PEXTLB, PEXTUW, PEXTUH, PEXTUB,
+                                      PPACW, PPACH, PPACB,
+                                      PCPYLD, PCPYUD, PCPYH,
+                                      PINTH, PINTEH, PEXEH, PEXEW, PEXCH, PEXCW, PREVH)>;
+
+//===----------------------------------------------------------------------===//
+// MMI Multiply/Divide (higher latency operations)
+//===----------------------------------------------------------------------===//
+// These use the MAC0 multiply unit with 4-cycle latency.
+
+def R5900WriteMMIMul : SchedWriteRes<[R5900UnitALU, R5900UnitMAC0]> {
+  let Latency = 4;
+  let ReleaseAtCycles = [1, 2];
+}
+
+// Parallel multiply word (to HI:LO)
+def : InstRW<[R5900WriteMMIMul], (instrs PMULTW, PMULTUW)>;
+
+// Parallel multiply-add/subtract word
+def : InstRW<[R5900WriteMMIMul], (instrs PMADDW, PMSUBW, PMADDUW)>;
+
+// Parallel multiply halfword
+def : InstRW<[R5900WriteMMIMul], (instrs PMULTH, PMADDH, PMSUBH, PHMADH, PHMSBH)>;
+
+// HI/LO transfer instructions
+def : InstRW<[R5900WriteMMI], (instrs PMFHI, PMFLO, PMTHI, PMTLO)>;
+
+//===----------------------------------------------------------------------===//
+// MMI Scalar Variants (i32 operations using MMI instructions)
+//===----------------------------------------------------------------------===//
+// These use MMI instructions on scalar i32 values via the lower 32 bits.
+
+def : InstRW<[R5900WriteMMI], (instrs PABSW_S32, PMAXW_S32, PMINW_S32)>;
+def : InstRW<[R5900WriteMMI], (instrs PADDSW_S32, PSUBSW_S32, PADDUW_S32, PSUBUW_S32)>;
+def : InstRW<[R5900WriteMMI], (instrs PLZCW_S32)>;
+
 } // SchedModel = MipsR5900Model
