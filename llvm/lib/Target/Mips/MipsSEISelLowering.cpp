@@ -325,9 +325,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // (VMADD requires ACC setup which is handled separately by the ACC chain pass)
     setOperationAction(ISD::FMA, MVT::v4f32, Custom);
 
-    // Enable DAG combine for broadcast multiply patterns
+    // Enable DAG combine for broadcast multiply patterns and load optimization
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
-    setTargetDAGCombine(ISD::FMUL);
+    setTargetDAGCombine({ISD::FMUL, ISD::BITCAST});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -1240,6 +1240,47 @@ static SDValue performXORCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+// VU0 Load Optimization for BITCAST
+// Optimize: bitcast(v4f32 load) -> v4i32 load
+// When a v4f32 is loaded (LQC2) and immediately bitcast to v4i32 (QMFC2),
+// we can load directly to GPR128 (LQ) avoiding the VF register round-trip.
+static SDValue performBITCASTCombine(SDNode *N, SelectionDAG &DAG,
+                                     const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0())
+    return SDValue();
+
+  EVT DstVT = N->getValueType(0);
+  SDValue Src = N->getOperand(0);
+  EVT SrcVT = Src.getValueType();
+
+  // Only handle v4f32 -> v4i32 bitcast (the QMFC2 pattern)
+  if (DstVT != MVT::v4i32 || SrcVT != MVT::v4f32)
+    return SDValue();
+
+  // Check if source is a load
+  if (Src.getOpcode() != ISD::LOAD)
+    return SDValue();
+
+  LoadSDNode *Load = cast<LoadSDNode>(Src.getNode());
+
+  // Don't transform if the load has multiple uses (someone needs the v4f32)
+  if (!Src.hasOneUse())
+    return SDValue();
+
+  SDLoc DL(N);
+
+  // Create a new load directly to v4i32 (GPR128)
+  SDValue NewLoad = DAG.getLoad(MVT::v4i32, DL, Load->getChain(),
+                                Load->getBasePtr(), Load->getPointerInfo(),
+                                Load->getAlign(),
+                                Load->getMemOperand()->getFlags());
+
+  // Replace the chain
+  DAG.ReplaceAllUsesOfValueWith(SDValue(Load, 1), NewLoad.getValue(1));
+
+  return NewLoad;
+}
+
 // VU0 Broadcast Multiply Combine
 // Recognize: fmul(A, shuffle(B, <N,N,N,N>)) -> VU0_MULx/y/z/w(A, B)
 // This enables efficient matrix-vector operations using VMULbc instructions.
@@ -1393,6 +1434,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case MipsISD::VU0_BLEND:
     Val = performVU0BlendCombine(N, DAG, Subtarget);
+    break;
+  case ISD::BITCAST:
+    Val = performBITCASTCombine(N, DAG, Subtarget);
     break;
   }
 
