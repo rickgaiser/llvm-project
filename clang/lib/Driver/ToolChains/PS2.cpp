@@ -111,16 +111,6 @@ void PS2Toolchain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
       addExternCSystemInclude(DriverArgs, CC1Args, SysrootInclude.str());
   }
 
-  // Add newlib include paths from PS2DEV.
-  // PS2DEV structure:
-  //   $PS2DEV/mips64el-scei-ps2/include - newlib headers for EE target
-  if (!PS2DevDir.empty()) {
-    SmallString<128> NewlibInclude(PS2DevDir);
-    llvm::sys::path::append(NewlibInclude, "mips64el-scei-ps2", "include");
-    if (llvm::sys::fs::exists(NewlibInclude))
-      addExternCSystemInclude(DriverArgs, CC1Args, NewlibInclude.str());
-  }
-
   // Add PS2SDK include paths if PS2SDK environment variable is set.
   // PS2SDK structure:
   //   $PS2SDK/ee/include     - EE-specific headers (kernel, hardware)

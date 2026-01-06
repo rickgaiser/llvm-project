@@ -115,9 +115,8 @@ When compiling for `mips64el-scei-ps2`, the toolchain searches for headers in th
 
 1. Clang resource directory: `$PS2DEV/llvm/lib/clang/<version>/include`
 2. Explicit sysroot (if `--sysroot` specified): `<sysroot>/include`
-3. Newlib headers: `$PS2DEV/mips64el-scei-ps2/include`
-4. PS2SDK EE headers: `$PS2SDK/ee/include`
-5. PS2SDK common headers: `$PS2SDK/common/include`
+3. PS2SDK EE headers: `$PS2SDK/ee/include`
+4. PS2SDK common headers: `$PS2SDK/common/include`
 
 Host system headers (`/usr/include`, `/usr/local/include`) are **not** included by default, ensuring a clean cross-compilation environment.
 
