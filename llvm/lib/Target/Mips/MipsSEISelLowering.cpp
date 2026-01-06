@@ -175,13 +175,14 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // CTLZ using PLZCW with conditional (for non-negative) or 0 (for negative)
     setOperationAction(ISD::CTLZ, MVT::i32, Custom);
 
-    // Shift operations: PSLLVW/PSRLVW/PSRAVW (v4i32) - variable vector shifts
-    // Note: v8i16 only has immediate shifts (PSLLH/PSRLH/PSRAH) without
-    // patterns, so we expand them. v16i8 shifts are not available.
-    setOperationAction(ISD::SHL, MVT::v4i32, Legal);
-    setOperationAction(ISD::SRL, MVT::v4i32, Legal);
-    setOperationAction(ISD::SRA, MVT::v4i32, Legal);
-    // v8i16 shifts must expand - no variable shift instructions available
+    // Shift operations: All vector shifts must expand (scalarize)
+    // PSLLVW/PSRLVW/PSRAVW only operate on 2 of 4 words (elements 0 and 2),
+    // destroying elements 1 and 3. PSLLW/PSRLW/PSRAW work on all 4 words but
+    // only support immediate shift amounts (no patterns yet).
+    // v8i16 only has immediate shifts (PSLLH/PSRLH/PSRAH), v16i8 has no shifts.
+    setOperationAction(ISD::SHL, MVT::v4i32, Expand);
+    setOperationAction(ISD::SRL, MVT::v4i32, Expand);
+    setOperationAction(ISD::SRA, MVT::v4i32, Expand);
     setOperationAction(ISD::SHL, MVT::v8i16, Expand);
     setOperationAction(ISD::SRL, MVT::v8i16, Expand);
     setOperationAction(ISD::SRA, MVT::v8i16, Expand);

@@ -4058,41 +4058,42 @@ def PSRAW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
             R5900_MMI_SHIFT_FM<0b111111>;
 
 //===----------------------------------------------------------------------===//
-// Parallel Shift Operations (Variable)
-// These perform SIMD shifts on packed words with variable shift amount.
+// Parallel Shift Operations (Variable) - WARNING: 2-word operations only!
+// These instructions only operate on 2 of 4 words (elements 0 and 2).
+// Elements 1 and 3 are DESTROYED (overwritten with sign-extended results).
+// Use PSLLW/PSRLW/PSRAW for 4-word immediate shifts instead.
+// These are asm-only - no autovectorization patterns due to partial operation.
 //===----------------------------------------------------------------------===//
 
 // PSLLVW - Parallel Shift Left Logical Variable Word
-// rd = rt << rs[4:0] for each of 4 packed 32-bit words
-// Note: Each word uses the same shift amount from the lower 5 bits of rs
+// WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
+// rd[63:0] = sign_extend(rt[31:0] << rs[4:0])
+// rd[127:64] = sign_extend(rt[95:64] << rs[68:64])
 let DecoderNamespace = "R5900" in
 def PSLLVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                     "psllvw\t$rd, $rt, $rs", [], II_SLL, FrmR>,
              R5900_MMI2_FM<0b00010>;
 
 // PSRLVW - Parallel Shift Right Logical Variable Word
-// rd = rt >> rs[4:0] (logical) for each of 4 packed 32-bit words
+// WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
+// rd[63:0] = sign_extend(rt[31:0] >> rs[4:0])
+// rd[127:64] = sign_extend(rt[95:64] >> rs[68:64])
 let DecoderNamespace = "R5900" in
 def PSRLVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                     "psrlvw\t$rd, $rt, $rs", [], II_SRL, FrmR>,
              R5900_MMI2_FM<0b00011>;
 
 // PSRAVW - Parallel Shift Right Arithmetic Variable Word
-// rd = rt >> rs[4:0] (arithmetic) for each of 4 packed 32-bit words
+// WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
+// rd[63:0] = sign_extend(rt[31:0] >> rs[4:0]) (arithmetic)
+// rd[127:64] = sign_extend(rt[95:64] >> rs[68:64]) (arithmetic)
 let DecoderNamespace = "R5900" in
 def PSRAVW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                     "psravw\t$rd, $rt, $rs", [], II_SRA, FrmR>,
              R5900_MMI3_FM<0b00011>;
 
-// R5900 Shift patterns for autovectorization
-// These match (shl/srl/sra v4i32, v4i32) and (shl/srl/sra v8i16, v8i16) patterns
-// Note: R5900 variable shifts use the same shift amount for all elements,
-// so these patterns match when the shift vector is uniform (all same value).
-
-// Variable shift patterns (use low bits of each word's shift amount)
-def : Pat<(v4i32 (shl v4i32:$rt, v4i32:$rs)), (PSLLVW $rt, $rs)>;
-def : Pat<(v4i32 (srl v4i32:$rt, v4i32:$rs)), (PSRLVW $rt, $rs)>;
-def : Pat<(v4i32 (sra v4i32:$rt, v4i32:$rs)), (PSRAVW $rt, $rs)>;
+// NOTE: No v4i32 shift patterns - PSLLVW/PSRLVW/PSRAVW only work on 2 words.
+// v4i32 shifts are set to Expand in MipsSEISelLowering.cpp (scalarized).
 
 //===----------------------------------------------------------------------===//
 // Parallel Saturating Add/Subtract Operations

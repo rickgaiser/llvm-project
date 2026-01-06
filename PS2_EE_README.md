@@ -284,15 +284,17 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PSLLH` | Parallel Shift Left Logical Halfword | **Implemented** (shl v8i16) |
-| `PSRLH` | Parallel Shift Right Logical Halfword | **Implemented** (srl v8i16) |
-| `PSRAH` | Parallel Shift Right Arithmetic Halfword | **Implemented** (sra v8i16) |
-| `PSLLW` | Parallel Shift Left Logical Word | **Implemented** (shl v4i32) |
-| `PSLLVW` | Parallel Shift Left Logical Variable Word | **Implemented** (shl v4i32, v4i32) |
-| `PSRLW` | Parallel Shift Right Logical Word | **Implemented** (srl v4i32) |
-| `PSRLVW` | Parallel Shift Right Logical Variable Word | **Implemented** (srl v4i32, v4i32) |
-| `PSRAW` | Parallel Shift Right Arithmetic Word | **Implemented** (sra v4i32) |
-| `PSRAVW` | Parallel Shift Right Arithmetic Variable Word | **Implemented** (sra v4i32, v4i32) |
+| `PSLLH` | Parallel Shift Left Logical Halfword | **Implemented** (asm-only, immediate shift) |
+| `PSRLH` | Parallel Shift Right Logical Halfword | **Implemented** (asm-only, immediate shift) |
+| `PSRAH` | Parallel Shift Right Arithmetic Halfword | **Implemented** (asm-only, immediate shift) |
+| `PSLLW` | Parallel Shift Left Logical Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSLLVW` | Parallel Shift Left Logical Variable Word | **Implemented** (asm-only, **2 words only**) |
+| `PSRLW` | Parallel Shift Right Logical Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSRLVW` | Parallel Shift Right Logical Variable Word | **Implemented** (asm-only, **2 words only**) |
+| `PSRAW` | Parallel Shift Right Arithmetic Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSRAVW` | Parallel Shift Right Arithmetic Variable Word | **Implemented** (asm-only, **2 words only**) |
+
+**Note on Variable Shifts (PSLLVW/PSRLVW/PSRAVW)**: These instructions only operate on **2 of 4 words** (elements 0 and 2). Elements 1 and 3 are destroyed (overwritten with sign-extended results). The v4i32 shift operations are expanded (scalarized) because no instruction shifts all 4 words with variable amounts. For immediate shifts, use PSLLW/PSRLW/PSRAW in inline assembly.
 
 ### 2.4 SA Register Operations
 
