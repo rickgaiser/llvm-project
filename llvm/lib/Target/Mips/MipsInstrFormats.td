@@ -1162,10 +1162,12 @@ class R5900_MMI_PMTHL_FM<bits<5> fmt> : StdArch {
 
 // R5900 MMI2 format: 3-register parallel multiply instructions
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | rd    | funct | MMI2   |
-// | 011100 | rs    | rt    | rd    | func  | 001001 |
+// | MMI    | rs    | rt    | rd    | subfn | MMI2   |
+// | 011100 | rs    | rt    | rd    | subfn | 001001 |
 // Used for: PMULTW, PMADDW, PMSUBW, PMULTUW, PMADDUW, etc.
-class R5900_MMI2_FM<bits<5> funct> : StdArch {
+// Note: Parameter named 'subfn' to avoid conflict with 6-bit 'funct' field
+// in other MIPS formats which would cause encoding errors.
+class R5900_MMI2_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rs;
   bits<5> rt;
@@ -1176,16 +1178,18 @@ class R5900_MMI2_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001001; // MMI2 function code
 }
 
 // R5900 MMI3 format: 3-register parallel multiply instructions
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | rd    | funct | MMI3   |
-// | 011100 | rs    | rt    | rd    | func  | 101001 |
+// | MMI    | rs    | rt    | rd    | subfn | MMI3   |
+// | 011100 | rs    | rt    | rd    | subfn | 101001 |
 // Used for: PMULTUW, PMADDUW, etc.
-class R5900_MMI3_FM<bits<5> funct> : StdArch {
+// Note: Parameter named 'subfn' to avoid conflict with 6-bit 'funct' field
+// in other MIPS formats which would cause encoding errors.
+class R5900_MMI3_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rs;
   bits<5> rt;
@@ -1196,16 +1200,18 @@ class R5900_MMI3_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101001; // MMI3 function code
 }
 
 // R5900 MMI0 format: 3-register parallel instructions
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | rd    | funct | MMI0   |
-// | 011100 | rs    | rt    | rd    | func  | 001000 |
+// | MMI    | rs    | rt    | rd    | subfn | MMI0   |
+// | 011100 | rs    | rt    | rd    | subfn | 001000 |
 // Used for: PMAXW, PMAXH, etc.
-class R5900_MMI0_FM<bits<5> funct> : StdArch {
+// Note: Parameter named 'subfn' to avoid conflict with 6-bit 'funct' field
+// in other MIPS formats which would cause encoding errors.
+class R5900_MMI0_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rs;
   bits<5> rt;
@@ -1216,16 +1222,18 @@ class R5900_MMI0_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001000; // MMI0 function code
 }
 
 // R5900 MMI1 format: 3-register parallel instructions
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | rd    | funct | MMI1   |
-// | 011100 | rs    | rt    | rd    | func  | 101000 |
+// | MMI    | rs    | rt    | rd    | subfn | MMI1   |
+// | 011100 | rs    | rt    | rd    | subfn | 101000 |
 // Used for: PMINW, PMINH, etc.
-class R5900_MMI1_FM<bits<5> funct> : StdArch {
+// Note: Parameter named 'subfn' to avoid conflict with 6-bit 'funct' field
+// in other MIPS formats which would cause encoding errors.
+class R5900_MMI1_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rs;
   bits<5> rt;
@@ -1236,15 +1244,15 @@ class R5900_MMI1_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101000; // MMI1 function code
 }
 
 // R5900 MMI0 2-operand format: for PABSW (rd, rt with rs=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | 0     | rt    | rd    | funct | MMI0   |
-// | 011100 | 00000 | rt    | rd    | func  | 001000 |
-class R5900_MMI0_2R_FM<bits<5> funct> : StdArch {
+// | MMI    | 0     | rt    | rd    | subfn | MMI0   |
+// | 011100 | 00000 | rt    | rd    | subfn | 001000 |
+class R5900_MMI0_2R_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rt;
 
@@ -1254,15 +1262,15 @@ class R5900_MMI0_2R_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = 0;        // rs = 0
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001000; // MMI0 function code
 }
 
 // R5900 MMI1 2-operand format: for PABSH (rd, rt with rs=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | 0     | rt    | rd    | funct | MMI1   |
-// | 011100 | 00000 | rt    | rd    | func  | 101000 |
-class R5900_MMI1_2R_FM<bits<5> funct> : StdArch {
+// | MMI    | 0     | rt    | rd    | subfn | MMI1   |
+// | 011100 | 00000 | rt    | rd    | subfn | 101000 |
+class R5900_MMI1_2R_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rt;
 
@@ -1272,15 +1280,15 @@ class R5900_MMI1_2R_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = 0;        // rs = 0
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101000; // MMI1 function code
 }
 
 // R5900 MMI2 2-operand format: for PEXEH, PEXEW, PREVH, PROT3W (rd, rt with rs=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | 0     | rt    | rd    | funct | MMI2   |
-// | 011100 | 00000 | rt    | rd    | func  | 001001 |
-class R5900_MMI2_2R_FM<bits<5> funct> : StdArch {
+// | MMI    | 0     | rt    | rd    | subfn | MMI2   |
+// | 011100 | 00000 | rt    | rd    | subfn | 001001 |
+class R5900_MMI2_2R_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rt;
 
@@ -1290,15 +1298,15 @@ class R5900_MMI2_2R_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = 0;        // rs = 0
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001001; // MMI2 function code
 }
 
 // R5900 MMI3 2-operand format: for PCPYH, PEXCH, PEXCW (rd, rt with rs=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | 0     | rt    | rd    | funct | MMI3   |
-// | 011100 | 00000 | rt    | rd    | func  | 101001 |
-class R5900_MMI3_2R_FM<bits<5> funct> : StdArch {
+// | MMI    | 0     | rt    | rd    | subfn | MMI3   |
+// | 011100 | 00000 | rt    | rd    | subfn | 101001 |
+class R5900_MMI3_2R_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
   bits<5> rt;
 
@@ -1308,15 +1316,15 @@ class R5900_MMI3_2R_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = 0;        // rs = 0
   let Inst{20-16} = rt;
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101001; // MMI3 function code
 }
 
 // R5900 MMI2 divide format: for PDIVW, PDIVBW (rs, rt only, rd=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | 0     | funct | MMI2   |
-// | 011100 | rs    | rt    | 00000 | func  | 001001 |
-class R5900_MMI2_DIV_FM<bits<5> funct> : StdArch {
+// | MMI    | rs    | rt    | 0     | subfn | MMI2   |
+// | 011100 | rs    | rt    | 00000 | subfn | 001001 |
+class R5900_MMI2_DIV_FM<bits<5> subfn> : StdArch {
   bits<5> rs;
   bits<5> rt;
 
@@ -1326,15 +1334,15 @@ class R5900_MMI2_DIV_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = 0;        // rd = 0
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001001; // MMI2 function code
 }
 
 // R5900 MMI3 divide format: for PDIVUW (rs, rt only, rd=0)
 // | 31-26  | 25-21 | 20-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | rs    | rt    | 0     | funct | MMI3   |
-// | 011100 | rs    | rt    | 00000 | func  | 101001 |
-class R5900_MMI3_DIV_FM<bits<5> funct> : StdArch {
+// | MMI    | rs    | rt    | 0     | subfn | MMI3   |
+// | 011100 | rs    | rt    | 00000 | subfn | 101001 |
+class R5900_MMI3_DIV_FM<bits<5> subfn> : StdArch {
   bits<5> rs;
   bits<5> rt;
 
@@ -1344,15 +1352,15 @@ class R5900_MMI3_DIV_FM<bits<5> funct> : StdArch {
   let Inst{25-21} = rs;
   let Inst{20-16} = rt;
   let Inst{15-11} = 0;        // rd = 0
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101001; // MMI3 function code
 }
 
 // R5900 MMI2 rd-only format: for PMFHI/PMFLO
 // | 31-26  | 25-16 | 15-11 | 10-6  | 5-0    |
-// | MMI    | 0     | rd    | funct | MMI2   |
-// | 011100 | 0     | rd    | func  | 001001 |
-class R5900_MMI2_RD_FM<bits<5> funct> : StdArch {
+// | MMI    | 0     | rd    | subfn | MMI2   |
+// | 011100 | 0     | rd    | subfn | 001001 |
+class R5900_MMI2_RD_FM<bits<5> subfn> : StdArch {
   bits<5> rd;
 
   bits<32> Inst;
@@ -1360,15 +1368,15 @@ class R5900_MMI2_RD_FM<bits<5> funct> : StdArch {
   let Inst{31-26} = 0b011100; // MMI opcode
   let Inst{25-16} = 0;        // rs, rt = 0
   let Inst{15-11} = rd;
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b001001; // MMI2 function code
 }
 
 // R5900 MMI3 rs-only format: for PMTHI/PMTLO
 // | 31-26  | 25-21 | 20-11 | 10-6  | 5-0    |
-// | MMI    | rs    | 0     | funct | MMI3   |
-// | 011100 | rs    | 0     | func  | 101001 |
-class R5900_MMI3_RS_FM<bits<5> funct> : StdArch {
+// | MMI    | rs    | 0     | subfn | MMI3   |
+// | 011100 | rs    | 0     | subfn | 101001 |
+class R5900_MMI3_RS_FM<bits<5> subfn> : StdArch {
   bits<5> rs;
 
   bits<32> Inst;
@@ -1376,7 +1384,7 @@ class R5900_MMI3_RS_FM<bits<5> funct> : StdArch {
   let Inst{31-26} = 0b011100; // MMI opcode
   let Inst{25-21} = rs;
   let Inst{20-11} = 0;        // rt, rd = 0
-  let Inst{10-6}  = funct;
+  let Inst{10-6}  = subfn;
   let Inst{5-0}   = 0b101001; // MMI3 function code
 }
 
