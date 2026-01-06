@@ -3809,7 +3809,7 @@ def PSUBW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "psubw\t$rd, $rs, $rt",
                    [(set v4i32:$rd, (sub v4i32:$rs, v4i32:$rt))],
                    II_ADD, FrmR>,
-            R5900_MMI1_FM<0b00000>;
+            R5900_MMI0_FM<0b00001>;
 
 // PADDH - Parallel Add Halfword
 // rd = rs + rt for each of 8 packed 16-bit halfwords
@@ -3845,7 +3845,7 @@ def PSUBB : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                    "psubb\t$rd, $rs, $rt",
                    [(set v16i8:$rd, (sub v16i8:$rs, v16i8:$rt))],
                    II_ADD, FrmR>,
-            R5900_MMI1_FM<0b01000>;
+            R5900_MMI0_FM<0b01001>;
 
 //===----------------------------------------------------------------------===//
 // PMAX/PMIN - Parallel Maximum/Minimum
