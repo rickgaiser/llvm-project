@@ -175,17 +175,17 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // CTLZ using PLZCW with conditional (for non-negative) or 0 (for negative)
     setOperationAction(ISD::CTLZ, MVT::i32, Custom);
 
-    // Shift operations: All vector shifts must expand (scalarize)
-    // PSLLVW/PSRLVW/PSRAVW only operate on 2 of 4 words (elements 0 and 2),
-    // destroying elements 1 and 3. PSLLW/PSRLW/PSRAW work on all 4 words but
-    // only support immediate shift amounts (no patterns yet).
-    // v8i16 only has immediate shifts (PSLLH/PSRLH/PSRAH), v16i8 has no shifts.
-    setOperationAction(ISD::SHL, MVT::v4i32, Expand);
-    setOperationAction(ISD::SRL, MVT::v4i32, Expand);
-    setOperationAction(ISD::SRA, MVT::v4i32, Expand);
-    setOperationAction(ISD::SHL, MVT::v8i16, Expand);
-    setOperationAction(ISD::SRL, MVT::v8i16, Expand);
-    setOperationAction(ISD::SRA, MVT::v8i16, Expand);
+    // Shift operations: Custom lowering for constant splat shifts
+    // PSLLVW/PSRLVW/PSRAVW only operate on 2 of 4 words - NOT usable for v4i32.
+    // PSLLW/PSRLW/PSRAW work on all 4 words with immediate shift amounts.
+    // PSLLH/PSRLH/PSRAH work on all 8 halfwords with immediate shift amounts.
+    // Custom lowering uses immediate shifts for constant splats, else expands.
+    setOperationAction(ISD::SHL, MVT::v4i32, Custom);
+    setOperationAction(ISD::SRL, MVT::v4i32, Custom);
+    setOperationAction(ISD::SRA, MVT::v4i32, Custom);
+    setOperationAction(ISD::SHL, MVT::v8i16, Custom);
+    setOperationAction(ISD::SRL, MVT::v8i16, Custom);
+    setOperationAction(ISD::SRA, MVT::v8i16, Custom);
 
     // Saturating arithmetic: Available for all vector sizes
     // Signed: PADDSW/PSUBSW (v4i32), PADDSH/PSUBSH (v8i16), PADDSB/PSUBSB (v16i8)
@@ -686,6 +686,9 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::SELECT:             return lowerSELECT(Op, DAG);
   case ISD::BITCAST:            return lowerBITCAST(Op, DAG);
   case ISD::CTLZ:               return lowerCTLZ(Op, DAG);
+  case ISD::SHL:
+  case ISD::SRL:
+  case ISD::SRA:                return lowerVectorShift(Op, DAG);
   }
 
   return MipsTargetLowering::LowerOperation(Op, DAG);
@@ -1757,6 +1760,61 @@ SDValue MipsSETargetLowering::lowerCTLZ(SDValue Op, SelectionDAG &DAG) const {
 
   // Select: if negative return 0, else return PLZCW+1
   return DAG.getSelect(DL, VT, IsNeg, Zero, CountPlusOne);
+}
+
+SDValue MipsSETargetLowering::lowerVectorShift(SDValue Op,
+                                                SelectionDAG &DAG) const {
+  // R5900 MMI: Lower vector shifts to immediate shift instructions when
+  // the shift amount is a constant splat.
+  //
+  // PSLLW/PSRLW/PSRAW: v4i32 shifts with 5-bit immediate (0-31)
+  // PSLLH/PSRLH/PSRAH: v8i16 shifts with 4-bit immediate (0-15)
+  //
+  // For non-constant or variable shifts, return SDValue() to expand/scalarize.
+  // Note: PSLLVW/PSRLVW/PSRAVW only shift 2 of 4 words - NOT usable for v4i32.
+
+  EVT VT = Op.getValueType();
+
+  // Only handle R5900 vector types
+  if (!Subtarget.isR5900())
+    return SDValue();
+  if (VT != MVT::v4i32 && VT != MVT::v8i16)
+    return SDValue();
+
+  SDValue Vec = Op.getOperand(0);
+  SDValue Shift = Op.getOperand(1);
+  SDLoc DL(Op);
+
+  // Check if shift amount is a constant splat using existing helper
+  APInt SplatValue;
+  if (!isVSplat(Shift, SplatValue, Subtarget.isLittle()))
+    return SDValue();  // Not constant splat, expand to scalar
+
+  // Validate immediate range
+  unsigned MaxShift = (VT == MVT::v4i32) ? 31 : 15;
+  uint64_t ShiftAmt = SplatValue.getZExtValue();
+  if (ShiftAmt > MaxShift)
+    return SDValue();  // Out of range, expand to scalar
+
+  // Select instruction based on operation and vector type
+  unsigned Opc;
+  switch (Op.getOpcode()) {
+  case ISD::SHL:
+    Opc = (VT == MVT::v4i32) ? Mips::PSLLW : Mips::PSLLH;
+    break;
+  case ISD::SRL:
+    Opc = (VT == MVT::v4i32) ? Mips::PSRLW : Mips::PSRLH;
+    break;
+  case ISD::SRA:
+    Opc = (VT == MVT::v4i32) ? Mips::PSRAW : Mips::PSRAH;
+    break;
+  default:
+    return SDValue();
+  }
+
+  // Create immediate operand and emit machine instruction
+  SDValue ImmOp = DAG.getTargetConstant(ShiftAmt, DL, MVT::i32);
+  return SDValue(DAG.getMachineNode(Opc, DL, VT, Vec, ImmOp), 0);
 }
 
 SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,

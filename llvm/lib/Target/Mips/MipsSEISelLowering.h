@@ -78,6 +78,7 @@ class TargetRegisterClass;
     SDValue lowerSTORE(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerVectorShift(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue lowerMulDiv(SDValue Op, unsigned NewOpc, bool HasLo, bool HasHi,
                         SelectionDAG &DAG) const;

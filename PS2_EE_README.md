@@ -284,17 +284,19 @@ Note: The R5900 does **not** support `MOVT`, `MOVF`, `MOVT.S`, `MOVF.S` (FP cond
 
 | Instruction | Description | LLVM Status |
 |-------------|-------------|-------------|
-| `PSLLH` | Parallel Shift Left Logical Halfword | **Implemented** (asm-only, immediate shift) |
-| `PSRLH` | Parallel Shift Right Logical Halfword | **Implemented** (asm-only, immediate shift) |
-| `PSRAH` | Parallel Shift Right Arithmetic Halfword | **Implemented** (asm-only, immediate shift) |
-| `PSLLW` | Parallel Shift Left Logical Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSLLH` | Parallel Shift Left Logical Halfword | **Autovectorized** (v8i16, constant splat shifts) |
+| `PSRLH` | Parallel Shift Right Logical Halfword | **Autovectorized** (v8i16, constant splat shifts) |
+| `PSRAH` | Parallel Shift Right Arithmetic Halfword | **Autovectorized** (v8i16, constant splat shifts) |
+| `PSLLW` | Parallel Shift Left Logical Word | **Autovectorized** (v4i32, constant splat shifts) |
 | `PSLLVW` | Parallel Shift Left Logical Variable Word | **Implemented** (asm-only, **2 words only**) |
-| `PSRLW` | Parallel Shift Right Logical Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSRLW` | Parallel Shift Right Logical Word | **Autovectorized** (v4i32, constant splat shifts) |
 | `PSRLVW` | Parallel Shift Right Logical Variable Word | **Implemented** (asm-only, **2 words only**) |
-| `PSRAW` | Parallel Shift Right Arithmetic Word | **Implemented** (asm-only, immediate shift, all 4 words) |
+| `PSRAW` | Parallel Shift Right Arithmetic Word | **Autovectorized** (v4i32, constant splat shifts) |
 | `PSRAVW` | Parallel Shift Right Arithmetic Variable Word | **Implemented** (asm-only, **2 words only**) |
 
-**Note on Variable Shifts (PSLLVW/PSRLVW/PSRAVW)**: These instructions only operate on **2 of 4 words** (elements 0 and 2). Elements 1 and 3 are destroyed (overwritten with sign-extended results). The v4i32 shift operations are expanded (scalarized) because no instruction shifts all 4 words with variable amounts. For immediate shifts, use PSLLW/PSRLW/PSRAW in inline assembly.
+**Note on Immediate vs Variable Shifts**:
+- **Immediate shifts (PSLLW/PSRLW/PSRAW, PSLLH/PSRLH/PSRAH)**: Operate on **all elements** (4 words or 8 halfwords). Autovectorization automatically uses these when shifting by a constant splat amount (all lanes shift by the same compile-time constant).
+- **Variable shifts (PSLLVW/PSRLVW/PSRAVW)**: Only operate on **2 of 4 words** (elements 0 and 2). Elements 1 and 3 are destroyed (overwritten with sign-extended results). These are asm-only and NOT used for autovectorization. Variable vector shifts are scalarized.
 
 ### 2.4 SA Register Operations
 
