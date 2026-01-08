@@ -72,6 +72,10 @@ void PS2Toolchain::addClangTargetOptions(const ArgList &DriverArgs,
 
 const char *PS2Toolchain::getDefaultLinker() const { return "ld.lld"; }
 
+Tool *PS2Toolchain::buildLinker() const {
+  return new tools::gnutools::Linker(*this);
+}
+
 std::string PS2Toolchain::computeSysRoot() const {
   // Use explicit sysroot if provided.
   if (!getDriver().SysRoot.empty())

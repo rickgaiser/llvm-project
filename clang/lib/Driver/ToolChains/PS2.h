@@ -56,6 +56,9 @@ public:
     return ToolChain::CST_Libcxx;
   }
 
+protected:
+  Tool *buildLinker() const override;
+
 private:
   std::string PS2DevDir;
   std::string PS2SDKDir;
