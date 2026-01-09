@@ -65,6 +65,24 @@ private:
 };
 
 } // end namespace toolchains
+
+namespace tools {
+namespace ps2 {
+
+class LLVM_LIBRARY_VISIBILITY Linker final : public Tool {
+public:
+  Linker(const ToolChain &TC) : Tool("ps2::Linker", "ld.lld", TC) {}
+  bool isLinkJob() const override { return true; }
+  bool hasIntegratedCPP() const override { return false; }
+  void ConstructJob(Compilation &C, const JobAction &JA,
+                    const InputInfo &Output, const InputInfoList &Inputs,
+                    const llvm::opt::ArgList &TCArgs,
+                    const char *LinkingOutput) const override;
+};
+
+} // end namespace ps2
+} // end namespace tools
+
 } // end namespace driver
 } // end namespace clang
 

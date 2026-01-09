@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "PS2.h"
+#include "clang/Driver/CommonArgs.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
+#include "clang/Driver/InputInfo.h"
 #include "clang/Options/Options.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileSystem.h"
@@ -73,7 +75,79 @@ void PS2Toolchain::addClangTargetOptions(const ArgList &DriverArgs,
 const char *PS2Toolchain::getDefaultLinker() const { return "ld.lld"; }
 
 Tool *PS2Toolchain::buildLinker() const {
-  return new tools::gnutools::Linker(*this);
+  return new tools::ps2::Linker(*this);
+}
+
+void tools::ps2::Linker::ConstructJob(Compilation &C, const JobAction &JA,
+                                      const InputInfo &Output,
+                                      const InputInfoList &Inputs,
+                                      const ArgList &Args,
+                                      const char *LinkingOutput) const {
+  const auto &TC = static_cast<const toolchains::PS2Toolchain &>(getToolChain());
+  const Driver &D = TC.getDriver();
+
+  ArgStringList CmdArgs;
+
+  // Linker emulation mode for MIPS N32 ABI little-endian.
+  CmdArgs.push_back("-m");
+  CmdArgs.push_back("elf32ltsmipn32");
+
+  // EH frame header for exception handling.
+  CmdArgs.push_back("--eh-frame-hdr");
+
+  // Add sysroot if specified.
+  if (!D.SysRoot.empty()) {
+    CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
+  }
+
+  // Check if we need to link startup files.
+  bool NeedCRTs =
+      !Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles);
+
+  // Link crt0.o as the startup file.
+  if (NeedCRTs && !Args.hasArg(options::OPT_r)) {
+    CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crt0.o")));
+  }
+
+  // Use default linker script if user didn't specify one.
+  if (!Args.hasArg(options::OPT_T) && !Args.hasArg(options::OPT_r)) {
+    CmdArgs.push_back("-T");
+    CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("linkfile")));
+  }
+
+  // Add user-specified linker script and other options.
+  Args.addAllArgs(CmdArgs, {options::OPT_T_Group, options::OPT_L, options::OPT_u,
+                            options::OPT_s, options::OPT_t, options::OPT_r});
+
+  // Add library search paths.
+  TC.AddFilePathLibArgs(Args, CmdArgs);
+
+  // Add user inputs (object files, libraries).
+  AddLinkerInputs(TC, Inputs, Args, CmdArgs, JA);
+
+  // Link runtime libraries.
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
+    // Add compiler-rt builtins.
+    AddRunTimeLibs(TC, D, CmdArgs, Args);
+
+    // Link libc and PS2SDK libraries if not disabled.
+    if (!Args.hasArg(options::OPT_nolibc)) {
+      CmdArgs.push_back("-lc");
+      CmdArgs.push_back("-lcglue");
+      CmdArgs.push_back("-lkernel");
+    }
+  }
+
+  // Output file.
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  // Get the linker path.
+  const char *Exec = Args.MakeArgString(TC.GetLinkerPath());
+
+  C.addCommand(std::make_unique<Command>(
+      JA, *this, ResponseFileSupport::AtFileCurCP(), Exec, CmdArgs, Inputs,
+      Output));
 }
 
 std::string PS2Toolchain::computeSysRoot() const {
