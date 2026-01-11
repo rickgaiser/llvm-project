@@ -4767,6 +4767,16 @@ def MipsVU0MULx : SDNode<"MipsISD::VU0_MULx", SDT_VU0Broadcast>;
 def MipsVU0MULy : SDNode<"MipsISD::VU0_MULy", SDT_VU0Broadcast>;
 def MipsVU0MULz : SDNode<"MipsISD::VU0_MULz", SDT_VU0Broadcast>;
 def MipsVU0MULw : SDNode<"MipsISD::VU0_MULw", SDT_VU0Broadcast>;
+// VMADDbc: fd = ACC + fs * ft[bc]
+def MipsVU0MADDx : SDNode<"MipsISD::VU0_MADDx", SDT_VU0Broadcast>;
+def MipsVU0MADDy : SDNode<"MipsISD::VU0_MADDy", SDT_VU0Broadcast>;
+def MipsVU0MADDz : SDNode<"MipsISD::VU0_MADDz", SDT_VU0Broadcast>;
+def MipsVU0MADDw : SDNode<"MipsISD::VU0_MADDw", SDT_VU0Broadcast>;
+// VMULAbc: ACC = fs * ft[bc]
+def MipsVU0MULAx : SDNode<"MipsISD::VU0_MULAx", SDT_VU0Broadcast>;
+def MipsVU0MULAy : SDNode<"MipsISD::VU0_MULAy", SDT_VU0Broadcast>;
+def MipsVU0MULAz : SDNode<"MipsISD::VU0_MULAz", SDT_VU0Broadcast>;
+def MipsVU0MULAw : SDNode<"MipsISD::VU0_MULAw", SDT_VU0Broadcast>;
 //
 // Instruction classes:
 // - VU0_Type1: 3 VF registers + 6-bit opcode (VADD, VSUB, VMUL, VMADD, VMSUB)

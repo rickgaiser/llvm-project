@@ -402,8 +402,6 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def FLOOR_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"floor.w.s", FGR32Opnd, FGR32Opnd, II_FLOOR>,
                   ABSS_FM<0xf, 16>, ISA_MIPS2, NOT_R5900;
-  def CVT_W_S   : MMRel, ABSS_FT<"cvt.w.s", FGR32Opnd, FGR32Opnd, II_CVT>,
-                  ABSS_FM<0x24, 16>, ISA_MIPS1;
 
   defm TRUNC_W : ROUND_M<"trunc.w.d", II_TRUNC>, ABSS_FM<0xd, 17>, ISA_MIPS2;
   defm CEIL_W  : ROUND_M<"ceil.w.d", II_CEIL>, ABSS_FM<0xe, 17>, ISA_MIPS2;
