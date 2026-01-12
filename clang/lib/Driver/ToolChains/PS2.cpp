@@ -27,19 +27,11 @@ PS2Toolchain::PS2Toolchain(const Driver &D, const llvm::Triple &Triple,
     : Generic_ELF(D, Triple, Args) {
   // Get PS2DEV directory from environment variable.
   // PS2DEV is the root of the PS2 development environment:
-  //   $PS2DEV/mips64el-scei-ps2 - EE sysroot with newlib headers/libs
-  //   $PS2DEV/llvm              - LLVM toolchain installation
+  //   $PS2DEV/ee/include - headers (newlib, ps2sdk, ports)
+  //   $PS2DEV/ee/lib     - libraries (newlib, ps2sdk, ports)
+  //   $PS2DEV/llvm       - LLVM toolchain installation
   if (const char *PS2DevEnv = std::getenv("PS2DEV")) {
     PS2DevDir = PS2DevEnv;
-  }
-
-  // Get PS2SDK directory from environment variable.
-  // PS2SDK structure:
-  //   $PS2SDK/ee/include     - EE-specific headers (kernel, hardware)
-  //   $PS2SDK/common/include - Common headers (shared between EE/IOP)
-  //   $PS2SDK/ee/lib         - EE libraries
-  if (const char *PS2SDKEnv = std::getenv("PS2SDK")) {
-    PS2SDKDir = PS2SDKEnv;
   }
 
   // Set up library search paths.
@@ -48,14 +40,9 @@ PS2Toolchain::PS2Toolchain(const Driver &D, const llvm::Triple &Triple,
     getFilePaths().push_back(D.SysRoot + "/lib");
   }
 
-  // 2. From PS2DEV (newlib libraries)
+  // 2. From PS2DEV
   if (!PS2DevDir.empty()) {
-    getFilePaths().push_back(PS2DevDir + "/mips64el-scei-ps2/lib");
-  }
-
-  // 3. From PS2SDK
-  if (!PS2SDKDir.empty()) {
-    getFilePaths().push_back(PS2SDKDir + "/ee/lib");
+    getFilePaths().push_back(PS2DevDir + "/ee/lib");
   }
 }
 
@@ -95,6 +82,9 @@ void tools::ps2::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // EH frame header for exception handling.
   CmdArgs.push_back("--eh-frame-hdr");
 
+  // PS2 EE has 128-byte cache lines, use smaller page size for efficiency.
+  CmdArgs.push_back("-zmax-page-size=128");
+
   // Add sysroot if specified.
   if (!D.SysRoot.empty()) {
     CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
@@ -132,9 +122,16 @@ void tools::ps2::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
     // Link libc and PS2SDK libraries if not disabled.
     if (!Args.hasArg(options::OPT_nolibc)) {
+      // libc (newlib)
       CmdArgs.push_back("-lc");
+      CmdArgs.push_back("-lm");
+      // pthread-embedded
+      CmdArgs.push_back("-lpthread");
+      // PS2SDK libraries
       CmdArgs.push_back("-lcglue");
+      CmdArgs.push_back("-lpthreadglue");
       CmdArgs.push_back("-lkernel");
+      CmdArgs.push_back("-lcdvd");
     }
   }
 
@@ -155,9 +152,9 @@ std::string PS2Toolchain::computeSysRoot() const {
   if (!getDriver().SysRoot.empty())
     return getDriver().SysRoot;
 
-  // Otherwise use $PS2DEV/mips64el-scei-ps2 as the default sysroot.
+  // Otherwise use $PS2DEV/ee as the default sysroot.
   if (!PS2DevDir.empty())
-    return PS2DevDir + "/mips64el-scei-ps2";
+    return PS2DevDir + "/ee";
 
   return std::string();
 }
@@ -181,7 +178,7 @@ void PS2Toolchain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))
     return;
 
-  // Add newlib include paths from explicit sysroot if specified.
+  // Add include paths from explicit sysroot if specified.
   if (!D.SysRoot.empty()) {
     SmallString<128> SysrootInclude(D.SysRoot);
     llvm::sys::path::append(SysrootInclude, "include");
@@ -189,17 +186,14 @@ void PS2Toolchain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
       addExternCSystemInclude(DriverArgs, CC1Args, SysrootInclude.str());
   }
 
-  // Add PS2SDK include paths if PS2SDK environment variable is set.
-  // PS2SDK structure:
-  //   $PS2SDK/ee/include     - EE-specific headers (kernel, hardware)
-  //   $PS2SDK/common/include - Common headers (shared between EE/IOP)
-  if (!PS2SDKDir.empty()) {
-    SmallString<128> EEInclude(PS2SDKDir);
+  // Add include paths from $PS2DEV.
+  if (!PS2DevDir.empty()) {
+    SmallString<128> EEInclude(PS2DevDir);
     llvm::sys::path::append(EEInclude, "ee", "include");
     if (llvm::sys::fs::exists(EEInclude))
       addExternCSystemInclude(DriverArgs, CC1Args, EEInclude.str());
 
-    SmallString<128> CommonInclude(PS2SDKDir);
+    SmallString<128> CommonInclude(PS2DevDir);
     llvm::sys::path::append(CommonInclude, "common", "include");
     if (llvm::sys::fs::exists(CommonInclude))
       addExternCSystemInclude(DriverArgs, CC1Args, CommonInclude.str());

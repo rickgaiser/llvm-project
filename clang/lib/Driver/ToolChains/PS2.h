@@ -61,7 +61,6 @@ protected:
 
 private:
   std::string PS2DevDir;
-  std::string PS2SDKDir;
 };
 
 } // end namespace toolchains
