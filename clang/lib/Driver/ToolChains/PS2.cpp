@@ -34,6 +34,14 @@ PS2Toolchain::PS2Toolchain(const Driver &D, const llvm::Triple &Triple,
     PS2DevDir = PS2DevEnv;
   }
 
+  // Get PS2SDK directory from environment variable.
+  // PS2SDK contains ps2sdk-specific headers and libraries:
+  //   $PS2SDK/ee/include - ps2sdk headers
+  //   $PS2SDK/ee/lib     - ps2sdk libraries
+  if (const char *PS2SDKEnv = std::getenv("PS2SDK")) {
+    PS2SDKDir = PS2SDKEnv;
+  }
+
   // Set up library search paths.
   // 1. From sysroot if explicitly specified
   if (!D.SysRoot.empty()) {
@@ -43,6 +51,11 @@ PS2Toolchain::PS2Toolchain(const Driver &D, const llvm::Triple &Triple,
   // 2. From PS2DEV
   if (!PS2DevDir.empty()) {
     getFilePaths().push_back(PS2DevDir + "/ee/lib");
+  }
+
+  // 3. From PS2SDK
+  if (!PS2SDKDir.empty()) {
+    getFilePaths().push_back(PS2SDKDir + "/ee/lib");
   }
 }
 
@@ -197,5 +210,18 @@ void PS2Toolchain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     llvm::sys::path::append(CommonInclude, "common", "include");
     if (llvm::sys::fs::exists(CommonInclude))
       addExternCSystemInclude(DriverArgs, CC1Args, CommonInclude.str());
+  }
+
+  // Add include paths from $PS2SDK.
+  if (!PS2SDKDir.empty()) {
+    SmallString<128> SDKEEInclude(PS2SDKDir);
+    llvm::sys::path::append(SDKEEInclude, "ee", "include");
+    if (llvm::sys::fs::exists(SDKEEInclude))
+      addExternCSystemInclude(DriverArgs, CC1Args, SDKEEInclude.str());
+
+    SmallString<128> SDKCommonInclude(PS2SDKDir);
+    llvm::sys::path::append(SDKCommonInclude, "common", "include");
+    if (llvm::sys::fs::exists(SDKCommonInclude))
+      addExternCSystemInclude(DriverArgs, CC1Args, SDKCommonInclude.str());
   }
 }
