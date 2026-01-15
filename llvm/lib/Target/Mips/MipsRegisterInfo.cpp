@@ -257,6 +257,19 @@ getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(Mips::GP_64);
   }
 
+  // Reserve VF0 - it's a constant register {0.0, 0.0, 0.0, 1.0} on R5900 VU0.
+  if (Subtarget.hasVU0()) {
+    Reserved.set(Mips::VF0);
+  }
+
+  // The R5900 GPR128 registers are super-registers of the GPRs. Reserve them
+  // whenever their 64-bit sub-register is reserved (and always when the
+  // subtarget is not R5900), so that the shared register units of reserved
+  // GPRs are also treated as reserved.
+  for (MCPhysReg Reg : Mips::GPR128RegClass)
+    if (!Subtarget.isR5900() || Reserved.test(getSubReg(Reg, Mips::sub_64)))
+      Reserved.set(Reg);
+
   return Reserved;
 }
 

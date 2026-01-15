@@ -104,31 +104,31 @@ cfc1    $6, $0
 # CHECK: ctc1    $6, $31            # encoding: [0x00,0xf8,0xc6,0x44]
 ctc1    $6, $31
 
-# TODO: R5900 FP Accumulator Instructions
-# #------------------------------------------------------------------------------
-# # R5900-Specific: FP Accumulator Instructions
-# #------------------------------------------------------------------------------
-#
-# # DISABLED: adda.s  $f1, $f2           # encoding: [0x18,0x08,0x02,0x46]
-# adda.s  $f1, $f2
-#
-# # DISABLED: suba.s  $f3, $f4           # encoding: [0x19,0x18,0x04,0x46]
-# suba.s  $f3, $f4
-#
-# # DISABLED: mula.s  $f5, $f6           # encoding: [0x1a,0x28,0x06,0x46]
-# mula.s  $f5, $f6
-#
-# # DISABLED: madda.s $f7, $f8           # encoding: [0x1e,0x38,0x08,0x46]
-# madda.s $f7, $f8
-#
-# # DISABLED: msuba.s $f9, $f10          # encoding: [0x1f,0x48,0x0a,0x46]
-# msuba.s $f9, $f10
-#
-# # DISABLED: madd.s  $f0, $f1, $f2      # encoding: [0x1c,0x08,0x02,0x46]
-# madd.s  $f0, $f1, $f2
-#
-# # DISABLED: msub.s  $f3, $f4, $f5      # encoding: [0xdd,0x20,0x05,0x46]
-# msub.s  $f3, $f4, $f5
+#------------------------------------------------------------------------------
+# R5900-Specific: FP Accumulator Instructions
+# (tested in detail in r5900-fpu-acc.s)
+#------------------------------------------------------------------------------
+
+# CHECK: adda.s  $f1, $f2           # encoding: [0x18,0x08,0x02,0x46]
+adda.s  $f1, $f2
+
+# CHECK: suba.s  $f3, $f4           # encoding: [0x19,0x18,0x04,0x46]
+suba.s  $f3, $f4
+
+# CHECK: mula.s  $f5, $f6           # encoding: [0x1a,0x28,0x06,0x46]
+mula.s  $f5, $f6
+
+# CHECK: madda.s $f7, $f8           # encoding: [0x1e,0x38,0x08,0x46]
+madda.s $f7, $f8
+
+# CHECK: msuba.s $f9, $f10          # encoding: [0x1f,0x48,0x0a,0x46]
+msuba.s $f9, $f10
+
+# CHECK: madd.s  $f0, $f1, $f2      # encoding: [0x1c,0x08,0x02,0x46]
+madd.s  $f0, $f1, $f2
+
+# CHECK: msub.s  $f3, $f4, $f5      # encoding: [0xdd,0x20,0x05,0x46]
+msub.s  $f3, $f4, $f5
 
 # TODO: R5900-Specific FPU Instructions (max.s, min.s, rsqrt.s)
 # #------------------------------------------------------------------------------

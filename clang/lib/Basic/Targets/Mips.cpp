@@ -230,6 +230,7 @@ bool MipsTargetInfo::hasFeature(StringRef Feature) const {
       .Case("dspr2", DspRev >= DSP2)
       .Case("fp64", FPMode == FP64)
       .Case("msa", HasMSA)
+      .Case("vu0", HasVU0)
       .Default(false);
 }
 

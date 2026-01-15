@@ -65,6 +65,14 @@ class Mips64GPRReg<MipsGPRReg subreg>
   let AltNames = subreg.AltNames;
 }
 
+// Mips 128-bit CPU Registers (R5900)
+class Mips128GPRReg<Mips64GPRReg subreg>
+  : MipsRegWithSubRegs<subreg.HWEncoding, subreg.AsmName, [subreg]> {
+  let SubRegIndices = [sub_64];
+  let RegAltNameIndices = subreg.RegAltNameIndices;
+  let AltNames = subreg.AltNames;
+}
+
 // Mips 32-bit FPU Registers
 class FPR<bits<16> Enc, string n> : MipsReg<Enc, n>;
 
@@ -175,6 +183,42 @@ let Namespace = "Mips" in {
   def R30_64 : Mips64GPRReg<R30>, DwarfRegNum<[30]>;
   def R31_64 : Mips64GPRReg<R31>, DwarfRegNum<[31]>;
 
+  // General Purpose 128-bit Registers (R5900)
+  // Note: No DwarfRegNum - DWARF mapping uses the 64-bit sub-registers
+  let isConstant = true in
+  def R0_128  : Mips128GPRReg<R0_64>;
+  def R1_128  : Mips128GPRReg<R1_64>;
+  def R2_128  : Mips128GPRReg<R2_64>;
+  def R3_128  : Mips128GPRReg<R3_64>;
+  def R4_128  : Mips128GPRReg<R4_64>;
+  def R5_128  : Mips128GPRReg<R5_64>;
+  def R6_128  : Mips128GPRReg<R6_64>;
+  def R7_128  : Mips128GPRReg<R7_64>;
+  def R8_128  : Mips128GPRReg<R8_64>;
+  def R9_128  : Mips128GPRReg<R9_64>;
+  def R10_128 : Mips128GPRReg<R10_64>;
+  def R11_128 : Mips128GPRReg<R11_64>;
+  def R12_128 : Mips128GPRReg<R12_64>;
+  def R13_128 : Mips128GPRReg<R13_64>;
+  def R14_128 : Mips128GPRReg<R14_64>;
+  def R15_128 : Mips128GPRReg<R15_64>;
+  def R16_128 : Mips128GPRReg<R16_64>;
+  def R17_128 : Mips128GPRReg<R17_64>;
+  def R18_128 : Mips128GPRReg<R18_64>;
+  def R19_128 : Mips128GPRReg<R19_64>;
+  def R20_128 : Mips128GPRReg<R20_64>;
+  def R21_128 : Mips128GPRReg<R21_64>;
+  def R22_128 : Mips128GPRReg<R22_64>;
+  def R23_128 : Mips128GPRReg<R23_64>;
+  def R24_128 : Mips128GPRReg<R24_64>;
+  def R25_128 : Mips128GPRReg<R25_64>;
+  def R26_128 : Mips128GPRReg<R26_64>;
+  def R27_128 : Mips128GPRReg<R27_64>;
+  def R28_128 : Mips128GPRReg<R28_64>;
+  def R29_128 : Mips128GPRReg<R29_64>;
+  def R30_128 : Mips128GPRReg<R30_64>;
+  def R31_128 : Mips128GPRReg<R31_64>;
+
   /// Mips Single point precision FPU Registers
   foreach I = 0-31 in
   def F#I : FPR<I, "f"#I>, DwarfRegNum<[!add(I, 32)]>;
@@ -214,6 +258,9 @@ let Namespace = "Mips" in {
   let SubRegIndices = [sub_32] in {
   def HI0_64  : RegisterWithSubRegs<"hi", [HI0]>;
   def LO0_64  : RegisterWithSubRegs<"lo", [LO0]>;
+  // R5900 Pipeline 1 HI/LO 64-bit versions
+  def HI1_64 : RegisterWithSubRegs<"hi1", [HI1]>;
+  def LO1_64 : RegisterWithSubRegs<"lo1", [LO1]>;
   }
 
   // FP control registers.
@@ -223,6 +270,23 @@ let Namespace = "Mips" in {
   // FP condition code registers.
   foreach I = 0-7 in
   def FCC#I : MipsReg<I, "fcc"#I>;
+
+  // R5900 FPU Accumulator register
+  def FPU_ACC : MipsReg<0, "$acc">;
+
+  // R5900 VU0 (COP2) Vector Float Registers - 128-bit (4x32-bit floats)
+  // VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
+  let isConstant = true in def VF0 : MipsReg<0, "$vf0">, DwarfRegNum<[112]>;
+  foreach I = 1 -31 in def VF#I : MipsReg<I, "$vf"#I>,
+          DwarfRegNum<[!add(I, 112)]>;
+
+  // R5900 VU0 Accumulator register - 128-bit (4x32-bit floats)
+  // Used by VADDA, VSUBA, VMULA, VMADD, VMSUB, etc.
+  def VU0ACC : MipsReg<0, "$acc">, DwarfRegNum<[144]>;
+
+  // R5900 VU0 Q register - 32-bit float result register for division/sqrt
+  // Used by VDIV, VSQRT, VRSQRT, VMULQ, etc.
+  def VU0Q : MipsReg<0, "$Q">, DwarfRegNum<[145]>;
 
   // COP0 registers.
   foreach I = 0-31 in
@@ -389,6 +453,23 @@ def GPR64 : RegisterClass<"Mips", [i64], 64, (add
   // Reserved
   R26_64, R27_64, R28_64, R29_64, R30_64, R31_64)>;
 
+// R5900 128-bit General Purpose Registers
+// Used for MMI vector operations: v4i32 (4x32-bit), v8i16 (8x16-bit), v16i8
+// (16x8-bit)
+def GPR128 : RegisterClass<"Mips", [v4i32, v8i16, v16i8], 128, (add
+  // Reserved
+  R0_128, R1_128,
+  // Return Values and Arguments
+  R2_128, R3_128, R4_128, R5_128, R6_128, R7_128,
+  // Not preserved across procedure calls
+  R8_128, R9_128, R10_128, R11_128, R12_128, R13_128, R14_128, R15_128,
+  // Callee save
+  R16_128, R17_128, R18_128, R19_128, R20_128, R21_128, R22_128, R23_128,
+  // Not preserved across procedure calls
+  R24_128, R25_128,
+  // Reserved
+  R26_128, R27_128, R28_128, R29_128, R30_128, R31_128)>;
+
 def CPU16Regs : RegisterClass<"Mips", [i32], 32, (add
   // Return Values and Arguments
   R2, R3, R4, R5, R6, R7,
@@ -451,6 +532,15 @@ def CCR : RegisterClass<"Mips", [i32], 32, (sequence "FCR%u", 0, 31)>,
 def FCC : RegisterClass<"Mips", [i32], 32, (sequence "FCC%u", 0, 7)>,
           Unallocatable;
 
+// R5900 FPU Accumulator register class
+def FPUACC : RegisterClass<"Mips", [f32], 32, (add FPU_ACC)>, Unallocatable;
+
+// R5900 VU0 Accumulator register class - 128-bit (4x32-bit floats)
+def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>, Unallocatable;
+
+// R5900 VU0 Q register class - 32-bit float result register
+def VU0QRC : RegisterClass<"Mips", [f32], 32, (add VU0Q)>, Unallocatable;
+
 def MSA128B: RegisterClass<"Mips", [v16i8], 128,
                            (sequence "W%u", 0, 31)>;
 def MSA128H: RegisterClass<"Mips", [v8i16, v8f16], 128,
@@ -473,6 +563,11 @@ def LO32DSP : RegisterClass<"Mips", [i32], 32, (sequence "LO%u", 0, 3)>;
 def HI32DSP : RegisterClass<"Mips", [i32], 32, (sequence "HI%u", 0, 3)>;
 def LO64 : RegisterClass<"Mips", [i64], 64, (add LO0_64)>;
 def HI64 : RegisterClass<"Mips", [i64], 64, (add HI0_64)>;
+// R5900 Pipeline 1 HI/LO register classes
+def LO32_1 : RegisterClass<"Mips", [i32], 32, (add LO1)>;
+def HI32_1 : RegisterClass<"Mips", [i32], 32, (add HI1)>;
+def LO64_1 : RegisterClass<"Mips", [i64], 64, (add LO1_64)>;
+def HI64_1 : RegisterClass<"Mips", [i64], 64, (add HI1_64)>;
 
 // Hardware registers
 def HWRegs : RegisterClass<"Mips", [i32], 32, (sequence "HWR%u", 0, 31)>,
@@ -491,6 +586,9 @@ def ACC64DSP : RegisterClass<"Mips", [untyped], 64, (sequence "AC%u", 0, 3)> {
   let Size = 64;
 }
 
+// R5900 Pipeline 1 Accumulator
+def ACC64_1 : RegisterClass<"Mips", [untyped], 64, (add AC1)> { let Size = 64; }
+
 def DSPCC : RegisterClass<"Mips", [v4i8, v2i16], 32, (add DSPCCond)>;
 
 // Coprocessor 0 registers.
@@ -500,6 +598,25 @@ def COP0 : RegisterClass<"Mips", [i32], 32, (sequence "COP0%u", 0, 31)>,
 // Coprocessor 2 registers.
 def COP2 : RegisterClass<"Mips", [i32], 32, (sequence "COP2%u", 0, 31)>,
            Unallocatable;
+
+// R5900 VU0 Vector Float registers (128-bit, 4x32-bit floats)
+// VF0 must be first to ensure correct encoding (even though it's not
+// allocatable) VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
+def VFRegs
+    : RegisterClass<"Mips", [v4f32], 128,
+                    (add
+                        // VF0 - constant register (not allocatable, but must be
+                        // in class for encoding)
+                        VF0,
+                        // Return value
+                        VF1,
+                        // Not preserved across procedure calls
+                        VF2, VF3, VF4, VF5, VF6, VF7, VF8, VF9, VF10, VF11,
+                        // Arguments
+                        VF12, VF13, VF14, VF15, VF16, VF17, VF18, VF19,
+                        // Callee-saved
+                        VF20, VF21, VF22, VF23, VF24, VF25, VF26, VF27, VF28,
+                        VF29, VF30, VF31)>;
 
 // Coprocessor 3 registers.
 def COP3 : RegisterClass<"Mips", [i32], 32, (sequence "COP3%u", 0, 31)>,
@@ -526,6 +643,11 @@ class MipsAsmRegOperand : AsmOperandClass {
 
 def GPR64AsmOperand : MipsAsmRegOperand {
   let Name = "GPR64AsmReg";
+  let PredicateMethod = "isGPRAsmReg";
+}
+
+def GPR128AsmOperand : MipsAsmRegOperand {
+  let Name = "GPR128AsmReg";
   let PredicateMethod = "isGPRAsmReg";
 }
 
@@ -667,6 +789,10 @@ def GPR64Opnd : RegisterOperand<GPR64> {
   let ParserMatchClass = GPR64AsmOperand;
 }
 
+def GPR128Opnd : RegisterOperand<GPR128> {
+  let ParserMatchClass = GPR128AsmOperand;
+}
+
 def DSPROpnd : RegisterOperand<DSPR> {
   let ParserMatchClass = GPR32AsmOperand;
 }
@@ -685,6 +811,11 @@ def COP0AsmOperand : MipsAsmRegOperand {
 
 def COP2AsmOperand : MipsAsmRegOperand {
   let Name = "COP2AsmReg";
+}
+
+def VFAsmOperand : MipsAsmRegOperand {
+  let Name = "VFAsmReg";
+  let PredicateMethod = "isVFAsmReg";
 }
 
 def COP3AsmOperand : MipsAsmRegOperand {
@@ -742,6 +873,8 @@ def COP0Opnd : RegisterOperand<COP0> {
 def COP2Opnd : RegisterOperand<COP2> {
   let ParserMatchClass = COP2AsmOperand;
 }
+
+def VFOpnd : RegisterOperand<VFRegs> { let ParserMatchClass = VFAsmOperand; }
 
 def COP3Opnd : RegisterOperand<COP3> {
   let ParserMatchClass = COP3AsmOperand;

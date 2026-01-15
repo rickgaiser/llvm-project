@@ -703,6 +703,23 @@ class ABSS_FM<bits<6> funct, bits<5> fmt> : StdArch {
   let Inst{5-0}   = funct;
 }
 
+// R5900 FPU Accumulator instruction format (fd field = 0)
+// Used for ADDA.S, SUBA.S, MULA.S, MADDA.S, MSUBA.S
+// Format: COP1 | fmt | ft | fs | 0 | funct
+class R5900_FPUACC_FM<bits<6> funct> : StdArch {
+  bits<5> fs;
+  bits<5> ft;
+
+  bits<32> Inst;
+
+  let Inst{31 -26} = 0x11; // COP1
+  let Inst{25 -21} = 0x10; // fmt = S (single precision)
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = 0; // fd = 0 for ACC operations
+  let Inst{5 -0} = funct;
+}
+
 class MFC1_FM<bits<5> funct> : StdArch {
   bits<5> rt;
   bits<5> fs;
@@ -714,6 +731,21 @@ class MFC1_FM<bits<5> funct> : StdArch {
   let Inst{20-16} = rt;
   let Inst{15-11} = fs;
   let Inst{10-0}  = 0;
+}
+
+// R5900 COP2 control register move format (CFC2/CTC2)
+// Format: COP2(6) | funct(5) | rt(5) | rd(5) | 0(11)
+class MFC2_FM<bits<5> funct> : StdArch {
+  bits<5> rt;
+  bits<5> rd;
+
+  bits<32> Inst;
+
+  let Inst{31 -26} = 0x12;  // COP2 opcode
+  let Inst{25 -21} = funct; // sub-opcode: 2=CFC2, 6=CTC2
+  let Inst{20 -16} = rt;    // GPR
+  let Inst{15 -11} = rd;    // COP2 control register
+  let Inst{10 -0} = 0;
 }
 
 class LW_FM<bits<6> op> : StdArch {

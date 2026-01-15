@@ -241,6 +241,17 @@ ABIArgInfo MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset,
   unsigned CurrOffset = llvm::alignTo(Offset, Align);
   Offset = CurrOffset + llvm::alignTo(TySize, Align * 8) / 8;
 
+  // VU0 v4f32 vectors are passed directly in VF registers.
+  // Handle this before the general vector coercion logic.
+  if (Ty->isVectorType() && TySize == 128 &&
+      getContext().getTargetInfo().hasFeature("vu0")) {
+    if (const auto *VT = Ty->getAs<VectorType>()) {
+      if (VT->getElementType()->isSpecificBuiltinType(BuiltinType::Float) &&
+          VT->getNumElements() == 4)
+        return ABIArgInfo::getDirect();
+    }
+  }
+
   // Only pass _Complex float and _Complex double in FPRs when there are 2 free
   // slots, and it's not a variadic argument otherwise use GPRs (or the stack).
   //
@@ -380,6 +391,17 @@ ABIArgInfo MipsABIInfo::classifyReturnType(QualType RetTy) const {
   // However, N32/N64 ignores zero sized return values.
   if (!IsO32 && Size == 0)
     return ABIArgInfo::getIgnore();
+
+  // VU0 v4f32 vectors are returned directly in VF registers.
+  // Handle this before the general vector coercion logic.
+  if (RetTy->isVectorType() && Size == 128 &&
+      getContext().getTargetInfo().hasFeature("vu0")) {
+    if (const auto *VT = RetTy->getAs<VectorType>()) {
+      if (VT->getElementType()->isSpecificBuiltinType(BuiltinType::Float) &&
+          VT->getNumElements() == 4)
+        return ABIArgInfo::getDirect();
+    }
+  }
 
   if (isAggregateTypeForABI(RetTy) || RetTy->isVectorType()) {
     if (Size <= 128) {

@@ -8,19 +8,28 @@
 //
 // The R5900 is an in-order MIPS III core that issues up to two instructions
 // per cycle into two logical pipes:
-//   - pipe 0: FPU operations, multiply/divide (MAC0) and HI/LO moves,
-//   - pipe 1: loads, stores, prefetch, FPU loads/stores/moves, SYNC and COP0,
+//   - pipe 0: FPU and VU0 macro operations, multiply/divide (MAC0), HI/LO
+//     moves and 128-bit multimedia (MMI) operations,
+//   - pipe 1: loads, stores, prefetch, FPU and VU0 loads/stores/moves, SYNC,
+//     COP0, LZC and the pipe 1 multiply/divide (MAC1),
 //   - either pipe: ALU operations and branches.
 // All FPU instructions, including the FPU loads, stores and moves, also use
-// the single COP1 (C1) slot, so at most one of them issues per cycle.
+// the single COP1 (C1) slot, so at most one of them issues per cycle. The
+// same holds for the VU0 macro instructions and the COP2 (C2) slot.
 //
 // The latencies are from the EE Core User's Manual, section 2.12, as measured
 // on hardware. Measured differences from the manual:
 //   - a load result is available to the instruction issued 2 cycles later,
 //   - DIV.S and SQRT.S have a latency of 7 and hold C1 for 2 cycles,
+//     RSQRT.S a latency of 13,
 //   - MFC1 and SWC1 read their FPR one cycle later than FPU operations,
+//     QMFC2 and SQC2 their VF register one cycle later than VU0 operations,
 //   - a C.cond.S result is available to BC1F/BC1T after 6 cycles,
-//   - LWL/LWR/LDL/LDR read the register they merge into 1 cycle late.
+//   - a multiply-add reads the accumulator 2 cycles late,
+//   - LWL/LWR/LDL/LDR read the register they merge into 1 cycle late,
+//   - the VU0 Q register result of VDIV and VSQRT is available after 9
+//     cycles, of VRSQRT after 15,
+//   - a 128-bit MMI operation uses both integer pipes, I0 and I1.
 //
 //===----------------------------------------------------------------------===//
 
@@ -54,12 +63,25 @@ def R5900Pipe0 : ProcResource<1>;
 def R5900Pipe1 : ProcResource<1>;
 def R5900Pipe01 : ProcResGroup<[R5900Pipe0, R5900Pipe1]>;
 
+// The integer pipes I0 and I1. A 128-bit MMI operation uses both, so it does
+// not pair with an ALU, LZC or MAC1 instruction, but it does pair with a load
+// or store (measured).
+def R5900I0 : ProcResource<1>;
+def R5900I1 : ProcResource<1>;
+def R5900I01 : ProcResGroup<[R5900I0, R5900I1]>;
+
 // The COP1 slot, shared by all FPU instructions.
 def R5900C1 : ProcResource<1>;
+// The COP2 (VU0 macro mode) slot.
+def R5900C2 : ProcResource<1>;
 // Multiply/divide unit for HI/LO.
 def R5900MAC0 : ProcResource<1>;
+// Multiply/divide unit for HI1/LO1.
+def R5900MAC1 : ProcResource<1>;
 // FPU divide/square root.
 def R5900FDiv : ProcResource<1>;
+// VU0 divide/square root (Q register).
+def R5900VU0FDiv : ProcResource<1>;
 } // BufferSize = 0
 
 // Instructions complete out of order: a short instruction does not wait for
@@ -78,10 +100,14 @@ class R5900WriteLat<int Lat> : SchedWriteRes<[]> {
   let NumMicroOps = 0;
 }
 
+// MFC1, SWC1, QMFC2 and SQC2 read their FPR or VF register one cycle later
+// than FPU and VU0 operations.
+def R5900ReadFPRLate : SchedReadAdvance<-1>;
+
 // ALU
 // ===
 
-def R5900WriteALU : R5900Write<[R5900Pipe01]>;
+def R5900WriteALU : R5900Write<[R5900Pipe01, R5900I01]>;
 
 def : InstRW<[R5900WriteALU], (instrs ADD, ADDi, ADDiu, ADDu, AND, ANDi,
                                LEA_ADDiu, LUi, NOP, NOR, OR, ORi, SLL, SLLV,
@@ -109,15 +135,47 @@ def R5900WriteMoveHILO : R5900Write<[R5900Pipe0]>;
 def R5900WriteMulHILO : R5900WriteLat<4>;
 def R5900WriteDivHILO : R5900WriteLat<37>;
 
+// A multiply-add reads the accumulator of a previous multiply 2 cycles after
+// it issued, its GPR result is available after 4 cycles.
+def R5900ReadAcc : SchedReadAdvance<2, [R5900WriteMul, R5900WriteMulHILO]>;
+
 // HI and LO are implicit defs, so they each need their own write.
 def : InstRW<[R5900WriteMul, R5900WriteMulHILO],
-             (instrs MULT, MULTu, PseudoMULT, PseudoMULTu)>;
+             (instrs MULT, MULTu, PseudoMULT, PseudoMULTu,
+              PseudoR5900MulMulAdd)>;
+def : InstRW<[R5900WriteMul, R5900WriteMulHILO, R5900WriteMulHILO],
+             (instrs R5900_MULT, R5900_MULTU)>;
+def : InstRW<[R5900WriteMul, R5900WriteMulHILO, R5900WriteMulHILO,
+              ReadDefault, ReadDefault, R5900ReadAcc, R5900ReadAcc],
+             (instrs R5900_MADD, R5900_MADDU)>;
 def : InstRW<[R5900WriteDiv, R5900WriteDivHILO],
              (instrs SDIV, UDIV, PseudoSDIV, PseudoUDIV)>;
 def : InstRW<[R5900WriteMoveHILO], (instrs MFHI, MFLO, MTHI, MTLO, PseudoMFHI,
                                     PseudoMFLO, PseudoMTLOHI, MFHI64, MFLO64,
                                     MTHI64, MTLO64, PseudoMFHI64,
                                     PseudoMFLO64, PseudoMTLOHI64)>;
+
+// Multiply and divide (MAC1)
+// ==========================
+
+def R5900WriteMul1 : R5900Write<[R5900Pipe1, R5900I1, R5900MAC1], 4,
+                                [1, 1, 2]>;
+def R5900WriteDiv1 : R5900Write<[R5900Pipe1, R5900I1, R5900MAC1], 37,
+                                [1, 1, 37]>;
+def R5900WriteMoveHILO1 : R5900Write<[R5900Pipe1]>;
+def R5900WriteMul1HILO : R5900WriteLat<4>;
+def R5900WriteDiv1HILO : R5900WriteLat<37>;
+
+def R5900ReadAcc1 : SchedReadAdvance<2, [R5900WriteMul1,
+                                         R5900WriteMul1HILO]>;
+
+def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO],
+             (instrs MULT1, MULTU1)>;
+def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO,
+              ReadDefault, ReadDefault, R5900ReadAcc1, R5900ReadAcc1],
+             (instrs MADD1, MADDU1)>;
+def : InstRW<[R5900WriteDiv1, R5900WriteDiv1HILO], (instrs DIV1, DIVU1)>;
+def : InstRW<[R5900WriteMoveHILO1], (instrs MFHI1, MFLO1, MTHI1, MTLO1)>;
 
 // Loads, stores and other pipe 1 instructions
 // ===========================================
@@ -126,7 +184,7 @@ def R5900WriteLoad : R5900Write<[R5900Pipe1], 2>;
 def R5900WritePipe1 : R5900Write<[R5900Pipe1]>;
 
 def : InstRW<[R5900WriteLoad], (instrs LB, LBu, LH, LHu, LW, LD, LWu, LB64,
-                                LBu64, LH64, LHu64, LW64)>;
+                                LBu64, LH64, LHu64, LW64, LQ)>;
 // The register an unaligned load merges into is read 1 cycle late, so ldl
 // followed by ldr of the same register takes 2 cycles. The merged register is
 // read 1 of the MachineScheduler, which only counts register operands, and
@@ -135,14 +193,28 @@ def R5900ReadMerge : SchedReadAdvance<1, [R5900WriteLoad]>;
 def : InstRW<[R5900WriteLoad, ReadDefault, R5900ReadMerge, R5900ReadMerge],
              (instrs LWL, LWR, LDL, LDR, LWL64, LWR64)>;
 def : InstRW<[R5900WritePipe1], (instrs SB, SH, SW, SWL, SWR, SD, SDL, SDR,
-                                 SB64, SH64, SW64, SWL64, SWR64)>;
+                                 SB64, SH64, SW64, SWL64, SWR64, SQ)>;
 def : InstRW<[R5900WritePipe1], (instrs PREF, CACHE, SYNC, MFC0, MTC0, DMFC0,
                                  DMTC0, TLBP, TLBR, TLBWI, TLBWR, WAIT, RDHWR,
-                                 RDHWR64)>;
+                                 RDHWR64, EI_R5900, DI_R5900, MFBPC, MFIAB,
+                                 MFIABM, MFDAB, MFDABM, MFDVB, MFDVBM, MTBPC,
+                                 MTIAB, MTIABM, MTDAB, MTDABM, MTDVB,
+                                 MTDVBM)>;
 
 // COP2 (VU0 macro mode) loads, stores and moves
 def : InstRW<[R5900WriteLoad], (instrs LWC2, LDC2, MFC2, MTC2, DMFC2, DMTC2)>;
 def : InstRW<[R5900WritePipe1], (instrs SWC2, SDC2)>;
+
+// The VU0 macro instruction after a transfer to VU0 (LQC2, CTC2) stalls for
+// one cycle (VU Users Manual, section 5.4.4).
+def R5900WriteVU0MoveIn : R5900Write<[R5900Pipe1, R5900C2], 2, [1, 2]>;
+def R5900WriteVU0MoveOut : R5900Write<[R5900Pipe1, R5900C2], 2>;
+def R5900WriteVU0Store : R5900Write<[R5900Pipe1, R5900C2]>;
+
+def : InstRW<[R5900WriteVU0MoveIn], (instrs LQC2, CTC2, QMTC2)>;
+def : InstRW<[R5900WriteVU0MoveOut], (instrs CFC2)>;
+def : InstRW<[R5900WriteVU0MoveOut, R5900ReadFPRLate], (instrs QMFC2)>;
+def : InstRW<[R5900WriteVU0Store, R5900ReadFPRLate], (instrs SQC2)>;
 
 // Branches and jumps
 // ==================
@@ -171,7 +243,8 @@ def : InstRW<[R5900WriteBranch], (instrs BREAK, SYSCALL, TEQ, TEQI, TGE, TGEI,
                                   TGEIU, TGEU, TNE, TNEI, TLT, TLTI, TLTU,
                                   TTLTIU, TRAP, SDBBP)>;
 
-def : InstRW<[R5900WriteBranch], (instrs BC1F, BC1T, BC1FL, BC1TL)>;
+def : InstRW<[R5900WriteBranch], (instrs BC1F, BC1T, BC1FL, BC1TL, BC0F,
+                                  BC0T)>;
 
 // FPU
 // ===
@@ -184,9 +257,6 @@ def R5900WriteFPUMove : R5900Write<[R5900Pipe1, R5900C1], 2>;
 // swc1
 def R5900WriteFPUStore : R5900Write<[R5900Pipe1, R5900C1]>;
 
-// MFC1 and SWC1 read their FPR one cycle later than FPU operations.
-def R5900ReadFPRLate : SchedReadAdvance<-1>;
-
 def : InstRW<[R5900WriteFPU], (instrs FADD_S, FSUB_S, FMUL_S, FABS_S, FNEG_S,
                                FMOV_S, CVT_S_W, CVT_W_S, TRUNC_W_S, CVT_L_S,
                                CVT_L_D64, PseudoCVT_S_W)>;
@@ -195,9 +265,100 @@ def R5900WriteFPUCmp : R5900Write<[R5900Pipe0, R5900C1], 6>;
 def : InstRW<[R5900WriteFPUCmp], (instrs FCMP_S32, C_F_S, C_EQ_S, C_OLT_S,
                                   C_OLE_S)>;
 def : InstRW<[R5900WriteFPUDivSqrt], (instrs FDIV_S, FSQRT_S)>;
+def : InstRW<[R5900WriteFPU], (instrs R5900_MAX_S, R5900_MIN_S)>;
+
+def R5900WriteFPURsqrt : R5900Write<[R5900Pipe0, R5900C1, R5900FDiv], 13,
+                                    [1, 2, 13]>;
+def : InstRW<[R5900WriteFPURsqrt], (instrs R5900_RSQRT_S)>;
+
+// FPU accumulator: an ACC result is available to the next ACC operation
+// after 1 cycle, an FPR result after 4 cycles.
+def R5900WriteFPUAcc : R5900Write<[R5900Pipe0, R5900C1]>;
+
+def : InstRW<[R5900WriteFPUAcc], (instrs ADDA_S, SUBA_S, MULA_S, MADDA_S,
+                                  MSUBA_S)>;
+def : InstRW<[R5900WriteFPU], (instrs R5900_MADD_S, R5900_MSUB_S)>;
 
 def : InstRW<[R5900WriteFPUMove], (instrs LWC1, MTC1, CTC1, CFC1)>;
 def : InstRW<[R5900WriteFPUMove, R5900ReadFPRLate], (instrs MFC1)>;
 def : InstRW<[R5900WriteFPUStore, R5900ReadFPRLate], (instrs SWC1)>;
+
+// VU0 macro mode
+// ==============
+
+// As for the FPU accumulator, an ACC result is available to the next ACC
+// operation after 1 cycle (VU Users Manual, section 5.4.2).
+def R5900WriteVU0 : R5900Write<[R5900Pipe0, R5900C2], 4>;
+def R5900WriteVU0Acc : R5900Write<[R5900Pipe0, R5900C2]>;
+
+// The Q register result, as seen by VWAITQ.
+def R5900WriteVU0Div : R5900Write<[R5900Pipe0, R5900C2, R5900VU0FDiv], 9,
+                                  [1, 1, 9]>;
+def R5900WriteVU0Rsqrt : R5900Write<[R5900Pipe0, R5900C2, R5900VU0FDiv], 15,
+                                    [1, 1, 15]>;
+
+def : InstRW<[R5900WriteVU0], (instrs VADD, VSUB, VMUL, VMADD, VMSUB, VADDm,
+                               VSUBm, VMULm, VMOVE, VMOVEm, VMR32, VABS, VMAX,
+                               VMINI, VCLIPW, VOPMSUB, VADDQ, VSUBQ, VMULQ,
+                               VMADDQ, VMSUBQ, VADD_ISel, VSUB_ISel, VMUL_ISel,
+                               VMAX_ISel, VMINI_ISel, VABS_ISel)>;
+def : InstRW<[R5900WriteVU0], (instregex "^V(ADD|SUB|MUL|MADD|MSUB)bc[xyzw]$",
+                                         "^VMULbc_ISel[xyzw]$")>;
+def : InstRW<[R5900WriteVU0Acc], (instrs VADDA, VSUBA, VMULA, VMADDA, VMSUBA,
+                                  VOPMULA, VNOP, VWAITQ)>;
+def : InstRW<[R5900WriteVU0Div], (instrs VDIV, VSQRT)>;
+def : InstRW<[R5900WriteVU0Rsqrt], (instrs VRSQRT)>;
+def : InstRW<[R5900WriteVU0Acc],
+             (instregex "^V(ADD|SUB|MUL|MADD|MSUB)Abc[xyzw]$")>;
+
+// Multimedia (MMI)
+// ================
+
+// The 128-bit multimedia instructions use both I0 and I1, but issue in pipe 0.
+def R5900WriteMMI : R5900Write<[R5900Pipe0, R5900I0, R5900I1]>;
+def R5900WriteMMIMul : R5900Write<[R5900Pipe0, R5900I0, R5900I1, R5900MAC0,
+                                   R5900MAC1], 4, [1, 1, 1, 2, 2]>;
+def R5900WriteMMIDiv : R5900Write<[R5900Pipe0, R5900I0, R5900I1, R5900MAC0,
+                                   R5900MAC1], 37, [1, 1, 1, 37, 37]>;
+def R5900WriteMMIMulHILO : R5900WriteLat<4>;
+def R5900WriteMMIDivHILO : R5900WriteLat<37>;
+def R5900WriteLZC : R5900Write<[R5900Pipe1, R5900I1]>;
+// Move to/from SA
+def R5900WriteSA : R5900Write<[R5900Pipe0]>;
+
+def : InstRW<[R5900WriteSA], (instrs MFSA, MTSA, MTSAB, MTSAH)>;
+
+def : InstRW<[R5900WriteMMI], (instrs PADDW, PSUBW, PADDH, PSUBH, PADDB, PSUBB,
+                               PAND, POR, PXOR, PNOR, PMAXW, PMINW, PMAXH,
+                               PMINH, PABSW, PABSH, PSLLW, PSRLW, PSRAW, PSLLH,
+                               PSRLH, PSRAH, PSLLVW, PSRLVW, PSRAVW, PCGTW,
+                               PCEQW, PCGTH, PCEQH, PCGTB, PCEQB, PADDSW,
+                               PSUBSW, PADDSH, PSUBSH, PADDSB, PSUBSB, PADDUW,
+                               PSUBUW, PADDUH, PSUBUH, PADDUB, PSUBUB, PADSBH,
+                               PEXTLW, PEXTLH, PEXTLB, PEXTUW, PEXTUH, PEXTUB,
+                               PPACW, PPACH, PPACB, PCPYLD, PCPYUD, PCPYH,
+                               PINTH, PINTEH, PEXEH, PEXEW, PEXCH, PEXCW,
+                               PREVH, PEXT5, PPAC5, PROT3W, QFSRV, PMFHI,
+                               PMFLO, PMTHI, PMTLO, PMFHL_LW, PMFHL_UW,
+                               PMFHL_SLW, PMFHL_LH, PMFHL_SH, PMTHL_LW,
+                               PABSW_S32,
+                               PMAXW_S32, PMINW_S32, PADDSW_S32, PSUBSW_S32,
+                               PADDUW_S32, PSUBUW_S32)>;
+def R5900ReadMMIAcc : SchedReadAdvance<2, [R5900WriteMMIMul,
+                                             R5900WriteMMIMulHILO]>;
+
+// Writes for rd and the implicit HI and LO (and their upper halves).
+def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO,
+              R5900WriteMMIMulHILO],
+             (instrs PMULTW, PMULTUW)>;
+def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO, R5900WriteMMIMulHILO,
+              ReadDefault, ReadDefault, R5900ReadMMIAcc, R5900ReadMMIAcc],
+             (instrs PMADDW, PMSUBW, PMADDUW)>;
+def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO, R5900WriteMMIMulHILO,
+              R5900WriteMMIMulHILO, R5900WriteMMIMulHILO],
+             (instrs PMULTH, PMADDH, PMSUBH, PHMADH, PHMSBH)>;
+def : InstRW<[R5900WriteMMIDiv, R5900WriteMMIDivHILO, R5900WriteMMIDivHILO,
+              R5900WriteMMIDivHILO], (instrs PDIVW, PDIVUW, PDIVBW)>;
+def : InstRW<[R5900WriteLZC], (instrs PLZCW, PLZCW_S32)>;
 
 } // SchedModel = MipsR5900Model

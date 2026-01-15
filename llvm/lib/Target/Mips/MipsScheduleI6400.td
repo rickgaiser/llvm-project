@@ -15,11 +15,11 @@ def MipsI6400Model : SchedMachineModel {
   let CompleteModel = 0;
   let FullInstRWOverlapCheck = 1;
 
-  list<Predicate> UnsupportedFeatures = [HasMips64r5, HasMips32r5,
-                                         InMicroMips, InMips16Mode, HasCnMips,
-					 HasCnMipsP,  HasDSP, HasDSPR2,
-					 HasMips3D, HasMT, HasCRC,
-					 NotMips32r6, NotMips64r6, HasEVA];
+  list<Predicate> UnsupportedFeatures = [HasMips64r5, HasMips32r5, InMicroMips,
+                                         InMips16Mode, HasCnMips, HasCnMipsP,
+                                         HasDSP, HasDSPR2, HasMips3D, HasMT,
+                                         HasCRC, NotMips32r6, NotMips64r6,
+                                         HasEVA, IsR5900, HasVU0];
 }
 
 let SchedModel = MipsI6400Model in {

@@ -361,3 +361,74 @@ void MipsInstPrinter::printRegisterList(const MCInst *MI, int opNum,
     printRegName(O, MI->getOperand(i).getReg());
   }
 }
+
+void MipsInstPrinter::printVU0DestMask(const MCInst *MI, int opNum,
+                                       const MCSubtargetInfo & /* STI */,
+                                       raw_ostream &O) {
+  unsigned Mask = MI->getOperand(opNum).getImm();
+  O << '.';
+  if (Mask & 0b1000)
+    O << 'x';
+  if (Mask & 0b0100)
+    O << 'y';
+  if (Mask & 0b0010)
+    O << 'z';
+  if (Mask & 0b0001)
+    O << 'w';
+}
+
+void MipsInstPrinter::printVU0FieldSel(const MCInst *MI, int opNum,
+                                       const MCSubtargetInfo & /* STI */,
+                                       raw_ostream &O) {
+  unsigned Field = MI->getOperand(opNum).getImm();
+  // Field selector: 0=x, 1=y, 2=z, 3=w
+  switch (Field) {
+  case 0:
+    O << 'x';
+    break;
+  case 1:
+    O << 'y';
+    break;
+  case 2:
+    O << 'z';
+    break;
+  case 3:
+    O << 'w';
+    break;
+  default:
+    O << '?';
+    break; // Invalid
+  }
+}
+
+void MipsInstPrinter::printVFWithField(const MCInst *MI, int opNum,
+                                       const MCSubtargetInfo &STI,
+                                       raw_ostream &O) {
+  // Combined 7-bit operand: bits 6-5 = field, bits 4-0 = register index
+  // Print as: $vfN<field> (e.g., $vf0w)
+  unsigned CombinedValue = MI->getOperand(opNum).getImm();
+  unsigned Field = (CombinedValue >> 5) & 0x3; // bits 6-5
+  unsigned RegIndex = CombinedValue & 0x1F;    // bits 4-0
+
+  // Print register
+  O << "$vf" << RegIndex;
+
+  // Append field selector
+  switch (Field) {
+  case 0:
+    O << 'x';
+    break;
+  case 1:
+    O << 'y';
+    break;
+  case 2:
+    O << 'z';
+    break;
+  case 3:
+    O << 'w';
+    break;
+  default:
+    O << '?';
+    break;
+  }
+}

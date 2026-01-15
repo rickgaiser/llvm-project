@@ -191,8 +191,10 @@ def FeatureFixR5900 : SubtargetFeature<"fix-r5900", "FixR5900", "true",
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
-                                    [FeatureMips3, FeatureSingleFloat,
-                                     FeatureFixR5900]>;
+                                    [FeatureMips3, FeatureSingleFloat]>;
+
+def FeatureVU0 : SubtargetFeature<"vu0", "HasVU0", "true",
+                                  "Enable VU0 SIMD operations (R5900)", [FeatureR5900]>;
 
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",
@@ -309,7 +311,9 @@ def : Proc<"mips64r6", [FeatureMips64r6]>;
 def : Proc<"octeon", [FeatureMips64r2, FeatureCnMips]>;
 def : Proc<"octeon+", [FeatureMips64r2, FeatureCnMips, FeatureCnMipsP]>;
 def : ProcessorModel<"p5600", MipsP5600Model, [ImplP5600]>;
-def : ProcessorModel<"r5900", MipsR5900Model, [FeatureR5900]>;
+// The erratum fix is a CPU default rather than implied by FeatureR5900, so
+// that -mattr=-fix-r5900 does not also disable FeatureR5900.
+def : ProcessorModel<"r5900", MipsR5900Model, [FeatureR5900, FeatureFixR5900]>;
 def : ProcessorModel<"i6400", MipsI6400Model, [ImplI6400]>;
 def : ProcessorModel<"i6500", MipsI6400Model, [ImplI6500]>;
 

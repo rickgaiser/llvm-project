@@ -68,6 +68,8 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPreLegalizerCombinerPass(*PR);
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
+  initializeMipsR5900FPUAccChainPass(*PR);
+  initializeMipsR5900VU0AccChainPass(*PR);
   initializeMipsDAGToDAGISelLegacyPass(*PR);
 }
 
@@ -233,6 +235,13 @@ bool MipsPassConfig::addInstSelector() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+
+  // R5900: Optimize multiply-add chains to use the FPU and VU0 accumulators.
+  // These must run before register allocation so virtual registers are still
+  // in SSA form (one definition per register). Both passes skip functions
+  // whose subtarget is not R5900 (or lacks VU0).
+  addPass(createMipsR5900FPUAccChainPass());
+  addPass(createMipsR5900VU0AccChainPass());
 }
 
 void MipsPassConfig::addPreSched2() {

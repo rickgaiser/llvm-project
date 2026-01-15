@@ -127,6 +127,12 @@ private:
                         raw_ostream &O);
   void printRegisterList(const MCInst *MI, int opNum,
                          const MCSubtargetInfo &STI, raw_ostream &O);
+  void printVU0DestMask(const MCInst *MI, int opNum, const MCSubtargetInfo &STI,
+                        raw_ostream &O);
+  void printVU0FieldSel(const MCInst *MI, int opNum, const MCSubtargetInfo &STI,
+                        raw_ostream &O);
+  void printVFWithField(const MCInst *MI, int opNum, const MCSubtargetInfo &STI,
+                        raw_ostream &O);
 };
 } // end namespace llvm
 

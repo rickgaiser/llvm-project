@@ -49,6 +49,10 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
     DefMips64CPU = "mips3";
   }
 
+  // R5900 is the default for mips64el-*-ps2.
+  if (Triple.getOS() == llvm::Triple::PS2)
+    DefMips64CPU = "r5900";
+
   if (Arg *A = Args.getLastArg(options::OPT_march_EQ, options::OPT_mcpu_EQ))
     CPUName = A->getValue();
 
@@ -79,6 +83,10 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   }
 
   if (ABIName.empty() && Triple.isABIN32())
+    ABIName = "n32";
+
+  // n32 is the default ABI for PS2 Emotion Engine.
+  if (ABIName.empty() && Triple.getOS() == llvm::Triple::PS2)
     ABIName = "n32";
 
   if (ABIName.empty() &&
@@ -420,6 +428,8 @@ void mips::getMIPSTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   AddTargetFeature(Args, Features, options::OPT_mno_madd4, options::OPT_mmadd4,
                    "nomadd4");
   AddTargetFeature(Args, Features, options::OPT_mmt, options::OPT_mno_mt, "mt");
+  AddTargetFeature(Args, Features, options::OPT_mvu0, options::OPT_mno_vu0,
+                   "vu0");
   AddTargetFeature(Args, Features, options::OPT_mcrc, options::OPT_mno_crc,
                    "crc");
   AddTargetFeature(Args, Features, options::OPT_mvirt, options::OPT_mno_virt,

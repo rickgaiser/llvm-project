@@ -34,6 +34,7 @@ class LLVM_LIBRARY_VISIBILITY MipsTargetInfo : public TargetInfo {
   enum MipsFloatABI { HardFloat, SoftFloat } FloatABI;
   enum DspRevEnum { NoDSP, DSP1, DSP2 } DspRev;
   bool HasMSA;
+  bool HasVU0;
   bool DisableMadd4;
   bool UseIndirectJumpHazard;
   bool NoOddSpreg;
@@ -47,7 +48,7 @@ public:
       : TargetInfo(Triple), IsMips16(false), IsMicromips(false),
         IsNan2008(false), IsAbs2008(false), IsSingleFloat(false),
         IsNoABICalls(false), CanUseBSDABICalls(false), FloatABI(HardFloat),
-        DspRev(NoDSP), HasMSA(false), DisableMadd4(false),
+        DspRev(NoDSP), HasMSA(false), HasVU0(false), DisableMadd4(false),
         UseIndirectJumpHazard(false), FPMode(FPXX) {
     TheCXXABI.set(TargetCXXABI::GenericMIPS);
 
@@ -331,6 +332,8 @@ public:
         DspRev = std::max(DspRev, DSP2);
       else if (Feature == "+msa")
         HasMSA = true;
+      else if (Feature == "+vu0")
+        HasVU0 = true;
       else if (Feature == "+nomadd4")
         DisableMadd4 = true;
       else if (Feature == "+fp64") {

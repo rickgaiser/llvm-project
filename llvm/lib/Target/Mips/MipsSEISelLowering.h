@@ -79,6 +79,8 @@ using TargetRegisterClass = MCRegisterClass;
     SDValue lowerLOAD(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSTORE(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerVectorShift(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue lowerMulDiv(SDValue Op, unsigned NewOpc, bool HasLo, bool HasHi,
                         SelectionDAG &DAG) const;
@@ -87,6 +89,8 @@ using TargetRegisterClass = MCRegisterClass;
     SDValue lowerINTRINSIC_W_CHAIN(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerFMA(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     /// Lower VECTOR_SHUFFLE into one of a number of instructions
     /// depending on the indices in the shuffle.
@@ -99,6 +103,9 @@ using TargetRegisterClass = MCRegisterClass;
     MachineBasicBlock *emitMSACBranchPseudo(MachineInstr &MI,
                                             MachineBasicBlock *BB,
                                             unsigned BranchOp) const;
+    /// Emit the R5900 multiply-add chain pseudo instruction
+    MachineBasicBlock *emitR5900MulMulAdd(MachineInstr &MI,
+                                          MachineBasicBlock *BB) const;
     /// Emit the COPY_FW pseudo instruction
     MachineBasicBlock *emitCOPY_FW(MachineInstr &MI,
                                    MachineBasicBlock *BB) const;

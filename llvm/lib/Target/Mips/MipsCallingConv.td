@@ -83,6 +83,10 @@ def CC_MipsO32 : CallingConv<[
 // Only the return rules are defined here for O32. The rules for argument
 // passing are defined in MipsISelLowering.cpp.
 def RetCC_MipsO32 : CallingConv<[
+  // V4SF (128-bit vector float) returned in VF1 when VU0 is enabled (R5900).
+  // This must come first to handle v4f32 before any type splitting.
+  CCIfType<[v4f32], CCIfSubtarget<"hasVU0()", CCAssignToReg<[VF1]>>>,
+
   // Promote i1/i8/i16 return values to i32.
   CCIfType<[i1, i8, i16], CCPromoteToType<i32>>,
 
@@ -154,9 +158,19 @@ def CC_MipsN : CallingConv<[
                                            R8_64, R9_64, R10_64,
                                            R11_64]>>,
 
+  // V4SF (128-bit vector float) arguments are passed in VF registers when VU0
+  // is enabled (R5900). VF12-VF19 with GPR shadows like FPU registers.
+  CCIfType<[v4f32], CCIfSubtarget<"hasVU0()",
+      CCAssignToRegWithShadow<[VF12, VF13, VF14, VF15,
+                               VF16, VF17, VF18, VF19],
+                              [R4_64, R5_64, R6_64, R7_64,
+                               R8_64, R9_64, R10_64, R11_64]>>>,
+
   // All stack parameter slots become 64-bit doublewords and are 8-byte aligned.
   CCIfType<[f32], CCAssignToStack<4, 8>>,
-  CCIfType<[i64, f64], CCAssignToStack<8, 8>>
+  CCIfType<[i64, f64], CCAssignToStack<8, 8>>,
+  // V4SF stack slots are 16 bytes aligned
+  CCIfType<[v4f32], CCAssignToStack<16, 16>>
 ]>;
 
 // N32/64 variable arguments.
@@ -209,7 +223,11 @@ def RetCC_MipsN : CallingConv<[
   CCIfType<[f32], CCAssignToReg<[F0, F2]>>,
 
   // f64 are returned in registers D0, D2
-  CCIfType<[f64], CCAssignToReg<[D0_64, D2_64]>>
+  CCIfType<[f64], CCAssignToReg<[D0_64, D2_64]>>,
+
+  // V4SF (128-bit vector float) returned in VF1 when VU0 is enabled (R5900).
+  // VF0 is constant {0,0,0,1} so cannot be used for return values.
+  CCIfType<[v4f32], CCIfSubtarget<"hasVU0()", CCAssignToReg<[VF1]>>>
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -367,6 +385,9 @@ def CSR_O32_FP64 :
 def CSR_N32 : CalleeSavedRegs<(add(decimate(sequence "D%u_64", 30, 20), 2),
                   R31_64, R30_64, R28_64, (sequence "R%u_64", 23, 16))>;
 
+// N32 with VU0 - adds VF20-VF31 as callee-saved
+def CSR_N32_VU0 : CalleeSavedRegs<(add CSR_N32, (sequence "VF%u", 31, 20))>;
+
 def CSR_N32_NoGP : CalleeSavedRegs<(add(decimate(sequence "D%u_64", 30, 20), 2),
                   R31_64, R30_64, (sequence "R%u_64", 23, 16))>;
 
@@ -380,6 +401,9 @@ def CSR_N32_SingleFloat_NoGP
 
 def CSR_N64 : CalleeSavedRegs<(add (sequence "D%u_64", 31, 24), R31_64, R30_64,
                                    R28_64, (sequence "R%u_64", 23, 16))>;
+
+// N64 with VU0 - adds VF20-VF31 as callee-saved
+def CSR_N64_VU0 : CalleeSavedRegs<(add CSR_N64, (sequence "VF%u", 31, 20))>;
 
 def CSR_N64_NoGP : CalleeSavedRegs<(add (sequence "D%u_64", 31, 24), R31_64, R30_64,
                                    (sequence "R%u_64", 23, 16))>;

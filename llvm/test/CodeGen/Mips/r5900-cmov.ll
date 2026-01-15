@@ -83,11 +83,8 @@ define i64 @select_i64_ult(i64 %x, i64 %y, i64 %a, i64 %b) {
 define i32 @smax(i32 signext %a, i32 signext %b) {
 ; CHECK-LABEL: smax:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    move $2, $5
-; CHECK-NEXT:    slt $1, $2, $4
-; CHECK-NEXT:    # kill: def $r2 killed $r2 killed $r2_64
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    movn $2, $4, $1
+; CHECK-NEXT:    pmaxw $2, $4, $5
   %r = call i32 @llvm.smax.i32(i32 %a, i32 %b)
   ret i32 %r
 }

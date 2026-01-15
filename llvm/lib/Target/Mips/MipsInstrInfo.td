@@ -264,6 +264,8 @@ def IsR5900 : Predicate<"Subtarget->isR5900()">,
               AssemblerPredicate<(all_of FeatureR5900)>;
 def NotR5900 : Predicate<"!Subtarget->isR5900()">,
                AssemblerPredicate<(none_of FeatureR5900)>;
+def HasVU0 : Predicate<"Subtarget->hasVU0()">,
+             AssemblerPredicate<(all_of FeatureVU0)>;
 def HasCRC   : Predicate<"Subtarget->hasCRC()">,
                AssemblerPredicate<(all_of FeatureCRC)>;
 def HasVirt  : Predicate<"Subtarget->hasVirt()">,
@@ -354,6 +356,12 @@ class ISA_MIPS32 {
 }
 class ISA_MIPS32_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+// R5900 has its own 3-operand MULT instead of MIPS32's MUL
+class ISA_MIPS32_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6,
+                                    NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS32R2 {
@@ -2095,7 +2103,7 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
   let Defs = [HI0, LO0] in
     def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, mul>,
-                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6;
+                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   def ADD   : MMRel, StdMMR6Rel, ArithLogicR<"add", GPR32Opnd, 1>,
               ADD_FM<0, 0x20>, ISA_MIPS1;
@@ -2420,9 +2428,9 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
   /// Count Leading
   def CLZ : MMRel, CountLeading0<"clz", GPR32Opnd>, CLO_FM<0x20>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
   def CLO : MMRel, CountLeading1<"clo", GPR32Opnd>, CLO_FM<0x21>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   /// Word Swap Bytes Within Halfwords
   def WSBH : MMRel, SubwordSwap<"wsbh", GPR32Opnd>, SEB_FM<2, 0x20>,
@@ -2960,9 +2968,9 @@ let AdditionalPredicates = [NotInMicroMips] in {
                      ISA_MIPS32R2;
 }
 def : MipsInstAlias<"sdbbp", (SDBBP 0)>, ISA_MIPS32_NOT_32R6_64R6;
-let AdditionalPredicates = [NotInMicroMips] in
-  def : MipsInstAlias<"sync", (SYNC 0), 1>, ISA_MIPS2;
-
+let AdditionalPredicates = [NotInMicroMips] in def : MipsInstAlias<"sync",
+                                                                   (SYNC 0), 1>,
+    ISA_MIPS2;
 def : MipsInstAlias<"mulo $rs, $rt",
                     (MULOMacro GPR32Opnd:$rs, GPR32Opnd:$rs, GPR32Opnd:$rt), 0>,
                     ISA_MIPS1_NOT_32R6_64R6;
@@ -3475,3 +3483,11 @@ include "MicroMips32r6InstrInfo.td"
 // Micromips DSP
 include "MicroMipsDSPInstrFormats.td"
 include "MicroMipsDSPInstrInfo.td"
+
+// R5900 EE Core and MMI
+include "MipsR5900InstrFormats.td"
+include "MipsR5900InstrInfo.td"
+
+// R5900 VU0 (COP2)
+include "MipsVU0InstrFormats.td"
+include "MipsVU0InstrInfo.td"

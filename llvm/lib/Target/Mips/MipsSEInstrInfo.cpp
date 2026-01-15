@@ -160,6 +160,25 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   } else if (Mips::MSA128BRegClass.contains(DestReg)) { // Copy to MSA reg
     if (Mips::MSA128BRegClass.contains(SrcReg))
       Opc = Mips::MOVE_V;
+  } else if (Mips::VFRegsRegClass.contains(
+                 DestReg)) { // Copy to VF reg (R5900 VU0)
+    if (Mips::VFRegsRegClass.contains(SrcReg)) {
+      // VU0 VMOVE requires a dest mask operand, use xyzw (0xF) for full copy
+      BuildMI(MBB, I, DL, get(Mips::VMOVE), DestReg)
+          .addImm(0xF) // xyzw mask - copy all 4 components
+          .addReg(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  } else if (Mips::GPR128RegClass.contains(
+                 DestReg)) { // Copy to GPR128 (R5900 MMI)
+    if (Mips::GPR128RegClass.contains(SrcReg)) {
+      // Use POR to copy 128-bit registers: POR $dest, $src, $src
+      // Only the second use gets the kill flag
+      BuildMI(MBB, I, DL, get(Mips::POR), DestReg)
+          .addReg(SrcReg)
+          .addReg(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
   }
 
   assert(Opc && "Cannot copy registers");
@@ -233,6 +252,8 @@ void MipsSEInstrInfo::storeRegToStack(MachineBasicBlock &MBB,
     Opc = Mips::SDC1;
   else if (Mips::FGR64RegClass.hasSubClassEq(RC))
     Opc = Mips::SDC164;
+  else if (Mips::GPR128RegClass.hasSubClassEq(RC))
+    Opc = Mips::SQ; // R5900 128-bit GPR spill
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::ST_B;
   else if (RI.isTypeLegalForClass(*RC, MVT::v8i16) ||
@@ -313,6 +334,8 @@ void MipsSEInstrInfo::loadRegFromStack(MachineBasicBlock &MBB,
     Opc = Mips::LDC1;
   else if (Mips::FGR64RegClass.hasSubClassEq(RC))
     Opc = Mips::LDC164;
+  else if (Mips::GPR128RegClass.hasSubClassEq(RC))
+    Opc = Mips::LQ; // R5900 128-bit GPR reload
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::LD_B;
   else if (RI.isTypeLegalForClass(*RC, MVT::v8i16) ||

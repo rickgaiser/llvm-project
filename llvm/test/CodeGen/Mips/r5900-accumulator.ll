@@ -13,23 +13,19 @@ define void @mul4(ptr %p, i32 %s, ptr %r) {
 ; R5900-NEXT:    sll $1, $4, 0
 ; R5900-NEXT:    sll $3, $5, 0
 ; R5900-NEXT:    lw $2, 0($1)
-; R5900-NEXT:    mult $2, $3
-; R5900-NEXT:    lw $2, 4($1)
-; R5900-NEXT:    mflo $4
-; R5900-NEXT:    mult $2, $3
-; R5900-NEXT:    lw $2, 8($1)
+; R5900-NEXT:    sll $6, $6, 0
+; R5900-NEXT:    lw $4, 4($1)
+; R5900-NEXT:    lw $5, 8($1)
 ; R5900-NEXT:    lw $1, 12($1)
-; R5900-NEXT:    mflo $5
-; R5900-NEXT:    mult $2, $3
-; R5900-NEXT:    mflo $2
-; R5900-NEXT:    mult $1, $3
-; R5900-NEXT:    sll $1, $6, 0
-; R5900-NEXT:    sw $4, 0($1)
-; R5900-NEXT:    sw $5, 4($1)
-; R5900-NEXT:    sw $2, 8($1)
-; R5900-NEXT:    mflo $3
+; R5900-NEXT:    mult $2, $2, $3
+; R5900-NEXT:    mult $4, $4, $3
+; R5900-NEXT:    mult $5, $5, $3
+; R5900-NEXT:    sw $2, 0($6)
+; R5900-NEXT:    mult $1, $1, $3
+; R5900-NEXT:    sw $4, 4($6)
+; R5900-NEXT:    sw $5, 8($6)
 ; R5900-NEXT:    jr $ra
-; R5900-NEXT:    sw $3, 12($1)
+; R5900-NEXT:    sw $1, 12($6)
 ;
 ; MIPS3-LABEL: mul4:
 ; MIPS3:       # %bb.0:
@@ -94,10 +90,8 @@ define i32 @divrem(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; R5900-NEXT:    mfhi $4
 ; R5900-NEXT:    mflo $6
 ; R5900-NEXT:    addu $4, $6, $4
-; R5900-NEXT:    mult $2, $4
-; R5900-NEXT:    mflo $2
 ; R5900-NEXT:    jr $ra
-; R5900-NEXT:    nop
+; R5900-NEXT:    mult $2, $2, $4
 ;
 ; MIPS3-LABEL: divrem:
 ; MIPS3:       # %bb.0:

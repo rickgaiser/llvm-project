@@ -324,6 +324,7 @@ public:
     CUDA,   // NVIDIA CUDA
     NVCL,   // NVIDIA OpenCL
     AMDHSA, // AMD HSA Runtime
+    PS2,
     PS4,
     PS5,
     ELFIAMCU,
