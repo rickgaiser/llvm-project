@@ -91,8 +91,9 @@ def IsR5900          : Predicate<"Subtarget->isR5900()">,
 // They are mutually exclusive.
 //===----------------------------------------------------------------------===//
 
-class FGR_32 { list<Predicate> FGRPredicates = [NotFP64bit]; }
-class FGR_64 { list<Predicate> FGRPredicates = [IsFP64bit]; }
+// R5900 has 32x32-bit FPU registers with single-precision only
+class FGR_32 { list<Predicate> FGRPredicates = [NotFP64bit, NotR5900]; }
+class FGR_64 { list<Predicate> FGRPredicates = [IsFP64bit, NotR5900]; }
 class HARDFLOAT { list<Predicate> HardFloatPredicate = [IsNotSoftFloat]; }
 
 //===----------------------------------------------------------------------===//
