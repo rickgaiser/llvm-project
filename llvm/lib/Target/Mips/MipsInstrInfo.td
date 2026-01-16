@@ -330,6 +330,11 @@ class ISA_MIPS2_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips2, NotMips32r6, NotMips64r6];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
+// R5900 has no LL/SC (atomic) instructions
+class ISA_MIPS2_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [HasMips2, NotMips32r6, NotMips64r6, NotR5900];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
 class ISA_MIPS3 {
   list<Predicate> InsnPredicates = [HasMips3];
   list<Predicate> EncodingPredicates = [HasStdEnc];
@@ -339,7 +344,7 @@ class ISA_MIPS3_NOT_32R6_64R6 {
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 // R5900 doesn't support DMULT/DMULTU/DDIV/DDIVU - use its 32-bit pipeline instead
-class ISA_MIPS3_NOT_32R6_64R6_NOT_R5900 {
+class ISA_MIPS3_NOT_32R6_64R6_R5900 {
   list<Predicate> InsnPredicates = [HasMips3, NotMips32r6, NotMips64r6, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
@@ -352,7 +357,7 @@ class ISA_MIPS32_NOT_32R6_64R6 {
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 // R5900 has its own 3-operand MULT instead of MIPS32's MUL
-class ISA_MIPS32_NOT_32R6_64R6_NOT_R5900 {
+class ISA_MIPS32_NOT_32R6_64R6_R5900 {
   list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
@@ -2111,7 +2116,7 @@ let AdditionalPredicates = [NotInMicroMips] in {
   // Note: R5900 uses 3-operand MULT instead of MUL
   let Defs = [HI0, LO0] in
     def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, II_MUL, mul>,
-                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6_NOT_R5900;
+                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   def ADD   : MMRel, StdMMR6Rel, ArithLogicR<"add", GPR32Opnd, 1, II_ADD>,
               ADD_FM<0, 0x20>, ISA_MIPS1;
@@ -2265,8 +2270,9 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
 let AdditionalPredicates = [NotInMicroMips] in {
 /// Load-linked, Store-conditional
-def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;
-def SC : SCBase<"sc", GPR32Opnd>, LW_FM<0x38>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;
+/// Note: R5900 has no LL/SC (atomic) instructions
+def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6_R5900;
+def SC : SCBase<"sc", GPR32Opnd>, LW_FM<0x38>, PTR_32, ISA_MIPS2_NOT_32R6_64R6_R5900;
 }
 /// Jump and Branch Instructions
 let AdditionalPredicates = [NotInMicroMips, RelocNotPIC] in
@@ -2416,10 +2422,11 @@ let AdditionalPredicates = [NotInMicroMips] in {
             SEB_FM<0x18, 0x20>, ISA_MIPS32R2;
 
   /// Count Leading
+  /// Note: R5900 uses PLZCW instead of CLZ/CLO
   def CLZ : MMRel, CountLeading0<"clz", GPR32Opnd, II_CLZ>, CLO_FM<0x20>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
   def CLO : MMRel, CountLeading1<"clo", GPR32Opnd, II_CLO>, CLO_FM<0x21>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   /// Word Swap Bytes Within Halfwords
   def WSBH : MMRel, SubwordSwap<"wsbh", GPR32Opnd, II_WSBH>, SEB_FM<2, 0x20>,
