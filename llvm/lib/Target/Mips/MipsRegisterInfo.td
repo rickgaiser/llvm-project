@@ -160,39 +160,40 @@ let Namespace = "Mips" in {
   def RA_64   : Mips64GPRReg< 31, "ra",  [RA]>, DwarfRegNum<[31]>;
 
   // General Purpose 128-bit Registers (R5900)
+  // Note: No DwarfRegNum - DWARF mapping uses the 64-bit sub-registers
   let isConstant = true in
-  def ZERO_128 : Mips128GPRReg< 0, "zero", [ZERO_64]>, DwarfRegNum<[0]>;
-  def AT_128   : Mips128GPRReg< 1, "1",    [AT_64]>, DwarfRegNum<[1]>;
-  def V0_128   : Mips128GPRReg< 2, "2",    [V0_64]>, DwarfRegNum<[2]>;
-  def V1_128   : Mips128GPRReg< 3, "3",    [V1_64]>, DwarfRegNum<[3]>;
-  def A0_128   : Mips128GPRReg< 4, "4",    [A0_64]>, DwarfRegNum<[4]>;
-  def A1_128   : Mips128GPRReg< 5, "5",    [A1_64]>, DwarfRegNum<[5]>;
-  def A2_128   : Mips128GPRReg< 6, "6",    [A2_64]>, DwarfRegNum<[6]>;
-  def A3_128   : Mips128GPRReg< 7, "7",    [A3_64]>, DwarfRegNum<[7]>;
-  def T0_128   : Mips128GPRReg< 8, "8",    [T0_64]>, DwarfRegNum<[8]>;
-  def T1_128   : Mips128GPRReg< 9, "9",    [T1_64]>, DwarfRegNum<[9]>;
-  def T2_128   : Mips128GPRReg< 10, "10",  [T2_64]>, DwarfRegNum<[10]>;
-  def T3_128   : Mips128GPRReg< 11, "11",  [T3_64]>, DwarfRegNum<[11]>;
-  def T4_128   : Mips128GPRReg< 12, "12",  [T4_64]>, DwarfRegNum<[12]>;
-  def T5_128   : Mips128GPRReg< 13, "13",  [T5_64]>, DwarfRegNum<[13]>;
-  def T6_128   : Mips128GPRReg< 14, "14",  [T6_64]>, DwarfRegNum<[14]>;
-  def T7_128   : Mips128GPRReg< 15, "15",  [T7_64]>, DwarfRegNum<[15]>;
-  def S0_128   : Mips128GPRReg< 16, "16",  [S0_64]>, DwarfRegNum<[16]>;
-  def S1_128   : Mips128GPRReg< 17, "17",  [S1_64]>, DwarfRegNum<[17]>;
-  def S2_128   : Mips128GPRReg< 18, "18",  [S2_64]>, DwarfRegNum<[18]>;
-  def S3_128   : Mips128GPRReg< 19, "19",  [S3_64]>, DwarfRegNum<[19]>;
-  def S4_128   : Mips128GPRReg< 20, "20",  [S4_64]>, DwarfRegNum<[20]>;
-  def S5_128   : Mips128GPRReg< 21, "21",  [S5_64]>, DwarfRegNum<[21]>;
-  def S6_128   : Mips128GPRReg< 22, "22",  [S6_64]>, DwarfRegNum<[22]>;
-  def S7_128   : Mips128GPRReg< 23, "23",  [S7_64]>, DwarfRegNum<[23]>;
-  def T8_128   : Mips128GPRReg< 24, "24",  [T8_64]>, DwarfRegNum<[24]>;
-  def T9_128   : Mips128GPRReg< 25, "25",  [T9_64]>, DwarfRegNum<[25]>;
-  def K0_128   : Mips128GPRReg< 26, "26",  [K0_64]>, DwarfRegNum<[26]>;
-  def K1_128   : Mips128GPRReg< 27, "27",  [K1_64]>, DwarfRegNum<[27]>;
-  def GP_128   : Mips128GPRReg< 28, "gp",  [GP_64]>, DwarfRegNum<[28]>;
-  def SP_128   : Mips128GPRReg< 29, "sp",  [SP_64]>, DwarfRegNum<[29]>;
-  def FP_128   : Mips128GPRReg< 30, "fp",  [FP_64]>, DwarfRegNum<[30]>;
-  def RA_128   : Mips128GPRReg< 31, "ra",  [RA_64]>, DwarfRegNum<[31]>;
+  def ZERO_128 : Mips128GPRReg< 0, "zero", [ZERO_64]>;
+  def AT_128   : Mips128GPRReg< 1, "1",    [AT_64]>;
+  def V0_128   : Mips128GPRReg< 2, "2",    [V0_64]>;
+  def V1_128   : Mips128GPRReg< 3, "3",    [V1_64]>;
+  def A0_128   : Mips128GPRReg< 4, "4",    [A0_64]>;
+  def A1_128   : Mips128GPRReg< 5, "5",    [A1_64]>;
+  def A2_128   : Mips128GPRReg< 6, "6",    [A2_64]>;
+  def A3_128   : Mips128GPRReg< 7, "7",    [A3_64]>;
+  def T0_128   : Mips128GPRReg< 8, "8",    [T0_64]>;
+  def T1_128   : Mips128GPRReg< 9, "9",    [T1_64]>;
+  def T2_128   : Mips128GPRReg< 10, "10",  [T2_64]>;
+  def T3_128   : Mips128GPRReg< 11, "11",  [T3_64]>;
+  def T4_128   : Mips128GPRReg< 12, "12",  [T4_64]>;
+  def T5_128   : Mips128GPRReg< 13, "13",  [T5_64]>;
+  def T6_128   : Mips128GPRReg< 14, "14",  [T6_64]>;
+  def T7_128   : Mips128GPRReg< 15, "15",  [T7_64]>;
+  def S0_128   : Mips128GPRReg< 16, "16",  [S0_64]>;
+  def S1_128   : Mips128GPRReg< 17, "17",  [S1_64]>;
+  def S2_128   : Mips128GPRReg< 18, "18",  [S2_64]>;
+  def S3_128   : Mips128GPRReg< 19, "19",  [S3_64]>;
+  def S4_128   : Mips128GPRReg< 20, "20",  [S4_64]>;
+  def S5_128   : Mips128GPRReg< 21, "21",  [S5_64]>;
+  def S6_128   : Mips128GPRReg< 22, "22",  [S6_64]>;
+  def S7_128   : Mips128GPRReg< 23, "23",  [S7_64]>;
+  def T8_128   : Mips128GPRReg< 24, "24",  [T8_64]>;
+  def T9_128   : Mips128GPRReg< 25, "25",  [T9_64]>;
+  def K0_128   : Mips128GPRReg< 26, "26",  [K0_64]>;
+  def K1_128   : Mips128GPRReg< 27, "27",  [K1_64]>;
+  def GP_128   : Mips128GPRReg< 28, "gp",  [GP_64]>;
+  def SP_128   : Mips128GPRReg< 29, "sp",  [SP_64]>;
+  def FP_128   : Mips128GPRReg< 30, "fp",  [FP_64]>;
+  def RA_128   : Mips128GPRReg< 31, "ra",  [RA_64]>;
 
   /// Mips Single point precision FPU Registers
   foreach I = 0-31 in
