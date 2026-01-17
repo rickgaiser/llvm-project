@@ -83,14 +83,17 @@ def IsNotSoftFloat   : Predicate<"!Subtarget->useSoftFloat()">,
                        AssemblerPredicate<(all_of (not FeatureSoftFloat))>;
 def HasMips3D        : Predicate<"Subtarget->has3D()">,
                        AssemblerPredicate<(all_of FeatureMips3D)>;
+def IsR5900          : Predicate<"Subtarget->isR5900()">,
+                       AssemblerPredicate<(all_of FeatureR5900)>;
 
 //===----------------------------------------------------------------------===//
 // Mips FGR size adjectives.
 // They are mutually exclusive.
 //===----------------------------------------------------------------------===//
 
-class FGR_32 { list<Predicate> FGRPredicates = [NotFP64bit]; }
-class FGR_64 { list<Predicate> FGRPredicates = [IsFP64bit]; }
+// R5900 has 32x32-bit FPU registers with single-precision only
+class FGR_32 { list<Predicate> FGRPredicates = [NotFP64bit, NotR5900]; }
+class FGR_64 { list<Predicate> FGRPredicates = [IsFP64bit, NotR5900]; }
 class HARDFLOAT { list<Predicate> HardFloatPredicate = [IsNotSoftFloat]; }
 
 //===----------------------------------------------------------------------===//
@@ -388,17 +391,17 @@ defm D64 : C_COND_M<"d", FGR64Opnd, 17, II_C_CC_D>, ISA_MIPS1_NOT_32R6_64R6,
 let AdditionalPredicates = [NotInMicroMips], mayRaiseFPException = 1 in {
   def ROUND_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"round.w.s", FGR32Opnd, FGR32Opnd, II_ROUND>,
-                  ABSS_FM<0xc, 16>, ISA_MIPS2;
+                  ABSS_FM<0xc, 16>, ISA_MIPS2, NOT_R5900;
   defm ROUND_W  : ROUND_M<"round.w.d", II_ROUND>, ABSS_FM<0xc, 17>, ISA_MIPS2;
   def TRUNC_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"trunc.w.s", FGR32Opnd, FGR32Opnd, II_TRUNC>,
-                  ABSS_FM<0xd, 16>, ISA_MIPS2;
+                  ABSS_FM<0xd, 16>, ISA_MIPS2, NOT_R5900;
   def CEIL_W_S  : MMRel, StdMMR6Rel,
                   ABSS_FT<"ceil.w.s", FGR32Opnd, FGR32Opnd, II_CEIL>,
-                  ABSS_FM<0xe, 16>, ISA_MIPS2;
+                  ABSS_FM<0xe, 16>, ISA_MIPS2, NOT_R5900;
   def FLOOR_W_S : MMRel, StdMMR6Rel,
                   ABSS_FT<"floor.w.s", FGR32Opnd, FGR32Opnd, II_FLOOR>,
-                  ABSS_FM<0xf, 16>, ISA_MIPS2;
+                  ABSS_FM<0xf, 16>, ISA_MIPS2, NOT_R5900;
 
   defm TRUNC_W : ROUND_M<"trunc.w.d", II_TRUNC>, ABSS_FM<0xd, 17>, ISA_MIPS2;
   defm CEIL_W  : ROUND_M<"ceil.w.d", II_CEIL>, ABSS_FM<0xe, 17>, ISA_MIPS2;
@@ -541,10 +544,13 @@ let DecoderNamespace = "MipsFP64", mayRaiseFPException = 1, Uses = [FCR31] in {
 
 let isPseudo = 1, isCodeGenOnly = 1 in {
   def PseudoCVT_S_W : ABSS_FT<"", FGR32Opnd, GPR32Opnd, II_CVT>;
-  def PseudoCVT_D32_W : ABSS_FT<"", AFGR64Opnd, GPR32Opnd, II_CVT>;
-  def PseudoCVT_S_L : ABSS_FT<"", FGR64Opnd, GPR64Opnd, II_CVT>;
-  def PseudoCVT_D64_W : ABSS_FT<"", FGR64Opnd, GPR32Opnd, II_CVT>;
-  def PseudoCVT_D64_L : ABSS_FT<"", FGR64Opnd, GPR64Opnd, II_CVT>;
+  // R5900 has single-float only, exclude double-precision and 64-bit FPU conversions
+  let Predicates = [NotR5900] in {
+    def PseudoCVT_D32_W : ABSS_FT<"", AFGR64Opnd, GPR32Opnd, II_CVT>;
+    def PseudoCVT_S_L : ABSS_FT<"", FGR64Opnd, GPR64Opnd, II_CVT>;
+    def PseudoCVT_D64_W : ABSS_FT<"", FGR64Opnd, GPR32Opnd, II_CVT>;
+    def PseudoCVT_D64_L : ABSS_FT<"", FGR64Opnd, GPR64Opnd, II_CVT>;
+  }
 }
 
 let AdditionalPredicates = [NotInMicroMips, UseAbs] in {
@@ -605,10 +611,11 @@ let AdditionalPredicates = [NotInMicroMips] in {
     let DecoderNamespace = "MipsFP64";
   }
 
+  // R5900 has single-float only, no 64-bit FPU transfers
   def DMTC1 : MTC1_FT<"dmtc1", FGR64Opnd, GPR64Opnd, II_DMTC1,
-              bitconvert>, MFC1_FM<5>, ISA_MIPS3;
+              bitconvert>, MFC1_FM<5>, ISA_MIPS3, NOT_R5900;
   def DMFC1 : MFC1_FT<"dmfc1", GPR64Opnd, FGR64Opnd, II_DMFC1,
-                      bitconvert>, MFC1_FM<1>, ISA_MIPS3;
+                      bitconvert>, MFC1_FM<1>, ISA_MIPS3, NOT_R5900;
   let isMoveReg = 1 in {
     def FMOV_S   : MMRel, ABSS_FT<"mov.s", FGR32Opnd, FGR32Opnd, II_MOV_S>,
                    ABSS_FM<0x6, 16>, ISA_MIPS1;
@@ -959,6 +966,10 @@ def : MipsPat<(f32 fpimm0neg), (FNEG_S (MTC1 ZERO))>, ISA_MIPS1;
 
 def : MipsPat<(f32 (any_sint_to_fp GPR32Opnd:$src)),
               (PseudoCVT_S_W GPR32Opnd:$src)>;
+// R5900: use CVT_W_S (always truncates toward zero, no TRUNC_W_S on R5900)
+let Predicates = [HasR5900] in
+def : MipsPat<(MipsTruncIntFP FGR32Opnd:$src),
+              (CVT_W_S FGR32Opnd:$src)>;
 def : MipsPat<(MipsTruncIntFP FGR32Opnd:$src),
               (TRUNC_W_S FGR32Opnd:$src)>, ISA_MIPS1;
 
@@ -1031,3 +1042,27 @@ let AdditionalPredicates = [NotInMicroMips] in {
     def : StoreRegImmPat<SDC1, f64>, ISA_MIPS1, FGR_32;
   }
 }
+
+let Predicates = [IsR5900, IsNotSoftFloat] in {
+
+//===----------------------------------------------------------------------===//
+// R5900 Min/Max Instructions
+//===----------------------------------------------------------------------===//
+// MAX.S and MIN.S are R5900-specific floating-point min/max operations.
+
+def R5900_MAX_S : ADDS_FT<"max.s", FGR32Opnd, II_MAX_S, 1, fmaxnum>,
+                  ADDS_FM<0x28, 16>;
+def R5900_MIN_S : ADDS_FT<"min.s", FGR32Opnd, II_MIN_S, 1, fminnum>,
+                  ADDS_FM<0x29, 16>;
+
+//===----------------------------------------------------------------------===//
+// R5900 RSQRT.S (Reciprocal Square Root)
+//===----------------------------------------------------------------------===//
+// R5900 RSQRT.S is 3-operand: fd = fs / sqrt(ft)
+// This differs from MIPS IV RSQRT.S which is 2-operand: fd = 1/sqrt(fs)
+
+def R5900_RSQRT_S : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
+                           "rsqrt.s\t$fd, $fs, $ft", [], II_RSQRT_S, FrmFR, "rsqrt.s">,
+                    ADDS_FM<0x16, 16>;
+
+} // Predicates = [IsR5900, IsNotSoftFloat]

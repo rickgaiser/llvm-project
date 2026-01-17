@@ -186,6 +186,10 @@ def NotMips4_32  :    Predicate<"!Subtarget->hasMips4_32()">,
                       AssemblerPredicate<(all_of (not FeatureMips4_32))>;
 def HasMips4_32r2 :   Predicate<"Subtarget->hasMips4_32r2()">,
                       AssemblerPredicate<(all_of FeatureMips4_32r2)>;
+def HasMips4_r5900 :  Predicate<"Subtarget->hasMips4_r5900()">,
+                      AssemblerPredicate<(all_of FeatureMips4_r5900)>;
+def HasMips4_32_r5900 : Predicate<"Subtarget->hasMips4_32() || Subtarget->hasMips4_r5900()">,
+                      AssemblerPredicate<(any_of FeatureMips4_32, FeatureMips4_r5900)>;
 def HasMips5_32r2 :   Predicate<"Subtarget->hasMips5_32r2()">,
                       AssemblerPredicate<(all_of FeatureMips5_32r2)>;
 def HasMips32    :    Predicate<"Subtarget->hasMips32()">,
@@ -259,6 +263,10 @@ def UseIndirectJumpsHazard : Predicate<"Subtarget->useIndirectJumpsHazard()">,
                             AssemblerPredicate<(all_of FeatureUseIndirectJumpsHazard)>;
 def NoIndirectJumpGuards : Predicate<"!Subtarget->useIndirectJumpsHazard()">,
                            AssemblerPredicate<(all_of (not FeatureUseIndirectJumpsHazard))>;
+def HasR5900     :    Predicate<"Subtarget->isR5900()">,
+                      AssemblerPredicate<(all_of FeatureR5900)>;
+def NotR5900     :    Predicate<"!Subtarget->isR5900()">,
+                      AssemblerPredicate<(all_of (not FeatureR5900))>;
 def HasCRC   : Predicate<"Subtarget->hasCRC()">,
                AssemblerPredicate<(all_of FeatureCRC)>;
 def HasVirt  : Predicate<"Subtarget->hasVirt()">,
@@ -312,12 +320,20 @@ class ISA_MIPS1_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [NotMips32r6, NotMips64r6];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
+class ISA_MIPS1_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [NotMips32r6, NotMips64r6, NotR5900];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
 class ISA_MIPS2 {
   list<Predicate> InsnPredicates = [HasMips2];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS2_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips2, NotMips32r6, NotMips64r6];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+class ISA_MIPS2_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [HasMips2, NotMips32r6, NotMips64r6, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS3 {
@@ -328,12 +344,20 @@ class ISA_MIPS3_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips3, NotMips32r6, NotMips64r6];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
+class ISA_MIPS3_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [HasMips3, NotMips32r6, NotMips64r6, NotR5900];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
 class ISA_MIPS32 {
   list<Predicate> InsnPredicates = [HasMips32];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS32_NOT_32R6_64R6 {
   list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+class ISA_MIPS32_NOT_32R6_64R6_R5900 {
+  list<Predicate> InsnPredicates = [HasMips32, NotMips32r6, NotMips64r6, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS32R2 {
@@ -425,6 +449,13 @@ class INSN_MIPS4_32_NOT_32R6_64R6 {
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 
+// MIPS-IV instructions supported by both MIPS32 and R5900 (MOVN, MOVZ).
+// Does not include MOVT/MOVF which require FP condition flags.
+class INSN_MIPS4_32_R5900_NOT_32R6_64R6 {
+  list<Predicate> InsnPredicates = [HasMips4_32_r5900, NotMips32r6, NotMips64r6];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+
 // The portions of MIPS-IV that were also added to MIPS32r2 but were removed in
 // MIPS32r6 and MIPS64r6.
 class INSN_MIPS4_32R2_NOT_32R6_64R6 {
@@ -459,6 +490,10 @@ class ASE_CNMIPSP {
 
 class NOT_ASE_CNMIPSP {
   list<Predicate> ASEPredicate = [NotCnMipsP];
+}
+
+class NOT_R5900 {
+  list<Predicate> ASEPredicate = [NotR5900];
 }
 
 class ASE_MIPS64_CNMIPS {
@@ -1833,15 +1868,19 @@ class Atomic2Ops<PatFrag Op, RegisterClass DRC> :
   let hasNoSchedulingInfo = 1;
 }
 
+// R5900 does not have LL/SC instructions, so exclude atomic pseudo-ops.
 class Atomic2OpsPostRA<RegisterClass RC> :
   PseudoSE<(outs RC:$dst), (ins PtrRC:$ptr, RC:$incr), []> {
   let mayLoad = 1;
   let mayStore = 1;
+  let Predicates = [NotR5900];
 }
 
 class Atomic2OpsSubwordPostRA<RegisterClass RC> :
   PseudoSE<(outs RC:$dst), (ins PtrRC:$ptr, RC:$incr, RC:$mask, RC:$mask2,
-                                RC:$shiftamnt), []>;
+                                RC:$shiftamnt), []> {
+  let Predicates = [NotR5900];
+}
 
 // Atomic Compare & Swap.
 // Atomic compare and swap is lowered into two stages. The first stage happens
@@ -1856,6 +1895,7 @@ class AtomicCmpSwapPostRA<RegisterClass RC> :
   PseudoSE<(outs RC:$dst), (ins PtrRC:$ptr, RC:$cmp, RC:$swap), []> {
   let mayLoad = 1;
   let mayStore = 1;
+  let Predicates = [NotR5900];
 }
 
 class AtomicCmpSwapSubwordPostRA<RegisterClass RC> :
@@ -1863,6 +1903,7 @@ class AtomicCmpSwapSubwordPostRA<RegisterClass RC> :
                                 RC:$mask2, RC:$ShiftNewVal, RC:$ShiftAmt), []> {
   let mayLoad = 1;
   let mayStore = 1;
+  let Predicates = [NotR5900];
 }
 
 class LLBase<string opstr, RegisterOperand RO, DAGOperand MO = mem> :
@@ -2076,9 +2117,10 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def SUBu : MMRel, StdMMR6Rel, ArithLogicR<"subu", GPR32Opnd, 0, II_SUBU, sub>,
              ADD_FM<0, 0x23>, ISA_MIPS1;
 
+  // Note: R5900 uses 3-operand MULT instead of MUL
   let Defs = [HI0, LO0] in
     def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, II_MUL, mul>,
-                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6;
+                ADD_FM<0x1c, 2>, ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   def ADD   : MMRel, StdMMR6Rel, ArithLogicR<"add", GPR32Opnd, 1, II_ADD>,
               ADD_FM<0, 0x20>, ISA_MIPS1;
@@ -2164,16 +2206,16 @@ def LDC2 : StdMMR6Rel, LW_FT2<"ldc2", COP2Opnd, II_LDC2, load>, LW_FM<0x36>,
 def SDC2 : StdMMR6Rel, SW_FT2<"sdc2", COP2Opnd, II_SDC2, store>,
            LW_FM<0x3e>, ISA_MIPS2_NOT_32R6_64R6;
 
-// COP3 Memory Instructions
+// COP3 Memory Instructions (R5900 does not have COP3)
 let DecoderNamespace = "COP3_" in {
   def LWC3 : LW_FT3<"lwc3", COP3Opnd, II_LWC3, load>, LW_FM<0x33>,
-             ISA_MIPS1_NOT_32R6_64R6, NOT_ASE_CNMIPS;
+             ISA_MIPS1_NOT_32R6_64R6_R5900, NOT_ASE_CNMIPS;
   def SWC3 : SW_FT3<"swc3", COP3Opnd, II_SWC3, store>, LW_FM<0x3b>,
-             ISA_MIPS1_NOT_32R6_64R6, NOT_ASE_CNMIPS;
+             ISA_MIPS1_NOT_32R6_64R6_R5900, NOT_ASE_CNMIPS;
   def LDC3 : LW_FT3<"ldc3", COP3Opnd, II_LDC3, load>, LW_FM<0x37>,
-             ISA_MIPS2, NOT_ASE_CNMIPS;
+             ISA_MIPS2_NOT_32R6_64R6_R5900, NOT_ASE_CNMIPS;
   def SDC3 : SW_FT3<"sdc3", COP3Opnd, II_SDC3, store>, LW_FM<0x3f>,
-             ISA_MIPS2, NOT_ASE_CNMIPS;
+             ISA_MIPS2_NOT_32R6_64R6_R5900, NOT_ASE_CNMIPS;
 }
 
   def SYNC : MMRel, StdMMR6Rel, SYNC_FT<"sync">, SYNC_FM, ISA_MIPS2;
@@ -2232,8 +2274,8 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
 let AdditionalPredicates = [NotInMicroMips] in {
 /// Load-linked, Store-conditional
-def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;
-def SC : SCBase<"sc", GPR32Opnd>, LW_FM<0x38>, PTR_32, ISA_MIPS2_NOT_32R6_64R6;
+def LL : LLBase<"ll", GPR32Opnd>, LW_FM<0x30>, PTR_32, ISA_MIPS2_NOT_32R6_64R6_R5900;
+def SC : SCBase<"sc", GPR32Opnd>, LW_FM<0x38>, PTR_32, ISA_MIPS2_NOT_32R6_64R6_R5900;
 }
 /// Jump and Branch Instructions
 let AdditionalPredicates = [NotInMicroMips, RelocNotPIC] in
@@ -2384,9 +2426,9 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
   /// Count Leading
   def CLZ : MMRel, CountLeading0<"clz", GPR32Opnd, II_CLZ>, CLO_FM<0x20>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
   def CLO : MMRel, CountLeading1<"clo", GPR32Opnd, II_CLO>, CLO_FM<0x21>,
-            ISA_MIPS32_NOT_32R6_64R6;
+            ISA_MIPS32_NOT_32R6_64R6_R5900;
 
   /// Word Swap Bytes Within Halfwords
   def WSBH : MMRel, SubwordSwap<"wsbh", GPR32Opnd, II_WSBH>, SEB_FM<2, 0x20>,
@@ -2915,6 +2957,10 @@ let AdditionalPredicates = [NotInMicroMips] in {
                       (SRAV GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
   def : MipsInstAlias<"srl $rd, $rt",
                       (SRLV GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+  def : MipsInstAlias<"slt $rd, $rt",
+                      (SLT GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
+  def : MipsInstAlias<"sltu $rd, $rt",
+                      (SLTu GPR32Opnd:$rd, GPR32Opnd:$rd, GPR32Opnd:$rt), 0>;
   def : MipsInstAlias<"seh $rd", (SEH GPR32Opnd:$rd, GPR32Opnd:$rd), 0>,
                      ISA_MIPS32R2;
   def : MipsInstAlias<"seb $rd", (SEB GPR32Opnd:$rd, GPR32Opnd:$rd), 0>,
@@ -3436,3 +3482,7 @@ include "MicroMips32r6InstrInfo.td"
 // Micromips DSP
 include "MicroMipsDSPInstrFormats.td"
 include "MicroMipsDSPInstrInfo.td"
+
+// R5900 EE Core
+include "MipsR5900InstrFormats.td"
+include "MipsR5900InstrInfo.td"

@@ -124,6 +124,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // CPU supports cnMIPSP (Cavium Networks Octeon+ CPU).
   bool HasCnMipsP;
 
+  // IsR5900 - CPU is R5900 (PlayStation 2 Emotion Engine).
+  bool IsR5900 = false;
+
   // isLinux - Target system is Linux. Is false we consider ELFOS for now.
   bool IsLinux;
 
@@ -143,6 +146,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
 
   // HasMips4_32r2 - Has the subset of MIPS-IV present in MIPS32r2
   bool HasMips4_32r2;
+
+  // HasMips4_r5900 - Has the R5900 subset of MIPS-IV (MOVN/MOVZ, not MOVT/MOVF)
+  bool HasMips4_r5900 = false;
 
   // HasMips5_32r2 - Has the subset of MIPS-V present in MIPS32r2
   bool HasMips5_32r2;
@@ -240,6 +246,10 @@ public:
   bool isPositionIndependent() const;
   /// This overrides the PostRAScheduler bit in the SchedModel for each CPU.
   bool enablePostRAScheduler() const override;
+  /// Enable MachineScheduler for R5900 to get better load/FPU interleaving.
+  bool enableMachineScheduler() const override;
+  /// Enable Post-RA MachineScheduler for R5900 to interleave loads/mults.
+  bool enablePostRAMachineScheduler() const override;
   void getCriticalPathRCs(RegClassVector &CriticalPathRCs) const override;
   CodeGenOptLevel getOptLevelToEnablePostRAScheduler() const override;
 
@@ -269,6 +279,7 @@ public:
   bool hasMips5() const { return MipsArchVersion >= Mips5; }
   bool hasMips4_32() const { return HasMips4_32; }
   bool hasMips4_32r2() const { return HasMips4_32r2; }
+  bool hasMips4_r5900() const { return HasMips4_r5900; }
   bool hasMips32() const {
     return (MipsArchVersion >= Mips32 && MipsArchVersion < Mips32Max) ||
            hasMips64();
@@ -297,6 +308,7 @@ public:
 
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
+  bool isR5900() const { return IsR5900; }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }

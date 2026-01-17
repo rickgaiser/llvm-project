@@ -99,6 +99,8 @@ def FeatureMips3       : SubtargetFeature<"mips3", "MipsArchVersion", "Mips3",
 def FeatureMips4_32    : SubtargetFeature<"mips4_32", "HasMips4_32", "true",
                                 "Subset of MIPS-IV that is also in MIPS32 "
                                 "[highly experimental]">;
+def FeatureMips4_r5900 : SubtargetFeature<"mips4_r5900", "HasMips4_r5900", "true",
+                                "R5900 subset of MIPS-IV">;
 def FeatureMips4_32r2  : SubtargetFeature<"mips4_32r2", "HasMips4_32r2", "true",
                                 "Subset of MIPS-IV that is also in MIPS32r2 "
                                 "[highly experimental]">;
@@ -186,6 +188,11 @@ def FeatureCnMipsP : SubtargetFeature<"cnmipsp", "HasCnMipsP",
                                       "true", "Octeon+ cnMIPS Support",
                                       [FeatureCnMips]>;
 
+def FeatureR5900  : SubtargetFeature<"r5900", "IsR5900", "true",
+                                     "R5900 (PS2 Emotion Engine) Support",
+                                     [FeatureMips3, FeatureMips4_r5900,
+                                      FeatureSingleFloat]>;
+
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",
                                "UseTCCInDIV", "false",
@@ -248,6 +255,7 @@ include "MipsCombine.td"
 // Avoid forward declaration issues.
 include "MipsScheduleI6400.td"
 include "MipsScheduleP5600.td"
+include "MipsScheduleR5900.td"
 include "MipsScheduleGeneric.td"
 
 defm : RemapAllTargetPseudoPointerOperands<mips_ptr_rc>;
@@ -296,6 +304,7 @@ def : Proc<"mips64r6", [FeatureMips64r6]>;
 def : Proc<"octeon", [FeatureMips64r2, FeatureCnMips]>;
 def : Proc<"octeon+", [FeatureMips64r2, FeatureCnMips, FeatureCnMipsP]>;
 def : ProcessorModel<"p5600", MipsP5600Model, [ImplP5600]>;
+def : ProcessorModel<"r5900", MipsR5900Model, [FeatureR5900]>;
 def : ProcessorModel<"i6400", MipsI6400Model, [ImplI6400]>;
 def : ProcessorModel<"i6500", MipsI6400Model, [ImplI6500]>;
 

@@ -30,6 +30,7 @@
 #include "llvm/CodeGen/GlobalISel/Legalizer.h"
 #include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Attributes.h"
@@ -200,6 +201,12 @@ public:
     // enabled.
     EnableTailMerge = !getMipsSubtarget().enableLongBranchPass();
     EnableLoopTermFold = true;
+
+    // R5900: Use the modern MachineScheduler for post-RA scheduling.
+    // This provides better instruction interleaving than the legacy PostRA
+    // scheduler by respecting the SchedMachineModel latencies.
+    if (getMipsSubtarget().isR5900())
+      substitutePass(&PostRASchedulerID, &PostMachineSchedulerID);
   }
 
   MipsTargetMachine &getMipsTargetMachine() const {
@@ -265,6 +272,13 @@ MipsTargetMachine::getTargetTransformInfo(const Function &F) const {
 
   LLVM_DEBUG(errs() << "Target Transform Info Pass Added\n");
   return TargetTransformInfo(std::make_unique<MipsTTIImpl>(this, F));
+}
+
+ScheduleDAGInstrs *
+MipsTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
+  // Use the modern post-RA scheduler that respects SchedMachineModel latencies.
+  // This replaces the legacy post-RA-sched which requires Itineraries.
+  return createSchedPostRA(C);
 }
 
 MachineFunctionInfo *MipsTargetMachine::createMachineFunctionInfo(

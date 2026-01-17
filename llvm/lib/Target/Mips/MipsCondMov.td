@@ -105,27 +105,27 @@ multiclass MovnPats<RegisterClass CRC, RegisterClass DRC, Instruction MOVNInst,
 // Instantiation of instructions.
 let AdditionalPredicates = [NotInMicroMips] in {
   def MOVZ_I_I : MMRel, CMov_I_I_FT<"movz", GPR32Opnd, GPR32Opnd, II_MOVZ>,
-                 ADD_FM<0, 0xa>, INSN_MIPS4_32_NOT_32R6_64R6;
+                 ADD_FM<0, 0xa>, INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 
   let isCodeGenOnly = 1 in {
     def MOVZ_I_I64   : CMov_I_I_FT<"movz", GPR32Opnd, GPR64Opnd, II_MOVZ>,
-                       ADD_FM<0, 0xa>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xa>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
     def MOVZ_I64_I   : CMov_I_I_FT<"movz", GPR64Opnd, GPR32Opnd, II_MOVZ>,
-                       ADD_FM<0, 0xa>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xa>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
     def MOVZ_I64_I64 : CMov_I_I_FT<"movz", GPR64Opnd, GPR64Opnd, II_MOVZ>,
-                       ADD_FM<0, 0xa>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xa>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   }
 
   def MOVN_I_I     : MMRel, CMov_I_I_FT<"movn", GPR32Opnd, GPR32Opnd, II_MOVN>,
-                     ADD_FM<0, 0xb>, INSN_MIPS4_32_NOT_32R6_64R6;
+                     ADD_FM<0, 0xb>, INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 
   let isCodeGenOnly = 1 in {
     def MOVN_I_I64   : CMov_I_I_FT<"movn", GPR32Opnd, GPR64Opnd, II_MOVN>,
-                       ADD_FM<0, 0xb>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xb>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
     def MOVN_I64_I   : CMov_I_I_FT<"movn", GPR64Opnd, GPR32Opnd, II_MOVN>,
-                       ADD_FM<0, 0xb>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xb>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
     def MOVN_I64_I64 : CMov_I_I_FT<"movn", GPR64Opnd, GPR64Opnd, II_MOVN>,
-                       ADD_FM<0, 0xb>, INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+                       ADD_FM<0, 0xb>, INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   }
   def MOVZ_I_S : MMRel, CMov_I_F_FT<"movz.s", GPR32Opnd, FGR32Opnd, II_MOVZ_S>,
                  CMov_I_F_FM<18, 16>, INSN_MIPS4_32_NOT_32R6_64R6;
@@ -197,37 +197,37 @@ let AdditionalPredicates = [NotInMicroMips] in {
 
   // Instantiation of conditional move patterns.
   defm : MovzPats0<GPR32, GPR32, MOVZ_I_I, SLT, SLTu, SLTi, SLTiu>,
-         INSN_MIPS4_32_NOT_32R6_64R6;
-  defm : MovzPats1<GPR32, GPR32, MOVZ_I_I, XOR>, INSN_MIPS4_32_NOT_32R6_64R6;
-  defm : MovzPats2<GPR32, GPR32, MOVZ_I_I, XORi>, INSN_MIPS4_32_NOT_32R6_64R6;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6;
+  defm : MovzPats1<GPR32, GPR32, MOVZ_I_I, XOR>, INSN_MIPS4_32_R5900_NOT_32R6_64R6;
+  defm : MovzPats2<GPR32, GPR32, MOVZ_I_I, XORi>, INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 
   defm : MovzPats0<GPR32, GPR64, MOVZ_I_I64, SLT, SLTu, SLTi, SLTiu>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats0<GPR64, GPR32, MOVZ_I_I, SLT64, SLTu64, SLTi64, SLTiu64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats0<GPR64, GPR64, MOVZ_I_I64, SLT64, SLTu64, SLTi64, SLTiu64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats1<GPR32, GPR64, MOVZ_I_I64, XOR>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats1<GPR64, GPR32, MOVZ_I64_I, XOR64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats1<GPR64, GPR64, MOVZ_I64_I64, XOR64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats2<GPR32, GPR64, MOVZ_I_I64, XORi>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats2<GPR64, GPR32, MOVZ_I64_I, XORi64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
   defm : MovzPats2<GPR64, GPR64, MOVZ_I64_I64, XORi64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
 
-  defm : MovnPats<GPR32, GPR32, MOVN_I_I, XOR>, INSN_MIPS4_32_NOT_32R6_64R6;
+  defm : MovnPats<GPR32, GPR32, MOVN_I_I, XOR>, INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 
-  defm : MovnPats<GPR32, GPR64, MOVN_I_I64, XOR>, INSN_MIPS4_32_NOT_32R6_64R6,
+  defm : MovnPats<GPR32, GPR64, MOVN_I_I64, XOR>, INSN_MIPS4_32_R5900_NOT_32R6_64R6,
          GPR_64;
-  defm : MovnPats<GPR64, GPR32, MOVN_I64_I, XOR64>, INSN_MIPS4_32_NOT_32R6_64R6,
+  defm : MovnPats<GPR64, GPR32, MOVN_I64_I, XOR64>, INSN_MIPS4_32_R5900_NOT_32R6_64R6,
          GPR_64;
   defm : MovnPats<GPR64, GPR64, MOVN_I64_I64, XOR64>,
-         INSN_MIPS4_32_NOT_32R6_64R6, GPR_64;
+         INSN_MIPS4_32_R5900_NOT_32R6_64R6, GPR_64;
 
   defm : MovzPats0<GPR32, FGR32, MOVZ_I_S, SLT, SLTu, SLTi, SLTiu>,
          INSN_MIPS4_32_NOT_32R6_64R6;

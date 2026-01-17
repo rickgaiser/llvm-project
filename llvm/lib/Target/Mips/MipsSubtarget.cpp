@@ -241,7 +241,20 @@ bool MipsSubtarget::isPositionIndependent() const {
 }
 
 /// This overrides the PostRAScheduler bit in the SchedModel for any CPU.
-bool MipsSubtarget::enablePostRAScheduler() const { return true; }
+/// Disable legacy PostRA scheduler when MachineScheduler is used (R5900).
+bool MipsSubtarget::enablePostRAScheduler() const {
+  if (enableMachineScheduler())
+    return false;
+  return true;
+}
+
+/// Enable MachineScheduler for R5900 to better interleave loads with FPU ops.
+bool MipsSubtarget::enableMachineScheduler() const { return isR5900(); }
+
+/// Enable Post-RA MachineScheduler for R5900 to interleave loads/mults.
+/// This provides better instruction scheduling than the legacy PostRA scheduler
+/// by using the SchedMachineModel latencies from MipsScheduleR5900.td.
+bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
 
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
   CriticalPathRCs.clear();
