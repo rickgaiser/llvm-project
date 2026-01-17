@@ -188,7 +188,7 @@ def FeatureCnMipsP : SubtargetFeature<"cnmipsp", "HasCnMipsP",
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
-                                    [FeatureMips3, FeatureSoftFloat]>;
+                                    [FeatureMips3, FeatureSingleFloat]>;
 
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",

@@ -259,8 +259,8 @@ def UseIndirectJumpsHazard : Predicate<"Subtarget->useIndirectJumpsHazard()">,
                             AssemblerPredicate<(all_of FeatureUseIndirectJumpsHazard)>;
 def NoIndirectJumpGuards : Predicate<"!Subtarget->useIndirectJumpsHazard()">,
                            AssemblerPredicate<(all_of (not FeatureUseIndirectJumpsHazard))>;
-def HasR5900 : Predicate<"Subtarget->isR5900()">,
-               AssemblerPredicate<(all_of FeatureR5900)>;
+def IsR5900 : Predicate<"Subtarget->isR5900()">,
+              AssemblerPredicate<(all_of FeatureR5900)>;
 def NotR5900 : Predicate<"!Subtarget->isR5900()">,
                AssemblerPredicate<(all_of (not FeatureR5900))>;
 def HasCRC   : Predicate<"Subtarget->hasCRC()">,
@@ -339,6 +339,10 @@ class ISA_MIPS2_NOT_32R6_64R6_R5900 {
 }
 class ISA_MIPS3 {
   list<Predicate> InsnPredicates = [HasMips3];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
+class ISA_MIPS3_NOT_R5900 {
+  list<Predicate> InsnPredicates = [HasMips3, NotR5900];
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
 class ISA_MIPS3_NOT_32R6_64R6 {
