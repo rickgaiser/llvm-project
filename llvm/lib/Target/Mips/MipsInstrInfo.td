@@ -2612,6 +2612,13 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def PREF :  MMRel, CacheOp<"pref", mem>, CACHEOP_FM<0b110011>,
               INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 }
+// cache and pref for MIPS I CPUs with FeaturePS2Cache: only the mnemonics, the
+// compiler does not emit them.
+let AdditionalPredicates = [NotInMicroMips, HasPS2CachePred],
+    hasNoSchedulingInfo = 1, DecoderNamespace = "R3000A" in {
+  def CACHE_R3000A : CacheOp<"cache", mem>, CACHEOP_FM<0b101111>;
+  def PREF_R3000A : CacheOp<"pref", mem>, CACHEOP_FM<0b110011>;
+}
 // FIXME: We are missing the prefx instruction.
 def ROL : MipsAsmPseudoInst<(outs),
                             (ins GPR32Opnd:$rs, GPR32Opnd:$rt, GPR32Opnd:$rd),

@@ -189,6 +189,14 @@ def FeatureCnMipsP : SubtargetFeature<"cnmipsp", "HasCnMipsP",
 def FeatureFixR5900 : SubtargetFeature<"fix-r5900", "FixR5900", "true",
                                        "Enable R5900 short loop erratum fix">;
 
+// Accepts the cache and pref mnemonics without the rest of FeatureMips3_32,
+// which would change what the compiler selects for MIPS I. IOP assembly
+// (sysclib's memset.S, memcpy.S, ...) uses them; GNU as accepts them there.
+// pref is advisory, so executing it is safe.
+def FeaturePS2Cache : SubtargetFeature<"ps2cache", "HasPS2Cache", "true",
+                                       "Accept cache/pref, without pulling "
+                                       "in the rest of FeatureMips3_32">;
+
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
                                     [FeatureMips3, FeatureSingleFloat]>;
@@ -241,6 +249,9 @@ def IsPTR32bit    :   Predicate<"!Subtarget->isABI_N64()">,
                       AssemblerPredicate<(none_of FeaturePTR64Bit)>;
 def UseCompactBranches : Predicate<"Subtarget->useCompactBranches()">,
                          AssemblerPredicate<(all_of FeatureUseCompactBranches)>;
+
+def HasPS2CachePred : Predicate<"Subtarget->hasPS2Cache()">,
+                      AssemblerPredicate<(all_of FeaturePS2Cache)>;
 
 //===----------------------------------------------------------------------===//
 // HwModes
@@ -298,6 +309,9 @@ class Proc<string Name, list<SubtargetFeature> Features>
 
 def : Proc<"generic", [FeatureMips32]>;
 def : Proc<"mips1", [FeatureMips1]>;
+// R3000A: the CPU of the PS2 IOP (and of the original PlayStation). MIPS I,
+// plus the mnemonics of FeaturePS2Cache for existing IOP assembly.
+def : Proc<"r3000a", [FeatureMips1, FeaturePS2Cache]>;
 def : Proc<"mips2", [FeatureMips2]>;
 def : Proc<"mips32", [FeatureMips32]>;
 def : Proc<"mips32r2", [FeatureMips32r2]>;

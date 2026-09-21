@@ -148,6 +148,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // FixR5900 - Enable R5900 short loop erratum fix.
   bool FixR5900;
 
+  // HasPS2Cache - accept cache/pref (see FeaturePS2Cache in Mips.td).
+  bool HasPS2Cache;
+
   // UseSmallSection - Small section is used.
   bool UseSmallSection;
 
@@ -323,6 +326,7 @@ public:
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
   bool isR5900() const { return IsR5900; }
+  bool hasPS2Cache() const { return HasPS2Cache; }
   bool fixR5900() const { return FixR5900; }
   bool hasVU0() const { return HasVU0; }
   bool isVFReserved(unsigned I) const { return ReservedVF[I]; }

@@ -56,8 +56,8 @@ static constexpr llvm::StringLiteral ValidCPUNames[] = {
     {"mips1"},  {"mips2"},    {"mips3"},    {"mips4"},    {"mips5"},
     {"mips32"}, {"mips32r2"}, {"mips32r3"}, {"mips32r5"}, {"mips32r6"},
     {"mips64"}, {"mips64r2"}, {"mips64r3"}, {"mips64r5"}, {"mips64r6"},
-    {"octeon"}, {"octeon+"},  {"p5600"},    {"r5900"},    {"i6400"},
-    {"i6500"}};
+    {"octeon"}, {"octeon+"},  {"p5600"},    {"r5900"},    {"r3000a"},
+    {"i6400"},  {"i6500"}};
 
 bool MipsTargetInfo::isValidCPUName(StringRef Name) const {
   return llvm::is_contained(ValidCPUNames, Name);
