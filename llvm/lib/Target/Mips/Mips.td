@@ -197,6 +197,12 @@ def FeaturePS2Cache : SubtargetFeature<"ps2cache", "HasPS2Cache", "true",
                                        "Accept cache/pref, without pulling "
                                        "in the rest of FeatureMips3_32">;
 
+// Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
+// feature of the same name or every compile warns.
+def FeatureR3000A : SubtargetFeature<"r3000a", "HasPS2Cache", "true",
+                                     "R3000A (PS2 IOP) support",
+                                     [FeatureMips1, FeaturePS2Cache]>;
+
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
                                     [FeatureMips3, FeatureSingleFloat]>;
@@ -311,7 +317,7 @@ def : Proc<"generic", [FeatureMips32]>;
 def : Proc<"mips1", [FeatureMips1]>;
 // R3000A: the CPU of the PS2 IOP (and of the original PlayStation). MIPS I,
 // plus the mnemonics of FeaturePS2Cache for existing IOP assembly.
-def : Proc<"r3000a", [FeatureMips1, FeaturePS2Cache]>;
+def : Proc<"r3000a", [FeatureR3000A]>;
 def : Proc<"mips2", [FeatureMips2]>;
 def : Proc<"mips32", [FeatureMips32]>;
 def : Proc<"mips32r2", [FeatureMips32r2]>;
