@@ -304,6 +304,10 @@ class SYM_64 { list<Predicate> SYMPredicates = [IsSym64]; }
 class ISA_MIPS1 {
   list<Predicate> EncodingPredicates = [HasStdEnc];
 }
+class ISA_MIPS1_MIPS2 {
+  list<Predicate> InsnPredicates = [NotMips3, NotMips4_32];
+  list<Predicate> EncodingPredicates = [HasStdEnc];
+}
 class ISA_MIPS1_NOT_MIPS3 {
   list<Predicate> InsnPredicates = [NotMips3];
   list<Predicate> EncodingPredicates = [HasStdEnc];
@@ -2596,6 +2600,8 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def TLBR : MMRel, TLB<"tlbr">, COP0_TLB_FM<0x01>, ISA_MIPS1;
   def TLBWI : MMRel, TLB<"tlbwi">, COP0_TLB_FM<0x02>, ISA_MIPS1;
   def TLBWR : MMRel, TLB<"tlbwr">, COP0_TLB_FM<0x06>, ISA_MIPS1;
+  let DecoderNamespace = "MipsRfe" in
+  def RFE : TLB<"rfe">, COP0_TLB_FM<0x10>, ISA_MIPS1_MIPS2;
 }
 class CacheOp<string instr_asm, Operand MemOpnd> :
     InstSE<(outs), (ins  MemOpnd:$addr, uimm5:$hint),

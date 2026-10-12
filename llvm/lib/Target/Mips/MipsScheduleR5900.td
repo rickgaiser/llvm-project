@@ -205,9 +205,9 @@ def : InstRW<[R5900WriteLoad, ReadDefault, R5900ReadMerge, R5900ReadMerge],
 def : InstRW<[R5900WritePipe1], (instrs SB, SH, SW, SWL, SWR, SD, SDL, SDR,
                                  SB64, SH64, SW64, SWL64, SWR64, SQ)>;
 def : InstRW<[R5900WritePipe1], (instrs PREF, CACHE, SYNC, MFC0, MTC0, DMFC0,
-                                 DMTC0, TLBP, TLBR, TLBWI, TLBWR, WAIT, RDHWR,
-                                 RDHWR64, EI_R5900, DI_R5900, MFBPC, MFIAB,
-                                 MFIABM, MFDAB, MFDABM, MFDVB, MFDVBM, MTBPC,
+                                 DMTC0, TLBP, TLBR, TLBWI, TLBWR, RFE, WAIT,
+                                 RDHWR, RDHWR64, EI_R5900, DI_R5900, MFBPC,
+                                 MFIAB, MFIABM, MFDAB, MFDABM, MFDVB, MFDVBM, MTBPC,
                                  MTIAB, MTIABM, MTDAB, MTDABM, MTDVB,
                                  MTDVBM)>;
 

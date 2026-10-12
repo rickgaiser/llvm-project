@@ -176,6 +176,7 @@ a:
         swr       $s1,-26590($14)
         syscall                        # CHECK: syscall                # encoding: [0x00,0x00,0x00,0x0c]
         syscall   256                  # CHECK: syscall 256            # encoding: [0x00,0x00,0x40,0x0c]
+        rfe                            # CHECK: rfe                    # encoding: [0x42,0x00,0x00,0x10]
         tlbp                           # CHECK: tlbp                   # encoding: [0x42,0x00,0x00,0x08]
                                        # CHECK-NEXT:                   # <MCInst #{{[0-9]+}} TLBP
                                        # CHECK-NOT:                    # <MCInst #{{[0-9]+}} TLBP_MM

@@ -90,7 +90,7 @@ def : InstRW<[P5600WriteJumpAndLink], (instrs JALX)> {
 def P5600COP0 : SchedWriteRes<[P5600IssueCTISTD, P5600CTISTD]>;
 
 def : InstRW<[P5600COP0], (instrs TLBINV, TLBINVF, TLBP, TLBR, TLBWI, TLBWR,
-                           MFC0, MTC0)>;
+                           RFE, MFC0, MTC0)>;
 
 def P5600COP2 : SchedWriteRes<[P5600IssueCTISTD, P5600CTISTD]>;
 
