@@ -77,6 +77,8 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMicroMipsSizeReducePass(*PR);
   initializeMipsPreLegalizerCombinerPass(*PR);
   initializeMipsPostLegalizerCombinerPass(*PR);
+  initializeMipsSplitHi16Pass(*PR);
+  initializeMipsSinkHi16Pass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
   initializeMipsR5900Div1Pass(*PR);
   initializeMipsFoldAddressOffsetPass(*PR);
@@ -320,6 +322,7 @@ bool MipsPassConfig::addILPOpts() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+  addPass(createMipsSplitHi16Pass());
   if (getOptLevel() != CodeGenOptLevel::None)
     addPass(createMipsOptimizeZeroExtPass());
   // R5900: drop the MTSABs that repeat the shift amount of the one before.
@@ -435,6 +438,9 @@ MachineFunctionInfo *MipsTargetMachine::createMachineFunctionInfo(
 // Implemented by targets that want to run passes immediately before
 // machine code is emitted.
 void MipsPassConfig::addPreEmitPass() {
+  // Keeps each %hi lui next to the instruction that uses it; see the pass.
+  addPass(createMipsSinkHi16Pass());
+
   // Expand pseudo instructions that are sensitive to register allocation.
   addPass(createMipsExpandPseudoPass());
 

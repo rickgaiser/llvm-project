@@ -18,6 +18,7 @@
 #include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -86,6 +87,14 @@ static unsigned getMatchingLoType(const ELFRelocationEntry &Reloc) {
 
 // Determine whether a relocation X is a low-part and matches the high-part R
 // perfectly by symbol and addend.
+namespace llvm {
+cl::opt<bool> MipsSplitHi16Opt(
+    "mips-split-hi16",
+    cl::desc("MIPS: emit one lui %hi per use and keep each HI16 right before "
+             "its LO16 (PS2 IOP modules)"),
+    cl::init(false), cl::Hidden);
+} // namespace llvm
+
 static bool isMatchingReloc(unsigned MatchingType, const ELFRelocationEntry &R,
                             const ELFRelocationEntry &X) {
   return X.Type == MatchingType && X.Symbol == R.Symbol && X.Addend == R.Addend;
@@ -348,6 +357,23 @@ void MipsELFObjectWriter::sortRelocs(std::vector<ELFRelocationEntry> &Relocs) {
   for (auto I : Hi16) {
     auto &R = I->R;
     unsigned MatchingType = getMatchingLoType(R);
+    // With one lui per use, a HI16 pairs with the first unclaimed LO16 for the
+    // same symbol after it, whatever the addends are. Put it right before
+    // that LO16, as IRX1 needs.
+    if (MipsSplitHi16Opt) {
+      auto Pair = Sorted.end();
+      for (auto J = std::next(I); J != Sorted.end(); ++J)
+        if (J->R.Type == MatchingType && J->R.Symbol == R.Symbol &&
+            !J->Matched) {
+          Pair = J;
+          break;
+        }
+      if (Pair != Sorted.end()) {
+        Pair->Matched = true;
+        Sorted.splice(Pair, Sorted, I);
+        continue;
+      }
+    }
     // If the next relocation is a perfect match, continue;
     if (std::next(I) != Sorted.end() &&
         isMatchingReloc(MatchingType, R, std::next(I)->R))

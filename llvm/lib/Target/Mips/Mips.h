@@ -60,6 +60,8 @@ FunctionPass *createMipsR5900IssuePass(bool KeepSCEVAA = false);
 FunctionPass *createMipsR5900SAHazardPass();
 FunctionPass *createMipsR5900SARedundantPass();
 FunctionPass *createMipsR5900DeadDefsPass();
+FunctionPass *createMipsSplitHi16Pass();
+FunctionPass *createMipsSinkHi16Pass();
 
 InstructionSelector *
 createMipsInstructionSelector(const MipsTargetMachine &, const MipsSubtarget &,
@@ -80,6 +82,8 @@ void initializeMipsR5900Mult1Pass(PassRegistry &);
 void initializeMipsR5900FPUAccChainPass(PassRegistry &);
 void initializeMipsR5900LoopAccPass(PassRegistry &);
 void initializeMipsR5900IssuePass(PassRegistry &);
+void initializeMipsSplitHi16Pass(PassRegistry &);
+void initializeMipsSinkHi16Pass(PassRegistry &);
 } // namespace llvm
 
 #endif
