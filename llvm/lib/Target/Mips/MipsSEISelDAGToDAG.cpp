@@ -425,7 +425,43 @@ bool MipsSEDAGToDAGISel::selectAddrRegImm(SDValue Addr, SDValue &Base,
     }
   }
 
+  // Constant absolute addresses such as memory-mapped registers: put the low
+  // 16 bits in the instruction and build only the upper half, so
+  //  lui $2, 0xbf80
+  //  lw  $2, -0x7d98($2)
+  // replaces lui + ori + lw.
+  if (Subtarget->foldConstantAddresses()) {
+    if (selectAddrConstant(Addr, Base, Offset))
+      return true;
+  }
+
   return false;
+}
+
+/// Split a constant 32-bit address into a LUI of the upper half and a signed
+/// 16-bit load/store offset. The upper half is rounded so that adding the
+/// sign-extended offset reproduces the address.
+bool MipsSEDAGToDAGISel::selectAddrConstant(SDValue Addr, SDValue &Base,
+                                            SDValue &Offset) const {
+  auto *CN = dyn_cast<ConstantSDNode>(Addr);
+  EVT ValTy = Addr.getValueType();
+  if (!CN || ValTy != MVT::i32 || !isInt<32>(CN->getSExtValue()))
+    return false;
+
+  SDLoc DL(Addr);
+  uint32_t Value = static_cast<uint32_t>(CN->getSExtValue());
+  int32_t Lo = static_cast<int16_t>(Value);
+  uint32_t Hi = Value - static_cast<uint32_t>(Lo);
+
+  if (Hi == 0)
+    Base = CurDAG->getRegister(Mips::R0, ValTy);
+  else
+    Base = SDValue(CurDAG->getMachineNode(
+                       Mips::LUi, DL, ValTy,
+                       CurDAG->getTargetConstant(Hi >> 16, DL, ValTy)),
+                   0);
+  Offset = CurDAG->getSignedTargetConstant(Lo, DL, ValTy);
+  return true;
 }
 
 /// ComplexPattern used on MipsInstrInfo

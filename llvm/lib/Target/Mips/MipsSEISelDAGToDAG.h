@@ -46,6 +46,9 @@ private:
                                   unsigned OffsetBits,
                                   unsigned ShiftAmount) const;
 
+  bool selectAddrConstant(SDValue Addr, SDValue &Base,
+                          SDValue &Offset) const;
+
   bool selectAddrRegImm(SDValue Addr, SDValue &Base,
                         SDValue &Offset) const override;
 

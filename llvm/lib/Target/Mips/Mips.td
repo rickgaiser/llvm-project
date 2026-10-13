@@ -197,11 +197,20 @@ def FeaturePS2Cache : SubtargetFeature<"ps2cache", "HasPS2Cache", "true",
                                        "Accept cache/pref, without pulling "
                                        "in the rest of FeatureMips3_32">;
 
+// Fold the low 16 bits of a constant absolute address into the load or store
+// offset (lui + lw off($r) instead of lui + ori + lw 0($r)). Memory-mapped
+// register access dominates PS2 driver code, so both PS2 CPUs enable it.
+def FeatureConstAddrFold : SubtargetFeature<"const-addr-fold",
+                                            "FoldConstantAddresses", "true",
+                                            "Fold constant absolute addresses "
+                                            "into load/store offsets">;
+
 // Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
 // feature of the same name or every compile warns.
 def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
                                      "R3000A (PS2 IOP) support",
-                                     [FeatureMips1, FeaturePS2Cache]>;
+                                     [FeatureMips1, FeaturePS2Cache,
+                                      FeatureConstAddrFold]>;
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
