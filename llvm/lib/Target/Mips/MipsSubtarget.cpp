@@ -211,8 +211,11 @@ bool MipsSubtarget::isPositionIndependent() const {
 bool MipsSubtarget::enablePostRAScheduler() const { return !isR5900(); }
 
 /// The R5900 is dual-issue and in-order, use the MachineScheduler with its
-/// scheduling model both before and after register allocation.
-bool MipsSubtarget::enableMachineScheduler() const { return isR5900(); }
+/// scheduling model both before and after register allocation. The R3000A
+/// uses it before register allocation, to fill its load delay slots.
+bool MipsSubtarget::enableMachineScheduler() const {
+  return isR5900() || isR3000A();
+}
 
 bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
 

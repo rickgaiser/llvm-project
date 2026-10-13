@@ -145,6 +145,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // ReservedVF - VU0 registers that are not allocated (-ffixed-vfN).
   std::bitset<32> ReservedVF;
 
+  // IsR3000A - CPU is R3000A (PlayStation 2 IOP).
+  bool IsR3000A = false;
+
   // FixR5900 - Enable R5900 short loop erratum fix.
   bool FixR5900;
 
@@ -326,6 +329,7 @@ public:
   bool hasCnMips() const { return HasCnMips; }
   bool hasCnMipsP() const { return HasCnMipsP; }
   bool isR5900() const { return IsR5900; }
+  bool isR3000A() const { return IsR3000A; }
   bool hasPS2Cache() const { return HasPS2Cache; }
   bool fixR5900() const { return FixR5900; }
   bool hasVU0() const { return HasVU0; }

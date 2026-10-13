@@ -199,7 +199,7 @@ def FeaturePS2Cache : SubtargetFeature<"ps2cache", "HasPS2Cache", "true",
 
 // Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
 // feature of the same name or every compile warns.
-def FeatureR3000A : SubtargetFeature<"r3000a", "HasPS2Cache", "true",
+def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
                                      "R3000A (PS2 IOP) support",
                                      [FeatureMips1, FeaturePS2Cache]>;
 
@@ -284,6 +284,7 @@ foreach i = {1-31} in
 // Avoid forward declaration issues.
 include "MipsScheduleI6400.td"
 include "MipsScheduleP5600.td"
+include "MipsScheduleR3000A.td"
 include "MipsScheduleR5900.td"
 include "MipsScheduleGeneric.td"
 
@@ -317,7 +318,7 @@ def : Proc<"generic", [FeatureMips32]>;
 def : Proc<"mips1", [FeatureMips1]>;
 // R3000A: the CPU of the PS2 IOP (and of the original PlayStation). MIPS I,
 // plus the mnemonics of FeaturePS2Cache for existing IOP assembly.
-def : Proc<"r3000a", [FeatureR3000A]>;
+def : ProcessorModel<"r3000a", MipsR3000AModel, [FeatureR3000A]>;
 def : Proc<"mips2", [FeatureMips2]>;
 def : Proc<"mips32", [FeatureMips32]>;
 def : Proc<"mips32r2", [FeatureMips32r2]>;
