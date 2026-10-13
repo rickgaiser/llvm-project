@@ -205,12 +205,21 @@ def FeatureConstAddrFold : SubtargetFeature<"const-addr-fold",
                                             "Fold constant absolute addresses "
                                             "into load/store offsets">;
 
+// Let the delay slot filler take the slot's instruction from the likelier
+// successor block when nothing before the branch can fill it. MIPS I has no
+// branch-likely instructions, so unfilled conditional branch slots are common.
+def FeatureDelaySlotSuccFill : SubtargetFeature<"delay-slot-succ-fill",
+                                                "FillDelaySlotFromSucc", "true",
+                                                "Fill branch delay slots from "
+                                                "the successor block">;
+
 // Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
 // feature of the same name or every compile warns.
 def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
                                      "R3000A (PS2 IOP) support",
                                      [FeatureMips1, FeaturePS2Cache,
-                                      FeatureConstAddrFold]>;
+                                      FeatureConstAddrFold,
+                                      FeatureDelaySlotSuccFill]>;
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",

@@ -40,7 +40,7 @@ defm : BoolField<"disable-mips-df-backward-search", "false",
   "Disallow MIPS delay filler to search backward">;
 defm : BoolField<"disable-mips-df-forward-search", "true",
   "Disallow MIPS delay filler to search forward">;
-defm : BoolField<"disable-mips-df-succbb-search", "true",
+defm : OptionalBoolField<"disable-mips-df-succbb-search",
   "Disallow MIPS delay filler to search successor basic blocks">;
 
 // MipsISelLowering.cpp

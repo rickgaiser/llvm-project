@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/MipsBaseInfo.h"
 #include "Mips.h"
 #include "MipsInstrInfo.h"
 #include "MipsSubtarget.h"
@@ -299,11 +300,13 @@ namespace {
                         InspectMemInstr &IM) const;
 
     /// This function searches range [Begin, End) for an instruction that can be
-    /// moved to the delay slot. Returns true on success.
+    /// moved to the delay slot. Returns true on success. CrossBlock is set
+    /// when the range lies in another basic block.
     template <typename IterTy>
     bool searchRange(MachineBasicBlock &MBB, IterTy Begin, IterTy End,
                      const BranchInformation &BranchInfo, RegDefsUses &RegDU,
-                     InspectMemInstr &IM, Iter Slot, IterTy &Filler) const;
+                     InspectMemInstr &IM, Iter Slot, IterTy &Filler,
+                     bool CrossBlock = false) const;
 
     /// This function searches in the backward direction for an instruction that
     /// can be moved to the delay slot. Returns true on success.
@@ -853,12 +856,19 @@ bool MipsDelaySlotFiller::runOnMachineBasicBlock(
   return Changed;
 }
 
+static bool hasHighHalfRelocation(const MachineInstr &MI) {
+  return llvm::any_of(MI.operands(), [](const MachineOperand &MO) {
+    return MO.getTargetFlags() == MipsII::MO_ABS_HI;
+  });
+}
+
 template <typename IterTy>
 bool MipsDelaySlotFiller::searchRange(MachineBasicBlock &MBB, IterTy Begin,
                                       IterTy End,
                                       const BranchInformation &BranchInfo,
                                       RegDefsUses &RegDU, InspectMemInstr &IM,
-                                      Iter Slot, IterTy &Filler) const {
+                                      Iter Slot, IterTy &Filler,
+                                      bool CrossBlock) const {
   for (IterTy I = Begin; I != End;) {
     IterTy CurrI = I;
     ++I;
@@ -897,6 +907,12 @@ bool MipsDelaySlotFiller::searchRange(MachineBasicBlock &MBB, IterTy Begin,
 
     const MipsSubtarget &STI = MBB.getParent()->getSubtarget<MipsSubtarget>();
     if (delayHasHazard(STI, *CurrI, BranchInfo, RegDU, IM))
+      continue;
+
+    // An instruction holding the high half of a symbol address has to stay in
+    // front of the matching low half in the same block: IRX1 relocations pair
+    // each HI16 with the LO16 that follows it.
+    if (CrossBlock && hasHighHalfRelocation(*CurrI))
       continue;
 
     bool InMicroMipsMode = STI.inMicroMipsMode();
@@ -990,7 +1006,10 @@ bool MipsDelaySlotFiller::searchForward(
 bool MipsDelaySlotFiller::searchSuccBBs(
     MachineBasicBlock &MBB, Iter Slot,
     const BranchInformation &BranchInfo) const {
-  if (CLOpts->disable_mips_df_succbb_search)
+  // The command-line option overrides the subtarget default either way.
+  const auto &STI = MBB.getParent()->getSubtarget<MipsSubtarget>();
+  if (valueOr(CLOpts->disable_mips_df_succbb_search,
+              !STI.fillDelaySlotFromSucc()))
     return false;
 
   MachineBasicBlock *SuccBB = selectSuccBB(MBB);
@@ -1024,7 +1043,7 @@ bool MipsDelaySlotFiller::searchSuccBBs(
   }
 
   if (!searchRange(MBB, SuccBB->begin(), SuccBB->end(), BranchInfo, RegDU, *IM,
-                   Slot, Filler))
+                   Slot, Filler, /*CrossBlock=*/true))
     return false;
 
   insertDelayFiller(Filler, BrMap);
