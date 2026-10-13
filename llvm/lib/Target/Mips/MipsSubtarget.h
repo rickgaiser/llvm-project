@@ -160,6 +160,10 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // FeatureRestoreRAFirst in Mips.td).
   bool RestoreRAFirst = false;
 
+  // ShareGlobalBase - build a global's address once for repeated accesses (see
+  // FeatureSharedGlobalBase in Mips.td).
+  bool ShareGlobalBase = false;
+
   // FixR5900 - Enable R5900 short loop erratum fix.
   bool FixR5900;
 
@@ -345,6 +349,7 @@ public:
   bool foldConstantAddresses() const { return FoldConstantAddresses; }
   bool fillDelaySlotFromSucc() const { return FillDelaySlotFromSucc; }
   bool restoreRAFirst() const { return RestoreRAFirst; }
+  bool shareGlobalBase() const { return ShareGlobalBase; }
   bool hasPS2Cache() const { return HasPS2Cache; }
   bool fixR5900() const { return FixR5900; }
   bool hasVU0() const { return HasVU0; }

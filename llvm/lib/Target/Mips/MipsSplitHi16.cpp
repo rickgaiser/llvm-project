@@ -23,6 +23,7 @@
 #include "Mips.h"
 #include "MCTargetDesc/MipsBaseInfo.h"
 #include "MipsInstrInfo.h"
+#include "MipsSubtarget.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -57,9 +58,56 @@ INITIALIZE_PASS(MipsSplitHi16, DEBUG_TYPE, "Mips split HI16", false, false)
 
 char MipsSplitHi16::ID = 0;
 
+/// Fewest users of one lui for which a shared address pays off: the shared
+/// form costs lui + addiu + one instruction per use, the split form two per
+/// use.
+static constexpr unsigned SharedGlobalBaseMinUses = 3;
+
+/// If every user of the lui is a plain "%lo(sym+offset)" access to the same
+/// global, replaces the users' %lo operands with the offsets and gives them one
+/// base register holding the address of the symbol, built with an adjacent
+/// lui and addiu pair. Returns true when it did.
+static bool shareGlobalBase(MachineInstr &Lui, MachineRegisterInfo &MRI,
+                            const TargetInstrInfo &TII) {
+  const MachineOperand &Hi = Lui.getOperand(1);
+  if (!Hi.isGlobal() || Hi.getOffset() != 0)
+    return false;
+
+  Register Def = Lui.getOperand(0).getReg();
+  SmallVector<std::pair<MachineOperand *, MachineOperand *>, 8> Users;
+  for (MachineOperand &MO : MRI.use_nodbg_operands(Def)) {
+    MachineInstr *User = MO.getParent();
+    unsigned Idx = User->getOperandNo(&MO);
+    if (User->isPHI() || User->isCopy() || Idx + 1 >= User->getNumOperands())
+      return false;
+    MachineOperand &Lo = User->getOperand(Idx + 1);
+    if (!Lo.isGlobal() || Lo.getGlobal() != Hi.getGlobal() ||
+        Lo.getTargetFlags() != MipsII::MO_ABS_LO || !isInt<16>(Lo.getOffset()))
+      return false;
+    Users.push_back({&MO, &Lo});
+  }
+  if (Users.size() < SharedGlobalBaseMinUses)
+    return false;
+
+  MachineBasicBlock &MBB = *Lui.getParent();
+  Register Base = MRI.createVirtualRegister(MRI.getRegClass(Def));
+  BuildMI(MBB, std::next(Lui.getIterator()), Lui.getDebugLoc(),
+          TII.get(Mips::ADDiu), Base)
+      .addReg(Def)
+      .addGlobalAddress(Hi.getGlobal(), 0, MipsII::MO_ABS_LO);
+  for (auto &[Use, Lo] : Users) {
+    int64_t Offset = Lo->getOffset();
+    Use->setReg(Base);
+    Lo->ChangeToImmediate(Offset);
+  }
+  return true;
+}
+
 bool MipsSplitHi16::runOnMachineFunction(MachineFunction &MF) {
   if (!MipsSplitHi16Opt)
     return false;
+
+  const MipsSubtarget &STI = MF.getSubtarget<MipsSubtarget>();
 
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   MachineRegisterInfo &MRI = MF.getRegInfo();
@@ -76,6 +124,10 @@ bool MipsSplitHi16::runOnMachineFunction(MachineFunction &MF) {
     Register Def = Lui->getOperand(0).getReg();
     MachineInstrBuilder(MF, Lui).addReg(Mips::R0, RegState::Implicit);
     Modified = true;
+    if (STI.shareGlobalBase() && shareGlobalBase(*Lui, MRI, TII)) {
+      // The new addiu reads the lui and pairs with it.
+      continue;
+    }
     SmallVector<MachineOperand *, 8> Uses;
     for (MachineOperand &MO : MRI.use_nodbg_operands(Def))
       Uses.push_back(&MO);

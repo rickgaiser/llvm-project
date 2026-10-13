@@ -222,6 +222,15 @@ def FeatureRestoreRAFirst : SubtargetFeature<"ra-restore-first",
                                              "Restore the return address "
                                              "first in the epilogue">;
 
+// With IRX1 every %hi has to be followed by its own %lo, so each access to a
+// global needs its own lui. When a function reaches the same global three or
+// more times, build the address once (lui + addiu, one adjacent pair) and
+// reach the members through register + offset, as GCC does.
+def FeatureSharedGlobalBase : SubtargetFeature<"shared-global-base",
+                                               "ShareGlobalBase", "true",
+                                               "Build a global's address once "
+                                               "for repeated accesses">;
+
 // Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
 // feature of the same name or every compile warns.
 def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
@@ -229,7 +238,8 @@ def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
                                      [FeatureMips1, FeaturePS2Cache,
                                       FeatureConstAddrFold,
                                       FeatureDelaySlotSuccFill,
-                                      FeatureRestoreRAFirst]>;
+                                      FeatureRestoreRAFirst,
+                                      FeatureSharedGlobalBase]>;
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",
