@@ -156,6 +156,10 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // the likelier successor block (see FeatureDelaySlotSuccFill in Mips.td).
   bool FillDelaySlotFromSucc = false;
 
+  // RestoreRAFirst - restore the return address first in the epilogue (see
+  // FeatureRestoreRAFirst in Mips.td).
+  bool RestoreRAFirst = false;
+
   // FixR5900 - Enable R5900 short loop erratum fix.
   bool FixR5900;
 
@@ -340,6 +344,7 @@ public:
   bool isR3000A() const { return IsR3000A; }
   bool foldConstantAddresses() const { return FoldConstantAddresses; }
   bool fillDelaySlotFromSucc() const { return FillDelaySlotFromSucc; }
+  bool restoreRAFirst() const { return RestoreRAFirst; }
   bool hasPS2Cache() const { return HasPS2Cache; }
   bool fixR5900() const { return FixR5900; }
   bool hasVU0() const { return HasVU0; }

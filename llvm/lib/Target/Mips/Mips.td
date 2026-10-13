@@ -213,13 +213,23 @@ def FeatureDelaySlotSuccFill : SubtargetFeature<"delay-slot-succ-fill",
                                                 "Fill branch delay slots from "
                                                 "the successor block">;
 
+// MIPS I has no load interlock: the instruction after a load must not read its
+// result, so a nop separates a load from an immediate use. The return reads the
+// return address, so restoring it last in the epilogue costs a nop in nearly
+// every function. Restore it first and let the other restores fill the slot.
+def FeatureRestoreRAFirst : SubtargetFeature<"ra-restore-first",
+                                             "RestoreRAFirst", "true",
+                                             "Restore the return address "
+                                             "first in the epilogue">;
+
 // Clang passes -mcpu=<name> to the backend as +<name>, so the CPU needs a
 // feature of the same name or every compile warns.
 def FeatureR3000A : SubtargetFeature<"r3000a", "IsR3000A", "true",
                                      "R3000A (PS2 IOP) support",
                                      [FeatureMips1, FeaturePS2Cache,
                                       FeatureConstAddrFold,
-                                      FeatureDelaySlotSuccFill]>;
+                                      FeatureDelaySlotSuccFill,
+                                      FeatureRestoreRAFirst]>;
 
 def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
                                     "R5900 (PS2 Emotion Engine) Support",

@@ -837,6 +837,28 @@ bool MipsSEFrameLowering::spillCalleeSavedRegisters(
   return true;
 }
 
+/// With a load delay slot the return address is best restored first: the
+/// return reads it, so a restore placed last needs a nop before the jump,
+/// while the other restores can fill the delay of an earlier one.
+bool MipsSEFrameLowering::restoreCalleeSavedRegisters(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
+    MutableArrayRef<CalleeSavedInfo> CSI, const TargetRegisterInfo *TRI) const {
+  if (!STI.restoreRAFirst())
+    return false;
+
+  const TargetInstrInfo *TII = STI.getInstrInfo();
+  auto IsRA = [](const CalleeSavedInfo &CI) {
+    return CI.getReg() == Mips::RA || CI.getReg() == Mips::RA_64;
+  };
+  for (const CalleeSavedInfo &CI : CSI)
+    if (IsRA(CI))
+      restoreCalleeSavedRegister(MBB, MI, CI, TII, TRI);
+  for (const CalleeSavedInfo &CI : reverse(CSI))
+    if (!IsRA(CI))
+      restoreCalleeSavedRegister(MBB, MI, CI, TII, TRI);
+  return true;
+}
+
 bool
 MipsSEFrameLowering::hasReservedCallFrame(const MachineFunction &MF) const {
   const MachineFrameInfo &MFI = MF.getFrameInfo();
