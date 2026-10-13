@@ -355,7 +355,9 @@ public:
   bool hasVU0() const { return HasVU0; }
   bool isVFReserved(unsigned I) const { return ReservedVF[I]; }
   unsigned getNumReservedVF() const { return ReservedVF.count(); }
-  bool useTailCalls() const { return valueOr(CLOpts.tail_calls, IsR5900); }
+  bool useTailCalls() const {
+    return valueOr(CLOpts.tail_calls, IsR5900 || IsR3000A);
+  }
 
   bool isLittle() const { return IsLittle; }
   bool isABICalls() const { return !NoABICalls; }

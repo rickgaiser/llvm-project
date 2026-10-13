@@ -45,7 +45,7 @@ defm : OptionalBoolField<"disable-mips-df-succbb-search",
 
 // MipsISelLowering.cpp
 defm : OptionalBoolField<"mips-tail-calls",
-  "MIPS: permit tail calls (default: only for the R5900)">;
+  "MIPS: permit tail calls (default: only for the R5900 and R3000A)">;
 
 // MipsOptimizePICCall.cpp
 defm : BoolField<"mips-erase-gp-opnd", "true",
