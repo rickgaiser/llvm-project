@@ -54,7 +54,7 @@ public:
 
 } // namespace
 
-INITIALIZE_PASS(MipsSplitHi16, DEBUG_TYPE, "Mips split HI16", false, false)
+INITIALIZE_PASS(MipsSplitHi16, "mips-split-hi16-pass", "Mips split HI16", false, false)
 
 char MipsSplitHi16::ID = 0;
 
