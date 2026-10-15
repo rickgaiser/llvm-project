@@ -2205,7 +2205,7 @@ DecodeStatus MipsDisassembler::getInstruction(MCInst &Instr, uint64_t &Size,
   }
 
   // rfe shares its encoding with the virtualization ASE's tlbgp, which the main table decodes.
-  if (!STI.hasFeature(Mips::FeatureMips3) && !STI.hasFeature(Mips::FeatureMips32)) {
+  if (STI.hasFeature(Mips::FeatureR3000A)) {
     LLVM_DEBUG(dbgs() << "Trying MipsRfe table (32-bit opcodes):\n");
     Result =
         decodeInstruction(DecoderTableMipsRfe32, Instr, Insn, Address, this, STI);

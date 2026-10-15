@@ -1,0 +1,6 @@
+# RUN: llvm-mc %s -triple=mipsel-unknown-linux -disassemble -mcpu=r3000a | FileCheck %s
+# RUN: llvm-mc %s -triple=mipsel-unknown-linux -disassemble -mcpu=mips1 2>&1 | FileCheck %s --check-prefix=MIPS1
+
+# CHECK: rfe
+# MIPS1: warning: invalid instruction encoding
+0x10 0x00 0x00 0x42
