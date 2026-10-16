@@ -200,8 +200,9 @@ public:
       : TargetPassConfig(TM, PM) {
     // The current implementation of long branch pass requires a scratch
     // register ($at) to be available before branch instructions. Tail merging
-    // can break this requirement.
-    EnableTailMerge = false;
+    // can break this requirement. IOP modules are far below the conditional
+    // branch range, so the long branch pass never needs it there.
+    EnableTailMerge = TM.getDefaultSubtarget().isR3000A();
     EnableLoopTermFold = true;
   }
 
@@ -219,6 +220,7 @@ public:
   bool addInstSelector() override;
   void addPreEmitPass() override;
   bool addILPOpts() override;
+  void addMachineLateOptimization() override;
   void addPreRegAlloc() override;
   void addPreSched2() override;
   bool addIRTranslator() override;
@@ -318,6 +320,14 @@ bool MipsPassConfig::addInstSelector() {
 bool MipsPassConfig::addILPOpts() {
   addPass(&MachineCombinerID);
   return true;
+}
+
+// Tail merging must see each %hi lui next to its %lo user, or it can merge the
+// users and leave the IRX HI16/LO16 pairing broken.
+void MipsPassConfig::addMachineLateOptimization() {
+  if (getMipsTargetMachine().getDefaultSubtarget().isR3000A())
+    addPass(createMipsSinkHi16Pass());
+  TargetPassConfig::addMachineLateOptimization();
 }
 
 void MipsPassConfig::addPreRegAlloc() {

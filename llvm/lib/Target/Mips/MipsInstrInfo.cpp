@@ -1169,6 +1169,30 @@ ScheduleHazardRecognizer *MipsInstrInfo::CreateTargetPostRAHazardRecognizer(
   return TargetInstrInfo::CreateTargetPostRAHazardRecognizer(II, DAG);
 }
 
+/// The IRX1 format pairs every R_MIPS_HI16 with the R_MIPS_LO16 right after it,
+/// so the tail of a block must not contain a %lo user whose lui stays behind.
+bool MipsInstrInfo::isLegalToSplitMBBAt(
+    MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI) const {
+  if (!Subtarget.isR3000A())
+    return true;
+  auto HasFlag = [](const MachineInstr &MI, unsigned Flag) {
+    return llvm::any_of(MI.operands(), [Flag](const MachineOperand &MO) {
+      return MO.getTargetFlags() == Flag;
+    });
+  };
+  unsigned OpenHi = 0;
+  for (MachineInstr &MI : llvm::make_range(MBBI, MBB.end())) {
+    if (HasFlag(MI, MipsII::MO_ABS_HI))
+      ++OpenHi;
+    else if (HasFlag(MI, MipsII::MO_ABS_LO)) {
+      if (OpenHi == 0)
+        return false;
+      --OpenHi;
+    }
+  }
+  return true;
+}
+
 bool MipsInstrInfo::isAsCheapAsAMove(const MachineInstr &MI) const {
   const unsigned Opcode = MI.getOpcode();
   switch (Opcode) {

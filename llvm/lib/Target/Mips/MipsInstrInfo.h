@@ -159,6 +159,9 @@ public:
   /// Predicate to determine if an instruction has a load delay slot.
   bool HasLoadDelaySlot(const MachineInstr &MI) const;
 
+  bool isLegalToSplitMBBAt(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator MBBI) const override;
+
   bool isAsCheapAsAMove(const MachineInstr &MI) const override;
 
   ScheduleHazardRecognizer *
