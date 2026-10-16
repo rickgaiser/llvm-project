@@ -429,6 +429,11 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
 
   setOperationAction(ISD::TRAP, MVT::Other, Legal);
 
+  if (Subtarget.isR3000A()) {
+    setOperationAction(ISD::SETCCCARRY, MVT::i32, Custom);
+    setOperationAction(ISD::USUBO, MVT::i32, Custom);
+  }
+
   setTargetDAGCombine({ISD::SDIVREM, ISD::UDIVREM, ISD::SELECT, ISD::AND,
                        ISD::OR, ISD::ADD, ISD::SUB, ISD::AssertZext, ISD::SHL,
                        ISD::SIGN_EXTEND, ISD::ZERO_EXTEND, ISD::LOAD});
@@ -1672,6 +1677,8 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
   case ISD::SETCC:              return lowerSETCC(Op, DAG);
   case ISD::MUL:
     return lowerR5900WideningMUL(Op, DAG);
+  case ISD::SETCCCARRY:         return lowerSETCCCARRY(Op, DAG);
+  case ISD::USUBO:              return lowerUSUBO(Op, DAG);
   case ISD::STRICT_FSETCC:
   case ISD::STRICT_FSETCCS:
     return lowerFSETCC(Op, DAG);
@@ -2643,6 +2650,42 @@ lowerSELECT(SDValue Op, SelectionDAG &DAG) const
 
   return createCMovFP(DAG, Cond, Op.getOperand(1), Op.getOperand(2),
                       SDLoc(Op));
+}
+
+// Compare the high halves of a wide LHS < RHS or LHS >= RHS with the borrow
+// of the low halves, without branches:
+//   LHS < RHS - Borrow  <=>  (Hi1 < Hi2) | ((Hi1 - Hi2) <u Borrow)
+SDValue MipsTargetLowering::lowerSETCCCARRY(SDValue Op,
+                                            SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+  SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1);
+  SDValue Borrow = Op.getOperand(2);
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(3))->get();
+  assert((CC == ISD::SETLT || CC == ISD::SETULT || CC == ISD::SETGE ||
+          CC == ISD::SETUGE) &&
+         "Unexpected SETCCCARRY condition");
+
+  bool Signed = CC == ISD::SETLT || CC == ISD::SETGE;
+  SDValue HiLT = DAG.getSetCC(DL, VT, LHS, RHS,
+                              Signed ? ISD::SETLT : ISD::SETULT);
+  SDValue Diff = DAG.getNode(ISD::SUB, DL, LHS.getValueType(), LHS, RHS);
+  SDValue EqBorrow = DAG.getSetCC(DL, VT, Diff, Borrow, ISD::SETULT);
+  SDValue LT = DAG.getNode(ISD::OR, DL, VT, HiLT, EqBorrow);
+  if (CC == ISD::SETLT || CC == ISD::SETULT)
+    return LT;
+  return DAG.getNode(ISD::XOR, DL, VT, LT, DAG.getConstant(1, DL, VT));
+}
+
+// The borrow of LHS - RHS is LHS <u RHS; comparing the operands directly keeps
+// the difference off the borrow's dependency chain.
+SDValue MipsTargetLowering::lowerUSUBO(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1);
+  SDValue Diff = DAG.getNode(ISD::SUB, DL, LHS.getValueType(), LHS, RHS);
+  SDValue Borrow = DAG.getSetCC(DL, Op.getValue(1).getValueType(), LHS, RHS,
+                                ISD::SETULT);
+  return DAG.getMergeValues({Diff, Borrow}, DL);
 }
 
 SDValue MipsTargetLowering::lowerSETCC(SDValue Op, SelectionDAG &DAG) const {

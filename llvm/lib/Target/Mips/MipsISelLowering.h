@@ -364,6 +364,8 @@ using TargetRegisterClass = MCRegisterClass;
     SDValue lowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSELECT(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSETCC(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerSETCCCARRY(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerUSUBO(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerFSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerVASTART(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerVAARG(SDValue Op, SelectionDAG &DAG) const;
