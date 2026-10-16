@@ -270,7 +270,8 @@ void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
 }
 
 CodeGenOptLevel MipsSubtarget::getOptLevelToEnablePostRAScheduler() const {
-  return CodeGenOptLevel::Aggressive;
+  // The R3000A fills load delay slots with it, which pays at -O2 and -Os.
+  return IsR3000A ? CodeGenOptLevel::Default : CodeGenOptLevel::Aggressive;
 }
 
 MipsSubtarget &
