@@ -2652,9 +2652,6 @@ lowerSELECT(SDValue Op, SelectionDAG &DAG) const
                       SDLoc(Op));
 }
 
-// Compare the high halves of a wide LHS < RHS or LHS >= RHS with the borrow
-// of the low halves, without branches:
-//   LHS < RHS - Borrow  <=>  (Hi1 < Hi2) | ((Hi1 - Hi2) <u Borrow)
 SDValue MipsTargetLowering::lowerSETCCCARRY(SDValue Op,
                                             SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -2677,8 +2674,6 @@ SDValue MipsTargetLowering::lowerSETCCCARRY(SDValue Op,
   return DAG.getNode(ISD::XOR, DL, VT, LT, DAG.getConstant(1, DL, VT));
 }
 
-// The borrow of LHS - RHS is LHS <u RHS; comparing the operands directly keeps
-// the difference off the borrow's dependency chain.
 SDValue MipsTargetLowering::lowerUSUBO(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
   SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1);
@@ -5383,15 +5378,13 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
   F->insert(It, copy0MBB);
   F->insert(It, sinkMBB);
 
-  // On the R3000A, selects that follow one another with the same condition
-  // share one diamond.
   SmallVector<MachineInstr *, 4> Selects;
   Selects.push_back(&MI);
   if (Subtarget.isR3000A() && !isFPCmp && Opc == Mips::BNE &&
       MI.getOpcode() == Mips::PseudoSELECT_I) {
     SmallVector<Register, 4> Defs;
     Defs.push_back(MI.getOperand(0).getReg());
-    for (MachineBasicBlock::iterator I = std::next(MachineBasicBlock::iterator(MI)),
+    for (MachineBasicBlock::iterator I = std::next(MI.getIterator()),
                                      E = BB->end();
          I != E && !I->isDebugInstr(); ++I) {
       if (I->getOpcode() != Mips::PseudoSELECT_I ||
