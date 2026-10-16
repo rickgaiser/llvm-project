@@ -24,6 +24,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -1142,6 +1143,30 @@ bool MipsInstrInfo::HasLoadDelaySlot(const MachineInstr &MI) const {
   default:
     return false;
   }
+}
+
+namespace {
+// The R3000A issues one instruction per cycle. It has no itinerary, so the
+// default post-RA hazard recognizer would not limit issue at all.
+class MipsSingleIssueHazardRecognizer : public ScheduleHazardRecognizer {
+  bool Issued = false;
+
+public:
+  HazardType getHazardType(SUnit *, int) override {
+    return Issued ? Hazard : NoHazard;
+  }
+  bool atIssueLimit() const override { return Issued; }
+  void EmitInstruction(SUnit *) override { Issued = true; }
+  void AdvanceCycle() override { Issued = false; }
+  void Reset() override { Issued = false; }
+};
+} // namespace
+
+ScheduleHazardRecognizer *MipsInstrInfo::CreateTargetPostRAHazardRecognizer(
+    const InstrItineraryData *II, const ScheduleDAG *DAG) const {
+  if (Subtarget.isR3000A())
+    return new MipsSingleIssueHazardRecognizer();
+  return TargetInstrInfo::CreateTargetPostRAHazardRecognizer(II, DAG);
 }
 
 bool MipsInstrInfo::isAsCheapAsAMove(const MachineInstr &MI) const {

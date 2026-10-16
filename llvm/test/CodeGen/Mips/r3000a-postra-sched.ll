@@ -10,10 +10,10 @@ declare void @g(i32)
 define i32 @f(ptr %a, ptr %b) {
 ; R3000A-LABEL: f:
 ; R3000A:         lw $3, 8($16)
+; R3000A-NEXT:    addu $1, $1, $2
 ; R3000A-NEXT:    lw $ra, 28($sp)
 ; R3000A-NEXT:    lw $16, 20($sp)
 ; R3000A-NEXT:    lw $17, 24($sp)
-; R3000A-NEXT:    addu $1, $1, $2
 ; R3000A-NEXT:    xor $2, $1, $3
 ; R3000A-NEXT:    jr $ra
 ;

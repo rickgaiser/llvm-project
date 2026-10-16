@@ -161,6 +161,10 @@ public:
 
   bool isAsCheapAsAMove(const MachineInstr &MI) const override;
 
+  ScheduleHazardRecognizer *
+  CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
+                                     const ScheduleDAG *DAG) const override;
+
   /// Insert nop instruction when hazard condition is found
   void insertNoop(MachineBasicBlock &MBB,
                   MachineBasicBlock::iterator MI) const override;
