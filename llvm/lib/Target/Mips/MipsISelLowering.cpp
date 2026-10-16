@@ -5340,9 +5340,33 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
   F->insert(It, copy0MBB);
   F->insert(It, sinkMBB);
 
+  // On the R3000A, selects that follow one another with the same condition
+  // share one diamond.
+  SmallVector<MachineInstr *, 4> Selects;
+  Selects.push_back(&MI);
+  if (Subtarget.isR3000A() && !isFPCmp && Opc == Mips::BNE &&
+      MI.getOpcode() == Mips::PseudoSELECT_I) {
+    SmallVector<Register, 4> Defs;
+    Defs.push_back(MI.getOperand(0).getReg());
+    for (MachineBasicBlock::iterator I = std::next(MachineBasicBlock::iterator(MI)),
+                                     E = BB->end();
+         I != E && !I->isDebugInstr(); ++I) {
+      if (I->getOpcode() != Mips::PseudoSELECT_I ||
+          I->getOperand(1).getReg() != MI.getOperand(1).getReg())
+        break;
+      if (llvm::is_contained(Defs, I->getOperand(1).getReg()) ||
+          llvm::is_contained(Defs, I->getOperand(2).getReg()) ||
+          llvm::is_contained(Defs, I->getOperand(3).getReg()))
+        break;
+      Selects.push_back(&*I);
+      Defs.push_back(I->getOperand(0).getReg());
+    }
+  }
+
   // Transfer the remainder of BB and its successor edges to sinkMBB.
   sinkMBB->splice(sinkMBB->begin(), BB,
-                  std::next(MachineBasicBlock::iterator(MI)), BB->end());
+                  std::next(MachineBasicBlock::iterator(*Selects.back())),
+                  BB->end());
   sinkMBB->transferSuccessorsAndUpdatePHIs(BB);
 
   // Next, add the true and fallthrough blocks as its successors.
@@ -5375,12 +5399,17 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
   //  ...
   BB = sinkMBB;
 
-  BuildMI(*BB, BB->begin(), DL, TII->get(Mips::PHI), MI.getOperand(0).getReg())
-      .addReg(MI.getOperand(2).getReg())
-      .addMBB(thisMBB)
-      .addReg(MI.getOperand(3).getReg())
-      .addMBB(copy0MBB);
+  MachineBasicBlock::iterator InsertPt = BB->begin();
+  for (MachineInstr *Sel : Selects)
+    BuildMI(*BB, InsertPt, DL, TII->get(Mips::PHI), Sel->getOperand(0).getReg())
+        .addReg(Sel->getOperand(2).getReg())
+        .addMBB(thisMBB)
+        .addReg(Sel->getOperand(3).getReg())
+        .addMBB(copy0MBB);
 
+  for (MachineInstr *Sel : Selects)
+    if (Sel != &MI)
+      Sel->eraseFromParent();
   MI.eraseFromParent(); // The pseudo instruction is gone now.
 
   return BB;
