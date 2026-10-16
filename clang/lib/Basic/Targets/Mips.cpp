@@ -93,7 +93,10 @@ void MipsTargetInfo::getTargetDefines(const LangOptions &Opts,
   if (Opts.GNUMode)
     Builder.defineMacro("mips");
 
-  if (ABI == "o32") {
+  if (ABI == "o32" && CPU == "r3000a") {
+    Builder.defineMacro("__mips", "1");
+    Builder.defineMacro("_MIPS_ISA", "_MIPS_ISA_MIPS1");
+  } else if (ABI == "o32") {
     Builder.defineMacro("__mips", "32");
     Builder.defineMacro("_MIPS_ISA", "_MIPS_ISA_MIPS32");
   } else {
