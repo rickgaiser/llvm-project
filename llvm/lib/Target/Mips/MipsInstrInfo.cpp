@@ -1079,6 +1079,16 @@ bool MipsInstrInfo::SafeInLoadDelaySlot(const MachineInstr &MIInSlot,
   if (MIInSlot.isInlineAsm())
     return false;
 
+  auto IsUnalignedLoad = [](const MachineInstr &MI) {
+    return MI.getOpcode() == Mips::LWL || MI.getOpcode() == Mips::LWR;
+  };
+  if (Subtarget.isR3000A() && IsUnalignedLoad(MIInSlot) &&
+      IsUnalignedLoad(LoadMI) &&
+      MIInSlot.getOperand(0).getReg() == LoadMI.getOperand(0).getReg()) {
+    // The LWL/LWR pair merges into the same register through the load delay.
+    return MIInSlot.getOperand(1).getReg() != LoadMI.getOperand(0).getReg();
+  }
+
   return !llvm::any_of(LoadMI.defs(), [&](const MachineOperand &Op) {
     return Op.isReg() && MIInSlot.readsRegister(Op.getReg(), /*TRI=*/nullptr) &&
            !MIInSlot.hasRegisterImplicitUseOperand(Op.getReg());
