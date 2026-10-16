@@ -51,6 +51,8 @@ public:
 
   bool hasDivRemOp(Type *DataType, bool IsSigned) const override;
 
+  unsigned adjustInliningThreshold(const CallBase *CB) const override;
+
   bool isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                      const TargetTransformInfo::LSRCost &C2) const override;
 
