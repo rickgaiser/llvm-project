@@ -42,6 +42,7 @@ add_llvm_target(MipsCodeGen
   MipsCallLowering.cpp
   MipsCCState.cpp
   MipsConstantIslandPass.cpp
+  MipsDAGMutations.cpp
   MipsDelaySlotFiller.cpp
   MipsExpandPseudo.cpp
   MipsFastISel.cpp

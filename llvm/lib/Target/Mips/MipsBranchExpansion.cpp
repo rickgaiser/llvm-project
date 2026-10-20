@@ -808,8 +808,8 @@ bool MipsBranchExpansion::handleSlot(Pred Predicate, Safe SafeInSlot) {
 
 bool MipsBranchExpansion::handleMFLO() {
   // mips1-4 require a minimum of 2 instructions between a mflo/mfhi
-  // and the next mul/div instruction.
-  if (STI->hasMips32() || STI->hasMips5())
+  // and the next mul/div instruction. The R5900 interlocks HI/LO.
+  if (STI->hasMips32() || STI->hasMips5() || STI->isR5900())
     return false;
 
   return handleMFLOSlot(

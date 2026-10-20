@@ -11,27 +11,27 @@
 define void @saxpy4_noalias(ptr noalias %x, ptr noalias %y, float %a) {
 ; R5900-LABEL: saxpy4_noalias:
 ; R5900:       # %bb.0:
-; R5900-NEXT:    lwc1 $f0, 4($4)
+; R5900-NEXT:    lwc1 $f0, 0($4)
+; R5900-NEXT:    lwc1 $f1, 4($4)
 ; R5900-NEXT:    mul.s $f0, $f14, $f0
-; R5900-NEXT:    lwc1 $f1, 4($5)
-; R5900-NEXT:    lwc1 $f2, 8($4)
-; R5900-NEXT:    mul.s $f2, $f14, $f2
-; R5900-NEXT:    add.s $f0, $f0, $f1
-; R5900-NEXT:    lwc1 $f1, 0($4)
 ; R5900-NEXT:    mul.s $f1, $f14, $f1
-; R5900-NEXT:    lwc1 $f3, 0($5)
+; R5900-NEXT:    lwc1 $f2, 0($5)
+; R5900-NEXT:    lwc1 $f3, 4($5)
+; R5900-NEXT:    add.s $f0, $f0, $f2
 ; R5900-NEXT:    add.s $f1, $f1, $f3
-; R5900-NEXT:    lwc1 $f3, 8($5)
-; R5900-NEXT:    swc1 $f1, 0($5)
-; R5900-NEXT:    swc1 $f0, 4($5)
-; R5900-NEXT:    add.s $f0, $f2, $f3
-; R5900-NEXT:    swc1 $f0, 8($5)
-; R5900-NEXT:    lwc1 $f0, 12($4)
-; R5900-NEXT:    mul.s $f0, $f14, $f0
-; R5900-NEXT:    lwc1 $f1, 12($5)
-; R5900-NEXT:    add.s $f0, $f0, $f1
+; R5900-NEXT:    lwc1 $f2, 8($4)
+; R5900-NEXT:    lwc1 $f3, 12($4)
+; R5900-NEXT:    mul.s $f2, $f14, $f2
+; R5900-NEXT:    mul.s $f3, $f14, $f3
+; R5900-NEXT:    lwc1 $f4, 8($5)
+; R5900-NEXT:    lwc1 $f5, 12($5)
+; R5900-NEXT:    add.s $f2, $f2, $f4
+; R5900-NEXT:    add.s $f3, $f3, $f5
+; R5900-NEXT:    swc1 $f0, 0($5)
+; R5900-NEXT:    swc1 $f1, 4($5)
+; R5900-NEXT:    swc1 $f2, 8($5)
 ; R5900-NEXT:    jr $ra
-; R5900-NEXT:    swc1 $f0, 12($5)
+; R5900-NEXT:    swc1 $f3, 12($5)
 ;
 ; MIPS3-LABEL: saxpy4_noalias:
 ; MIPS3:       # %bb.0:
@@ -91,13 +91,13 @@ define void @saxpy4_mayalias(ptr %x, ptr %y, float %a) {
 ; R5900-LABEL: saxpy4_mayalias:
 ; R5900:       # %bb.0:
 ; R5900-NEXT:    lwc1 $f0, 0($4)
-; R5900-NEXT:    mul.s $f0, $f14, $f0
 ; R5900-NEXT:    lwc1 $f1, 0($5)
+; R5900-NEXT:    mul.s $f0, $f14, $f0
 ; R5900-NEXT:    add.s $f0, $f0, $f1
+; R5900-NEXT:    lwc1 $f1, 4($5)
 ; R5900-NEXT:    swc1 $f0, 0($5)
 ; R5900-NEXT:    lwc1 $f0, 4($4)
 ; R5900-NEXT:    mul.s $f0, $f14, $f0
-; R5900-NEXT:    lwc1 $f1, 4($5)
 ; R5900-NEXT:    add.s $f0, $f0, $f1
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    swc1 $f0, 4($5)
