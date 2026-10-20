@@ -205,6 +205,11 @@ bool MipsSubtarget::isPositionIndependent() const {
 /// This overrides the PostRAScheduler bit in the SchedModel for any CPU.
 bool MipsSubtarget::enablePostRAScheduler() const { return true; }
 
+/// Use alias analysis during code generation (DAGCombine and scheduling) on
+/// the in-order R5900, so loads can be scheduled ahead of stores that cannot
+/// alias them.
+bool MipsSubtarget::useAA() const { return isR5900(); }
+
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
   CriticalPathRCs.clear();
   CriticalPathRCs.push_back(isGP64bit() ? &Mips::GPR64RegClass
