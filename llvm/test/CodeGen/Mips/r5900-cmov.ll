@@ -123,14 +123,14 @@ define float @select_float(i32 signext %c, float %a, float %b) {
 define i128 @shl_i128(i128 %a, i128 %b) {
 ; CHECK-LABEL: shl_i128:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    dsllv $1, $5, $6
+; CHECK-NEXT:    sll $1, $6, 0
 ; CHECK-NEXT:    dsrl $2, $4, 1
-; CHECK-NEXT:    sll $5, $6, 0
-; CHECK-NEXT:    xori $3, $5, 63
+; CHECK-NEXT:    xori $3, $1, 63
+; CHECK-NEXT:    dsllv $5, $5, $6
 ; CHECK-NEXT:    dsrlv $2, $2, $3
-; CHECK-NEXT:    or $3, $1, $2
+; CHECK-NEXT:    andi $1, $1, 64
+; CHECK-NEXT:    or $3, $5, $2
 ; CHECK-NEXT:    dsllv $2, $4, $6
-; CHECK-NEXT:    andi $1, $5, 64
 ; CHECK-NEXT:    movn $3, $2, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    movn $2, $zero, $1
@@ -141,14 +141,14 @@ define i128 @shl_i128(i128 %a, i128 %b) {
 define i128 @lshr_i128(i128 %a, i128 %b) {
 ; CHECK-LABEL: lshr_i128:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    dsrlv $1, $4, $6
+; CHECK-NEXT:    sll $1, $6, 0
 ; CHECK-NEXT:    dsll $2, $5, 1
-; CHECK-NEXT:    sll $4, $6, 0
-; CHECK-NEXT:    xori $3, $4, 63
+; CHECK-NEXT:    xori $3, $1, 63
+; CHECK-NEXT:    dsrlv $4, $4, $6
 ; CHECK-NEXT:    dsllv $2, $2, $3
-; CHECK-NEXT:    or $2, $2, $1
 ; CHECK-NEXT:    dsrlv $3, $5, $6
-; CHECK-NEXT:    andi $1, $4, 64
+; CHECK-NEXT:    or $2, $2, $4
+; CHECK-NEXT:    andi $1, $1, 64
 ; CHECK-NEXT:    movn $2, $3, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    movn $3, $zero, $1
@@ -159,16 +159,16 @@ define i128 @lshr_i128(i128 %a, i128 %b) {
 define i128 @ashr_i128(i128 %a, i128 %b) {
 ; CHECK-LABEL: ashr_i128:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    dsrlv $1, $4, $6
+; CHECK-NEXT:    sll $1, $6, 0
 ; CHECK-NEXT:    dsll $2, $5, 1
-; CHECK-NEXT:    sll $4, $6, 0
-; CHECK-NEXT:    xori $3, $4, 63
+; CHECK-NEXT:    xori $3, $1, 63
+; CHECK-NEXT:    dsrlv $4, $4, $6
 ; CHECK-NEXT:    dsllv $2, $2, $3
-; CHECK-NEXT:    or $2, $2, $1
 ; CHECK-NEXT:    dsrav $3, $5, $6
-; CHECK-NEXT:    andi $1, $4, 64
-; CHECK-NEXT:    movn $2, $3, $1
+; CHECK-NEXT:    or $2, $2, $4
+; CHECK-NEXT:    andi $1, $1, 64
 ; CHECK-NEXT:    dsra $4, $5, 63
+; CHECK-NEXT:    movn $2, $3, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    movn $3, $4, $1
   %r = ashr i128 %a, %b

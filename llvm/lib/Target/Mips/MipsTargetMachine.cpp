@@ -15,6 +15,7 @@
 #include "MCTargetDesc/MipsMCTargetDesc.h"
 #include "Mips.h"
 #include "Mips16ISelDAGToDAG.h"
+#include "MipsDAGMutations.h"
 #include "MipsMachineFunction.h"
 #include "MipsSEISelDAGToDAG.h"
 #include "MipsSubtarget.h"
@@ -30,6 +31,7 @@
 #include "llvm/CodeGen/GlobalISel/Legalizer.h"
 #include "llvm/CodeGen/GlobalISel/RegBankSelect.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Attributes.h"
@@ -193,6 +195,7 @@ public:
   bool addInstSelector() override;
   void addPreEmitPass() override;
   void addPreRegAlloc() override;
+  void addPreSched2() override;
   bool addIRTranslator() override;
   void addPreLegalizeMachineIR() override;
   bool addLegalizeMachineIR() override;
@@ -230,6 +233,21 @@ bool MipsPassConfig::addInstSelector() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+}
+
+void MipsPassConfig::addPreSched2() {
+  // The post-RA MachineScheduler only runs for subtargets that enable it
+  // (the R5900); the others keep using the PostRAScheduler.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(&PostMachineSchedulerID);
+}
+
+ScheduleDAGInstrs *
+MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
+  ScheduleDAGMILive *DAG = createSchedLive(C);
+  if (C->MF->getSubtarget<MipsSubtarget>().isR5900())
+    DAG->addMutation(createMipsAccumulatorDAGMutation());
+  return DAG;
 }
 
 TargetTransformInfo

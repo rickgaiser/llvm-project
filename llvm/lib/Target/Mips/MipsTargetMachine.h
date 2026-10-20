@@ -44,6 +44,8 @@ public:
   ~MipsTargetMachine() override;
 
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
+  ScheduleDAGInstrs *
+  createMachineScheduler(MachineSchedContext *C) const override;
 
   const MipsOptions &getCLOpts() const { return CLOpts; }
   const MipsMCOptions &getMCCLOpts() const { return MCCLOpts; }

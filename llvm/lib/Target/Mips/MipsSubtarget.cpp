@@ -203,7 +203,14 @@ bool MipsSubtarget::isPositionIndependent() const {
 }
 
 /// This overrides the PostRAScheduler bit in the SchedModel for any CPU.
-bool MipsSubtarget::enablePostRAScheduler() const { return true; }
+/// The R5900 uses the post-RA MachineScheduler instead.
+bool MipsSubtarget::enablePostRAScheduler() const { return !isR5900(); }
+
+/// The R5900 is dual-issue and in-order, use the MachineScheduler with its
+/// scheduling model both before and after register allocation.
+bool MipsSubtarget::enableMachineScheduler() const { return isR5900(); }
+
+bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
 
 /// Use alias analysis during code generation (DAGCombine and scheduling) on
 /// the in-order R5900, so loads can be scheduled ahead of stores that cannot
