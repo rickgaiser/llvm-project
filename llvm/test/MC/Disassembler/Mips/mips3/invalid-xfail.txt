@@ -11,4 +11,3 @@
 0x45 0x09 0x01 0x01 # bc1t $fcc2, 1028  # CHECK: :[[@LINE]]:1: warning: invalid instruction encoding
 0x48 0x00 0x00 0x01 # mfc2 $zero, $0, 1 # CHECK: :[[@LINE]]:1: warning: invalid instruction encoding
 0x48 0x86 0x00 0x04 # mtc2 $6, $0, 4    # CHECK: :[[@LINE]]:1: warning: invalid instruction encoding
-0xce 0x00 0x00 0x00 # pref 0, 0($16)    # CHECK: :[[@LINE]]:1: warning: invalid instruction encoding

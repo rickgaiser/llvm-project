@@ -2583,7 +2583,26 @@ let AdditionalPredicates = [NotInMicroMips] in {
   def CACHE : MMRel, CacheOp<"cache", mem>, CACHEOP_FM<0b101111>,
               INSN_MIPS3_32_NOT_32R6_64R6;
   def PREF :  MMRel, CacheOp<"pref", mem>, CACHEOP_FM<0b110011>,
-              INSN_MIPS3_32_NOT_32R6_64R6;
+              INSN_MIPS4_32_R5900_NOT_32R6_64R6;
+}
+
+// Select the PREF hint from the read/write and locality operands of
+// llvm.prefetch, like GCC: load/store_streamed for locality 0, load/store for
+// locality 1 and 2, and load/store_retained for locality 3. Only data cache
+// prefetches reach instruction selection.
+let AdditionalPredicates = [NotInMicroMips] in {
+  foreach RW = [0, 1] in
+    foreach Locality = [0, 1, 2, 3] in
+      def : MipsPat<(prefetch addr:$addr, (i32 RW), (i32 Locality), (i32 1)),
+                    (PREF addr:$addr, !cond(!eq(Locality, 0) : !add(RW, 4),
+                                            !eq(Locality, 3) : !add(RW, 6),
+                                            true : RW))>,
+            INSN_MIPS4_32_NOT_32R6_64R6;
+
+  // The R5900 only defines hint 0 (load); the other hints are reserved.
+  let EncodingPredicates = [HasStdEnc], InsnPredicates = [IsR5900] in
+    def : MipsPat<(prefetch addr:$addr, timm, timm, (i32 1)),
+                  (PREF addr:$addr, 0)>;
 }
 // FIXME: We are missing the prefx instruction.
 def ROL : MipsAsmPseudoInst<(outs),

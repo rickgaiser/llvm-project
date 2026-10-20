@@ -245,6 +245,13 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
       getTargetMachine().getTargetTriple().isOSLinux())
     setOperationAction(ISD::READCYCLECOUNTER, MVT::i64, Custom);
 
+  // Lower data prefetches to PREF. Only the standard encoding of PREF is
+  // selected, so MIPS16, microMIPS and MIPS R6 keep dropping prefetches.
+  if ((Subtarget.hasMips4_32() || Subtarget.isR5900()) &&
+      !Subtarget.hasMips32r6() && !Subtarget.inMips16Mode() &&
+      !Subtarget.inMicroMipsMode())
+    setOperationAction(ISD::PREFETCH, MVT::Other, Custom);
+
   // Lower fmin/fmax/fclass operations for MIPS R6.
   if (Subtarget.hasMips32r6()) {
     setOperationAction(ISD::FMINNUM_IEEE, MVT::f32, Legal);
@@ -1263,6 +1270,8 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
   case ISD::FP_TO_SINT:         return lowerFP_TO_SINT(Op, DAG);
   case ISD::READCYCLECOUNTER:
     return lowerREADCYCLECOUNTER(Op, DAG);
+  case ISD::PREFETCH:
+    return lowerPREFETCH(Op, DAG);
   case ISD::ConstantFP:
     return lowerConstantFP(Op, DAG);
   }
@@ -2134,6 +2143,13 @@ SDValue MipsTargetLowering::lowerConstantFP(SDValue Op,
   }
 
   return SDValue();
+}
+
+SDValue MipsTargetLowering::lowerPREFETCH(SDValue Op, SelectionDAG &DAG) const {
+  // PREF only prefetches data, so drop instruction cache prefetches.
+  if (Op.getConstantOperandVal(4) == 0)
+    return Op.getOperand(0);
+  return Op;
 }
 
 SDValue MipsTargetLowering::lowerREADCYCLECOUNTER(SDValue Op,

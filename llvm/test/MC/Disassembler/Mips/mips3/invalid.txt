@@ -1,0 +1,6 @@
+# RUN: llvm-mc %s -triple=mips-unknown-linux -disassemble -mcpu=mips3 2>&1 | FileCheck %s
+
+# Start with a valid instruction. Otherwise llvm-mc gives up immediately.
+0x00 0x00 0x00 0x00
+
+0xce 0x00 0x00 0x00 # pref 0, 0($16)    # CHECK: :[[@LINE]]:1: warning: invalid instruction encoding
