@@ -2846,7 +2846,8 @@ SDValue MipsTargetLowering::lowerShiftRightParts(SDValue Op, SelectionDAG &DAG,
   SDValue Ext = DAG.getNode(ISD::SRA, DL, VT, Hi,
                             DAG.getConstant(VT.getSizeInBits() - 1, DL, VT));
 
-  if (!(Subtarget.hasMips4() || Subtarget.hasMips32())) {
+  // The R5900 has the integer conditional moves (MOVN/MOVZ) from MIPS IV.
+  if (!(Subtarget.hasMips4() || Subtarget.hasMips32() || Subtarget.isR5900())) {
     SDVTList VTList = DAG.getVTList(VT, VT);
     return DAG.getNode(Subtarget.isGP64bit() ? MipsISD::DOUBLE_SELECT_I64
                                              : MipsISD::DOUBLE_SELECT_I,

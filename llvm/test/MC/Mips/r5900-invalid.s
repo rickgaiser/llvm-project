@@ -6,6 +6,7 @@
 # - No COP3 instructions (LWC3, SWC3, LDC3, SDC3)
 # - No ROUND/TRUNC/CEIL/FLOOR.W.S (uses CVT.W.S instead)
 # - No double-precision FPU (single float only)
+# - No MOVT/MOVF and no FPU conditional moves (only MOVN/MOVZ from MIPS IV)
 #
 # RUN: not llvm-mc %s -triple=mips64el-unknown-linux -mcpu=r5900 2>%t1
 # RUN: FileCheck %s < %t1
@@ -175,3 +176,26 @@
 
 # CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
         c.le.d  $f4, $f6
+
+# =============================================================================
+# MIPS IV conditional moves that R5900 does NOT support
+# (R5900 only supports the integer MOVN and MOVZ)
+# =============================================================================
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movt    $4, $5, $fcc0
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movf    $4, $5, $fcc0
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movn.s  $f4, $f6, $7
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movz.s  $f4, $f6, $7
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movt.s  $f4, $f6, $fcc0
+
+# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
+        movf.s  $f4, $f6, $fcc0
