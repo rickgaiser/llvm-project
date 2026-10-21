@@ -115,7 +115,8 @@ public:
     renderscript32, // 32-bit RenderScript
     renderscript64, // 64-bit RenderScript
     ve,             // NEC SX-Aurora Vector Engine
-    LastArchType = ve
+    vu,             // Sony PlayStation 2 Vector Unit (VU0/VU1 micro mode)
+    LastArchType = vu
   };
   enum SubArchType {
     NoSubArch,

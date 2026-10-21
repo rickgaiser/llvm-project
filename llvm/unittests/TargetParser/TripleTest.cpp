@@ -1382,6 +1382,14 @@ TEST(TripleTest, ParsedIDs) {
   EXPECT_EQ(Triple::UnknownOS, T.getOS());
   EXPECT_EQ(Triple::UnknownEnvironment, T.getEnvironment());
 
+  T = Triple("vu");
+  EXPECT_EQ(Triple::vu, T.getArch());
+  EXPECT_EQ(Triple::UnknownVendor, T.getVendor());
+  EXPECT_EQ(Triple::UnknownOS, T.getOS());
+  EXPECT_EQ(Triple::UnknownEnvironment, T.getEnvironment());
+  EXPECT_EQ(Triple::ELF, T.getObjectFormat());
+  EXPECT_TRUE(T.isLittleEndian());
+
   T = Triple("arm-unknown-linux-ohos");
   EXPECT_EQ(Triple::arm, T.getArch());
   EXPECT_EQ(Triple::UnknownVendor, T.getVendor());
@@ -2209,6 +2217,12 @@ TEST(TripleTest, BitWidthChecks) {
   EXPECT_EQ(T.getArchPointerBitWidth(), 64U);
 
   T.setArch(Triple::msp430);
+  EXPECT_TRUE(T.isArch16Bit());
+  EXPECT_FALSE(T.isArch32Bit());
+  EXPECT_FALSE(T.isArch64Bit());
+  EXPECT_EQ(T.getArchPointerBitWidth(), 16U);
+
+  T.setArch(Triple::vu);
   EXPECT_TRUE(T.isArch16Bit());
   EXPECT_FALSE(T.isArch32Bit());
   EXPECT_FALSE(T.isArch64Bit());

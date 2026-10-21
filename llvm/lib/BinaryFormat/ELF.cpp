@@ -236,6 +236,9 @@ uint16_t ELF::convertTripleArchTypeToEMachine(Triple::ArchType ArchType) {
   case Triple::mips64:
   case Triple::mips64el:
     return EM_MIPS;
+  case Triple::vu:
+    // VU objects use EM_MIPS so they link with EE (R5900) code, like dvp-as.
+    return EM_MIPS;
   case Triple::msp430:
     return EM_MSP430;
   case Triple::ppc:
