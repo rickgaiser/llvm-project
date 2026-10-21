@@ -260,6 +260,14 @@ MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
   return DAG;
 }
 
+ScheduleDAGInstrs *
+MipsTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
+  ScheduleDAGMI *DAG = createSchedPostRA(C);
+  if (C->MF->getSubtarget<MipsSubtarget>().isR5900())
+    DAG->addMutation(createMipsLoadOrderDAGMutation());
+  return DAG;
+}
+
 TargetTransformInfo
 MipsTargetMachine::getTargetTransformInfo(const Function &F) const {
   LLVM_DEBUG(errs() << "Target Transform Info Pass Added\n");

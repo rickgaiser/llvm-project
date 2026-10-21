@@ -18,6 +18,10 @@ namespace llvm {
 /// as the HI/LO accumulator, from overlapping during pre-RA scheduling.
 std::unique_ptr<ScheduleDAGMutation> createMipsAccumulatorDAGMutation();
 
+/// Keep the loads from the same base register in ascending offset order
+/// during post-RA scheduling.
+std::unique_ptr<ScheduleDAGMutation> createMipsLoadOrderDAGMutation();
+
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_MIPS_MIPSDAGMUTATIONS_H
