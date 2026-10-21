@@ -84,6 +84,7 @@ using TargetRegisterClass = MCRegisterClass;
     bool isCheapToSpeculateCtlz(Type *Ty) const override;
     bool hasBitTest(SDValue X, SDValue Y) const override;
     bool shouldFoldConstantShiftPairToMask(const SDNode *N) const override;
+    bool isCmpValueExpensive(const CmpInst *Cmp) const override;
 
     /// Return the register type for a given MVT, ensuring vectors are treated
     /// as a series of gpr sized integers.

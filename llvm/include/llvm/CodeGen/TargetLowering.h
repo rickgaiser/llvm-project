@@ -699,6 +699,13 @@ public:
     return PredictableSelectIsExpensive;
   }
 
+  /// Return true if materializing the result of \p Cmp as a value needs a
+  /// branch, e.g. because the target can only branch on the condition it
+  /// sets. CodeGenPrepare then turns a logical and/or of such compares that
+  /// is used as a value into a branch, which SelectionDAG splits into one
+  /// branch per compare.
+  virtual bool isCmpValueExpensive(const CmpInst *Cmp) const { return false; }
+
   /// Return true if DAGCombiner may fold freeze(\p Op) into \p Op with frozen
   /// operands. That drops the poison-generating flags of \p Op, so a target
   /// whose lowering of \p Op depends on them can return false.

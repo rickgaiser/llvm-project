@@ -1571,6 +1571,12 @@ bool MipsTargetLowering::shouldFoldConstantShiftPairToMask(
   return true;
 }
 
+bool MipsTargetLowering::isCmpValueExpensive(const CmpInst *Cmp) const {
+  // Without the MIPS IV conditional moves on FP conditions, an FP compare
+  // result is moved to a GPR with a branch.
+  return isa<FCmpInst>(Cmp) && !Subtarget.hasMips4_32();
+}
+
 void
 MipsTargetLowering::ReplaceNodeResults(SDNode *N,
                                        SmallVectorImpl<SDValue> &Results,

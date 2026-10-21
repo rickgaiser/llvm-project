@@ -298,6 +298,7 @@ private:
   bool optimizeShiftInst(BinaryOperator *BO);
   bool optimizeFunnelShift(IntrinsicInst *Fsh);
   bool optimizeSelectInst(SelectInst *SI);
+  bool expandLogicalCmpValue(Instruction *I);
   bool optimizeShuffleVectorInst(ShuffleVectorInst *SVI);
   bool optimizeSwitchType(SwitchInst *SI);
   bool optimizeSwitchPhiConstants(SwitchInst *SI);
@@ -7792,6 +7793,96 @@ bool CodeGenPrepare::optimizeSelectInst(SelectInst *SI) {
   return true;
 }
 
+/// If the target needs a branch to materialize a compare result, turn a
+/// logical and/or of compares that is used as a value into a branch on it, so
+/// that SelectionDAG emits one branch per compare instead of materializing and
+/// combining each result:
+///    %c = select i1 %c1, i1 %c2, i1 false
+///    %z = zext i1 %c to i32
+/// Into:
+///    br i1 %c, label %then, label %tail
+///  then:
+///    br label %tail
+///  tail:
+///    %c.phi = phi i1 [ true, %then ], [ false, %start ]
+///    %z = zext i1 %c.phi to i32
+bool CodeGenPrepare::expandLogicalCmpValue(Instruction *I) {
+  if (!I->getType()->isIntegerTy(1) ||
+      !match(I, m_LogicalOp(m_Value(), m_Value())) || !I->hasOneUse())
+    return false;
+  // Let the outermost logical op of a tree, or a branch on it, handle it.
+  auto *User = cast<Instruction>(I->user_back());
+  if (isa<CondBrInst>(User) || match(User, m_LogicalOp(m_Value(), m_Value())))
+    return false;
+
+  // All leaves must be compares in this block that are only used by the tree,
+  // and at least one of them must be expensive to materialize.
+  BasicBlock *BB = I->getParent();
+  SmallVector<CmpInst *, 8> Leaves;
+  SmallVector<Instruction *, 8> Worklist = {I};
+  bool AnyExpensive = false;
+  while (!Worklist.empty()) {
+    Instruction *Cur = Worklist.pop_back_val();
+    Value *L, *R;
+    if (match(Cur, m_LogicalOp(m_Value(L), m_Value(R)))) {
+      for (Value *Op : {L, R}) {
+        auto *OpI = dyn_cast<Instruction>(Op);
+        if (!OpI || OpI->getParent() != BB || !OpI->hasOneUse())
+          return false;
+        Worklist.push_back(OpI);
+      }
+      continue;
+    }
+    auto *Cmp = dyn_cast<CmpInst>(Cur);
+    if (!Cmp || Leaves.size() == 8)
+      return false;
+    Leaves.push_back(Cmp);
+    AnyExpensive |= TLI->isCmpValueExpensive(Cmp);
+  }
+  if (!AnyExpensive)
+    return false;
+
+  // The compares are now evaluated by branches, so they must not be poison.
+  // Freeze each operand once, before its first compare.
+  llvm::sort(Leaves, [](CmpInst *A, CmpInst *B) { return A->comesBefore(B); });
+  SmallDenseMap<Value *, FreezeInst *, 8> Frozen;
+  for (CmpInst *Cmp : Leaves) {
+    for (Use &Op : Cmp->operands()) {
+      if (isGuaranteedNotToBePoison(Op))
+        continue;
+      FreezeInst *&Fr = Frozen[Op];
+      if (!Fr)
+        Fr = new FreezeInst(Op, Op->getName() + ".frozen", Cmp->getIterator());
+      Op.set(Fr);
+    }
+    Cmp->dropPoisonGeneratingFlags();
+  }
+
+  BasicBlock::iterator SplitPt = std::next(I->getIterator());
+  SplitPt.setHeadBit(true);
+  Instruction *ThenTerm =
+      SplitBlockAndInsertIfThen(I, SplitPt, false, nullptr, DTU, LI);
+  BasicBlock *ThenBB = ThenTerm->getParent();
+  BasicBlock *TailBB = ThenTerm->getSuccessor(0);
+  if (IsHugeFunc) {
+    FreshBBs.insert(ThenBB);
+    FreshBBs.insert(TailBB);
+  }
+  BFI->setBlockFreq(TailBB, BFI->getBlockFreq(BB));
+
+  LLVMContext &Ctx = I->getContext();
+  PHINode *PN = PHINode::Create(I->getType(), 2, I->getName() + ".phi");
+  PN->insertBefore(TailBB->begin());
+  PN->addIncoming(ConstantInt::getTrue(Ctx), ThenBB);
+  PN->addIncoming(ConstantInt::getFalse(Ctx), BB);
+  PN->setDebugLoc(I->getDebugLoc());
+  User->replaceUsesOfWith(I, PN);
+
+  // Instruct OptimizeBlock to skip to the next block.
+  CurInstIterator = BB->end();
+  return true;
+}
+
 /// Some targets only accept certain types for splat inputs. For example a VDUP
 /// in MVE takes a GPR (integer) register, and the instruction that incorporate
 /// a VDUP (such as a VADD qd, qm, rm) also require a gpr register.
@@ -8955,6 +9046,9 @@ bool CodeGenPrepare::optimizeInst(Instruction *I, ModifyDT &ModifiedDT) {
   }
 
   if (tryToSinkFreeOperands(I))
+    return true;
+
+  if (expandLogicalCmpValue(I))
     return true;
 
   switch (I->getOpcode()) {
