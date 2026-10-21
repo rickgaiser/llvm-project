@@ -19,11 +19,11 @@ define void @int_ops() {
 ; CHECK-LABEL: int_ops:
 ; CHECK:       ; %bb.0:
 ; CHECK-NEXT:    nop xitop vi1
+; CHECK-NEXT:    nop iaddiu vi4, vi0, 252
 ; CHECK-NEXT:    nop ilw.y vi2, 0(vi1)
 ; CHECK-NEXT:    nop iadd vi3, vi2, vi2
 ; CHECK-NEXT:    nop iadd vi3, vi3, vi3
 ; CHECK-NEXT:    nop iaddiu vi3, vi3, 300
-; CHECK-NEXT:    nop iaddiu vi4, vi0, 252
 ; CHECK-NEXT:    nop iand vi3, vi3, vi4
 ; CHECK-NEXT:    nop ior vi2, vi3, vi2
 ; CHECK-NEXT:    nop isw.w vi2, 0(vi1)

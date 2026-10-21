@@ -6,8 +6,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Code generation for VU micro programs. Each instruction is currently emitted
-// in its own micro instruction word, with a NOP in the other half.
+// Code generation for VU micro programs. Instructions are scheduled before
+// and after register allocation, then paired into micro instruction words.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,6 +29,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUAsmPrinterPass(PR);
   initializeVUDAGToDAGISelLegacyPass(PR);
   initializeVUDelaySlotFillerPass(PR);
+  initializeVUPacketizerPass(PR);
 }
 
 VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
@@ -64,7 +65,9 @@ namespace {
 class VUPassConfig : public TargetPassConfig {
 public:
   VUPassConfig(VUTargetMachine &TM, PassManagerBase &PM)
-      : TargetPassConfig(TM, PM) {}
+      : TargetPassConfig(TM, PM) {
+    substitutePass(&PostRASchedulerID, &PostMachineSchedulerID);
+  }
 
   VUTargetMachine &getVUTargetMachine() const {
     return getTM<VUTargetMachine>();
@@ -75,7 +78,11 @@ public:
     return false;
   }
 
-  void addPreEmitPass() override { addPass(createVUDelaySlotFillerPass()); }
+  void addPreEmitPass() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createVUPacketizerPass());
+    addPass(createVUDelaySlotFillerPass());
+  }
 };
 } // namespace
 

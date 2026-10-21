@@ -42,7 +42,20 @@ FunctionPass *llvm::createVUDelaySlotFillerPass() {
   return new VUDelaySlotFiller();
 }
 
-/// Returns true if \p Prev writes a VI register that \p Branch reads.
+/// Returns the branch or call in the micro instruction word \p MI, which may
+/// be a bundle, or nullptr.
+static const MachineInstr *getBranch(const MachineInstr &MI) {
+  if (!MI.isBundle())
+    return MI.isBranch() || MI.isCall() ? &MI : nullptr;
+  for (auto I = std::next(MI.getIterator());
+       I != MI.getParent()->instr_end() && I->isInsideBundle(); ++I)
+    if (I->isBranch() || I->isCall())
+      return &*I;
+  return nullptr;
+}
+
+/// Returns true if the word \p Prev writes a VI register that \p Branch
+/// reads.
 static bool writesBranchCondition(const MachineInstr &Prev,
                                   const MachineInstr &Branch,
                                   const TargetRegisterInfo &TRI) {
@@ -58,26 +71,27 @@ bool VUDelaySlotFiller::runOnMachineFunction(MachineFunction &MF) {
   const TargetRegisterInfo &TRI = *MF.getSubtarget().getRegisterInfo();
   bool Changed = false;
 
+  // Iterate over words: bundles and the instructions outside of them.
   for (MachineBasicBlock &MBB : MF) {
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
-      MachineInstr &MI = *I;
-      if (!MI.isBranch() && !MI.isCall())
+      const MachineInstr *Branch = getBranch(*I);
+      if (!Branch)
         continue;
 
-      if (MI.isConditionalBranch()) {
-        // Find the previous real instruction in this block. At the start of
-        // a block it is unknown, so be conservative.
+      if (Branch->isConditionalBranch()) {
+        // Find the previous word in this block. At the start of a block it
+        // is unknown, so be conservative.
         auto Prev = I;
         while (Prev != MBB.begin() && std::prev(Prev)->isMetaInstruction())
           --Prev;
         if (Prev == MBB.begin() ||
-            writesBranchCondition(*std::prev(Prev), MI, TRI)) {
-          BuildMI(MBB, I, MI.getDebugLoc(), TII.get(VU::NOP));
+            writesBranchCondition(*std::prev(Prev), *Branch, TRI)) {
+          BuildMI(MBB, I, Branch->getDebugLoc(), TII.get(VU::NOP));
           Changed = true;
         }
       }
 
-      BuildMI(MBB, std::next(I), MI.getDebugLoc(), TII.get(VU::DSNOP));
+      BuildMI(MBB, std::next(I), Branch->getDebugLoc(), TII.get(VU::DSNOP));
       ++I;
       Changed = true;
     }

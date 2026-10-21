@@ -37,6 +37,7 @@ class VUInst<dag outs, dag ins, string asmstr> : Instruction {
 class VUUpper<dag outs, dag ins, string asmstr>
     : VUInst<outs, ins, asmstr> {
   let DecoderNamespace = "Upper";
+  let Itinerary = IIC_VUUpper;
   let Inst{31-25} = 0;
 }
 
@@ -62,6 +63,7 @@ class VUUpperExt<bits<7> idx, dag outs, dag ins, string asmstr>
 class VULower<dag outs, dag ins, string asmstr> : VUInst<outs, ins, asmstr> {
   let IsLower = 1;
   let DecoderNamespace = "Lower";
+  let Itinerary = IIC_VULower;
 }
 
 // Lower instruction with a 7-bit opcode in bits 31-25.

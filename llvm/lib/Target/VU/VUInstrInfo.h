@@ -45,6 +45,18 @@ public:
 
   bool expandPostRAPseudo(MachineInstr &MI) const override;
 
+  // Scheduling. All latencies are in micro instruction words.
+  DFAPacketizer *
+  CreateTargetScheduleState(const TargetSubtargetInfo &STI) const override;
+  std::optional<unsigned> getOperandLatency(const InstrItineraryData *ItinData,
+                                            const MachineInstr &DefMI,
+                                            unsigned DefIdx,
+                                            const MachineInstr &UseMI,
+                                            unsigned UseIdx) const override;
+  unsigned getInstrLatency(const InstrItineraryData *ItinData,
+                           const MachineInstr &MI,
+                           unsigned *PredCost = nullptr) const override;
+
   // Branch analysis. Cond holds the branch opcode and its register operands.
   bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                      MachineBasicBlock *&FBB,

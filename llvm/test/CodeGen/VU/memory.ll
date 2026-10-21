@@ -17,11 +17,11 @@ define void @address_modes() {
 ; CHECK-NEXT:    nop xitop vi1
 ; CHECK-NEXT:    nop lq.xyzw vf1, 5(vi1)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1023(vi0)
+; CHECK-NEXT:    nop iaddiu vi2, vi1, 2000
 ; CHECK-NEXT:    add.xyzw vf1, vf1, vf2 nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
 ; CHECK-NEXT:    nop sq.w vf1, -1024(vi1)
-; CHECK-NEXT:    nop iaddiu vi1, vi1, 2000
-; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
+; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi2)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
   %base = call i16 @llvm.vu.xitop()

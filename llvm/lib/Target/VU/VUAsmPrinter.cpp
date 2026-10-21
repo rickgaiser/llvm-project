@@ -6,8 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Every MachineInstr becomes one micro instruction word (a BUNDLE): an upper
-// instruction is paired with a lower NOP and vice versa.
+// Every MachineInstr bundle of an upper and a lower instruction becomes one
+// micro instruction word (an MC BUNDLE). An instruction outside of a bundle is
+// paired with a NOP.
 //
 //===----------------------------------------------------------------------===//
 
@@ -98,12 +99,19 @@ void VUAsmPrinter::emitInstruction(const MachineInstr *MI) {
     return;
   }
 
-  MCInst Inst;
-  lowerInstruction(*MI, Inst);
-  if (VU::isLowerInstr(MI->getDesc()))
-    emitBundle(UpperNop, Inst, 0);
-  else
-    emitBundle(Inst, LowerNop, 0);
+  MCInst Upper = UpperNop, Lower = LowerNop;
+  auto Place = [&](const MachineInstr &I) {
+    lowerInstruction(I, VU::isLowerInstr(I.getDesc()) ? Lower : Upper);
+  };
+  if (!MI->isBundle()) {
+    Place(*MI);
+  } else {
+    for (auto I = std::next(MI->getIterator());
+         I != MI->getParent()->instr_end() && I->isInsideBundle(); ++I)
+      if (!I->isMetaInstruction())
+        Place(*I);
+  }
+  emitBundle(Upper, Lower, 0);
 }
 
 char VUAsmPrinter::ID = 0;

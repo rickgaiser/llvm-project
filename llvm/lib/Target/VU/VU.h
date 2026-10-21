@@ -18,10 +18,12 @@ class VUTargetMachine;
 
 FunctionPass *createVUISelDag(VUTargetMachine &TM, CodeGenOptLevel OptLevel);
 FunctionPass *createVUDelaySlotFillerPass();
+FunctionPass *createVUPacketizerPass();
 
 void initializeVUAsmPrinterPass(PassRegistry &);
 void initializeVUDAGToDAGISelLegacyPass(PassRegistry &);
 void initializeVUDelaySlotFillerPass(PassRegistry &);
+void initializeVUPacketizerPass(PassRegistry &);
 } // namespace llvm
 
 #endif // LLVM_LIB_TARGET_VU_VU_H

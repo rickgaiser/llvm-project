@@ -28,4 +28,5 @@ VUSubtarget &VUSubtarget::initializeSubtargetDependencies(StringRef CPU,
 VUSubtarget::VUSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
                          const TargetMachine &TM)
     : VUGenSubtargetInfo(TT, CPU, /*TuneCPU=*/CPU, FS),
-      InstrInfo(initializeSubtargetDependencies(CPU, FS)), TLInfo(TM, *this) {}
+      InstrInfo(initializeSubtargetDependencies(CPU, FS)), TLInfo(TM, *this),
+      InstrItins(getInstrItineraryForCPU(CPU.empty() ? "generic" : CPU)) {}

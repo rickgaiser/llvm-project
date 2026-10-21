@@ -557,7 +557,9 @@ def SQRT : VULowerExt<0x39, (outs), (ins VF:$ft, vufield:$ftf),
 }
 } // Defs = [Q]
 
-let Uses = [Q] in
+// WAITQ and WAITP also define Q and P: reads of the result are ordered after
+// the wait, and may share its micro instruction word.
+let Uses = [Q], Defs = [Q] in
 def WAITQ : VULowerExt<0x3b, (outs), (ins), "waitq"> {
   let Inst{24-11} = 0;
 }
@@ -739,7 +741,7 @@ def MFP : VULowerExt<0x64, (outs VF:$ft), (ins dest:$dest), "mfp$dest\t$ft, p"> 
   let Inst{15-11} = 0;
 }
 
-let Uses = [P] in
+let Uses = [P], Defs = [P] in
 def WAITP : VULowerExt<0x7b, (outs), (ins), "waitp"> {
   let Inst{24-11} = 0;
 }

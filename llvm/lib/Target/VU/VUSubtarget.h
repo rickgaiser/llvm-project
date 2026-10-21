@@ -29,6 +29,7 @@ class VUSubtarget : public VUGenSubtargetInfo {
   VUFrameLowering FrameLowering;
   VUTargetLowering TLInfo;
   VUSelectionDAGInfo TSInfo;
+  InstrItineraryData InstrItins;
 
   VUSubtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
 
@@ -40,6 +41,15 @@ public:
   void ParseSubtargetFeatures(StringRef CPU, StringRef TuneCPU, StringRef FS);
 
   bool hasVU1() const { return HasVU1; }
+
+  // Schedule before and after register allocation, then bundle upper and
+  // lower instructions into micro instruction words (VUPacketizer).
+  bool enableMachineScheduler() const override { return true; }
+  bool enablePostRAScheduler() const override { return true; }
+
+  const InstrItineraryData *getInstrItineraryData() const override {
+    return &InstrItins;
+  }
 
   const VUInstrInfo *getInstrInfo() const override { return &InstrInfo; }
   const VURegisterInfo *getRegisterInfo() const override {

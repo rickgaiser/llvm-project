@@ -9,7 +9,9 @@
 #include "VUInstrInfo.h"
 #include "MCTargetDesc/VUMCTargetDesc.h"
 #include "VUSubtarget.h"
+#include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -17,6 +19,8 @@
 #include "VUGenInstrInfo.inc"
 
 using namespace llvm;
+
+#include "VUGenDFAPacketizer.inc"
 
 // Destination masks.
 static constexpr unsigned MaskX = 8, MaskW = 1, MaskXYZ = 14, MaskXYZW = 15;
@@ -132,6 +136,132 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
 
   MI.eraseFromParent();
   return true;
+}
+
+DFAPacketizer *
+VUInstrInfo::CreateTargetScheduleState(const TargetSubtargetInfo &STI) const {
+  const InstrItineraryData *II = STI.getInstrItineraryData();
+  return static_cast<const VUSubtarget &>(STI).createDFAPacketizer(II);
+}
+
+static bool isVIReg(Register Reg, const MachineRegisterInfo &MRI) {
+  if (Reg.isVirtual())
+    return MRI.getRegClass(Reg) == &VU::VIRegClass;
+  return VU::VIRegClass.contains(Reg);
+}
+
+/// Returns true if a conditional branch may directly follow \p MI when it
+/// reads a VI register written by \p MI.
+static bool isFlagCheck(unsigned Opc) {
+  switch (Opc) {
+  case VU::FCAND:
+  case VU::FCEQ:
+  case VU::FCGET:
+  case VU::FCOR:
+  case VU::FMAND:
+  case VU::FMEQ:
+  case VU::FMOR:
+  case VU::FSAND:
+  case VU::FSEQ:
+  case VU::FSOR:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/// Returns the number of words after \p MI until its result in \p Reg can be
+/// read without a stall.
+static unsigned getResultLatency(const MachineInstr &MI, Register Reg) {
+  switch (MI.getOpcode()) {
+  // Pseudos, expanded after register allocation.
+  case VU::LOADF32:
+  case VU::FNEG:
+    return 5; // LOI; FMAC
+  case VU::SPLAT:
+    return 5; // FMAC; FMAC
+  case VU::FDIV32:
+  case VU::FSQRT32:
+    return 12; // DIV/SQRT; WAITQ; FMAC
+
+  // Q and P are only read after a WAITQ or WAITP, which waits for the result
+  // and may share its word with the reader.
+  case VU::DIV:
+  case VU::SQRT:
+    return 7;
+  case VU::RSQRT:
+    return 13;
+  case VU::WAITQ:
+  case VU::WAITP:
+    return 0;
+
+  // EFU (VU1).
+  case VU::ESADD:
+    return 11;
+  case VU::ESQRT:
+  case VU::ESUM:
+  case VU::ERCPR:
+    return 12;
+  case VU::ERSADD:
+  case VU::ELENG:
+  case VU::ERSQRT:
+    return 18;
+  case VU::ERLENG:
+    return 24;
+  case VU::ESIN:
+    return 29;
+  case VU::EEXP:
+    return 44;
+  case VU::EATAN:
+  case VU::EATANxy:
+  case VU::EATANxz:
+    return 54;
+
+  // Integer loads go through the FMAC pipeline.
+  case VU::ILW:
+  case VU::ILWR:
+    return 4;
+  }
+
+  if (MI.isCopyLike() || MI.isMetaInstruction())
+    return 0;
+  // ACC is forwarded between FMAC instructions; I, R and VI results are
+  // available to the next word.
+  if (Reg == VU::ACC || Reg == VU::I || Reg == VU::R ||
+      isVIReg(Reg, MI.getMF()->getRegInfo()))
+    return 1;
+  // FMAC pipeline.
+  return 4;
+}
+
+std::optional<unsigned> VUInstrInfo::getOperandLatency(
+    const InstrItineraryData *ItinData, const MachineInstr &DefMI,
+    unsigned DefIdx, const MachineInstr &UseMI, unsigned UseIdx) const {
+  Register Reg = DefMI.getOperand(DefIdx).getReg();
+  const MachineOperand &UseMO = UseMI.getOperand(UseIdx);
+
+  // An implicit use of the VF register that UseMI writes only keeps its other
+  // fields alive. Writes to other fields do not stall.
+  if (UseMO.isImplicit() && VU::VFRegClass.contains(Reg) &&
+      UseMI.definesRegister(Reg, /*TRI=*/nullptr))
+    return 1;
+
+  unsigned Latency = getResultLatency(DefMI, Reg);
+  // A conditional branch needs one word between the instruction that sets
+  // its VI register and itself, except after a flag check.
+  if (UseMI.isConditionalBranch() && !isFlagCheck(DefMI.getOpcode()) &&
+      isVIReg(Reg, DefMI.getMF()->getRegInfo()))
+    Latency = std::max(Latency, 2u);
+  return Latency;
+}
+
+unsigned VUInstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
+                                      const MachineInstr &MI,
+                                      unsigned *PredCost) const {
+  unsigned Latency = 1;
+  for (const MachineOperand &MO : MI.all_defs())
+    Latency = std::max(Latency, getResultLatency(MI, MO.getReg()));
+  return Latency;
 }
 
 /// Returns the opposite condition of a conditional branch, or 0.

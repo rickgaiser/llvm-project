@@ -18,14 +18,14 @@ declare float @llvm.sqrt.f32(float)
 define void @vec_ops() {
 ; CHECK-LABEL: vec_ops:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi0)
-; CHECK-NEXT:    sub.xyzw vf3, vf2, vf1 nop
-; CHECK-NEXT:    abs.xyzw vf3, vf3 nop
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf4, 2(vi0)
+; CHECK-NEXT:    sub.xyzw vf3, vf1, vf2 nop
+; CHECK-NEXT:    abs.xyzw vf3, vf3 nop
 ; CHECK-NEXT:    max.xyzw vf3, vf3, vf4 nop
-; CHECK-NEXT:    mini.xyzw vf2, vf3, vf2 nop
-; CHECK-NEXT:    mul.xyzw vf1, vf2, vf1 nop
+; CHECK-NEXT:    mini.xyzw vf1, vf3, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf2 nop
 ; CHECK-NEXT:    add.xyzw vf1, vf1, vf4 nop
 ; CHECK-NEXT:    nop sq.xyz vf1, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
@@ -47,17 +47,17 @@ define void @splat_store() {
 ; CHECK-LABEL: splat_store:
 ; CHECK:       ; %bb.0:
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop loi 0x3f800000
+; CHECK-NEXT:    addi.x vf2, vf0, i nop
+; CHECK-NEXT:    sub.xyzw vf3, vf0, vf0 nop
 ; CHECK-NEXT:    addz.x vf1, vf0, vf1z nop
+; CHECK-NEXT:    addx.xyz vf2, vf0, vf2x nop
 ; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
+; CHECK-NEXT:    mulx.w vf2, vf0, vf2x nop
 ; CHECK-NEXT:    mulx.w vf1, vf0, vf1x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
-; CHECK-NEXT:    nop loi 0x3f800000
-; CHECK-NEXT:    addi.x vf1, vf0, i nop
-; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
-; CHECK-NEXT:    mulx.w vf1, vf0, vf1x nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
-; CHECK-NEXT:    sub.xyzw vf1, vf0, vf0 nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
+; CHECK-NEXT:    nop sq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)

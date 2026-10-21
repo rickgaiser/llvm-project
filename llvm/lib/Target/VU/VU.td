@@ -31,6 +31,7 @@ def HasVU1 : Predicate<"Subtarget->hasVU1()">,
 //===----------------------------------------------------------------------===//
 
 include "VURegisterInfo.td"
+include "VUSchedule.td"
 include "VUInstrInfo.td"
 
 defm : RemapAllTargetPseudoPointerOperands<VI>;
@@ -41,9 +42,9 @@ def VUInstrInfo : InstrInfo;
 // Processors
 //===----------------------------------------------------------------------===//
 
-def : ProcessorModel<"generic", NoSchedModel, [FeatureVU1]>;
-def : ProcessorModel<"vu0", NoSchedModel, []>;
-def : ProcessorModel<"vu1", NoSchedModel, [FeatureVU1]>;
+def : ProcessorModel<"generic", VUModel, [FeatureVU1]>;
+def : ProcessorModel<"vu0", VUModel, []>;
+def : ProcessorModel<"vu1", VUModel, [FeatureVU1]>;
 
 //===----------------------------------------------------------------------===//
 // Assembly parser and printer

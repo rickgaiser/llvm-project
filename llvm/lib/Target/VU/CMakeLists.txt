@@ -5,6 +5,7 @@ set(LLVM_TARGET_DEFINITIONS VU.td)
 tablegen(LLVM VUGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM VUGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM VUGenDAGISel.inc -gen-dag-isel)
+tablegen(LLVM VUGenDFAPacketizer.inc -gen-dfa-packetizer)
 tablegen(LLVM VUGenDisassemblerTables.inc -gen-disassembler)
 tablegen(LLVM VUGenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM VUGenMCCodeEmitter.inc -gen-emitter)
@@ -21,6 +22,7 @@ add_llvm_target(VUCodeGen
   VUInstrInfo.cpp
   VUISelDAGToDAG.cpp
   VUISelLowering.cpp
+  VUPacketizer.cpp
   VURegisterInfo.cpp
   VUSelectionDAGInfo.cpp
   VUSubtarget.cpp
