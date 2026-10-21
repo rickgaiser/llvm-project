@@ -266,6 +266,8 @@ void MipsSEInstrInfo::storeRegToStack(MachineBasicBlock &MBB,
     Opc = Mips::SDC164;
   else if (Mips::GPR128RegClass.hasSubClassEq(RC))
     Opc = Mips::SQ; // R5900 128-bit GPR spill
+  else if (Mips::VFRegsRegClass.hasSubClassEq(RC))
+    Opc = Mips::SQC2; // R5900 VU0 register spill
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::ST_B;
   else if (RI.isTypeLegalForClass(*RC, MVT::v8i16) ||
@@ -350,6 +352,8 @@ void MipsSEInstrInfo::loadRegFromStack(MachineBasicBlock &MBB,
     Opc = Mips::LDC164;
   else if (Mips::GPR128RegClass.hasSubClassEq(RC))
     Opc = Mips::LQ; // R5900 128-bit GPR reload
+  else if (Mips::VFRegsRegClass.hasSubClassEq(RC))
+    Opc = Mips::LQC2; // R5900 VU0 register reload
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::LD_B;
   else if (RI.isTypeLegalForClass(*RC, MVT::v8i16) ||
