@@ -10,8 +10,10 @@
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/PatternMatch.h"
 
 using namespace llvm;
+using namespace llvm::PatternMatch;
 
 bool MipsTTIImpl::hasDivRemOp(Type *DataType, bool IsSigned) const {
   EVT VT = TLI->getValueType(DL, DataType);
@@ -89,6 +91,13 @@ unsigned MipsTTIImpl::getMinVectorRegisterBitWidth() const {
   if (ST->hasVU0() || ST->isR5900())
     return 128;
   return 0;
+}
+
+bool MipsTTIImpl::shouldMaximizeVectorBandwidth(
+    TargetTransformInfo::RegisterKind K) const {
+  // MMI packs narrow elements: a loop that reads i32 and writes i16 can work
+  // on 8 elements and pack them with PPACH into one register to store.
+  return ST->isR5900() && K == TargetTransformInfo::RGK_FixedWidthVector;
 }
 
 // R5900 MMI costs are in issue slots, from the bench uarch tests on hardware.
@@ -239,6 +248,46 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
                                        Args, CxtI);
 }
 
+/// Whether the loop vectorizer's access of type \p VecTy that widens the
+/// scalar load or store \p I is 16-byte aligned, although \p I is not: \p I
+/// accesses consecutive elements of a 16-byte aligned object, from an
+/// induction variable that starts at a multiple of 16 bytes.
+static bool isAlignedWhenWidened(const Instruction *I, Type *VecTy,
+                                 const DataLayout &DL) {
+  if (!I || !isa<LoadInst, StoreInst>(I) ||
+      getLoadStoreType(const_cast<Instruction *>(I))->isVectorTy() ||
+      VecTy->getPrimitiveSizeInBits().getFixedValue() % 128)
+    return false;
+  auto *GEP = dyn_cast<GetElementPtrInst>(getLoadStorePointerOperand(I));
+  if (!GEP || GEP->getNumIndices() != 1 ||
+      DL.getTypeAllocSize(GEP->getSourceElementType()) !=
+          DL.getTypeStoreSize(getLoadStoreType(const_cast<Instruction *>(I))))
+    return false;
+
+  APInt Offset(DL.getIndexTypeSizeInBits(GEP->getType()), 0);
+  const Value *Base =
+      GEP->getPointerOperand()->stripAndAccumulateConstantOffsets(
+          DL, Offset, /*AllowNonInbounds=*/true);
+  if (commonAlignment(Base->getPointerAlignment(DL), Offset.getZExtValue()) <
+      Align(16))
+    return false;
+
+  // The index starts at a multiple of 16 bytes and steps by one element.
+  auto *Phi = dyn_cast<PHINode>(GEP->getOperand(1));
+  if (!Phi || Phi->getNumIncomingValues() != 2)
+    return false;
+  uint64_t EltSize = DL.getTypeAllocSize(GEP->getSourceElementType());
+  bool Start = false, Step = false;
+  for (const Value *V : Phi->incoming_values()) {
+    if (const auto *C = dyn_cast<ConstantInt>(V))
+      Start = C->getZExtValue() * EltSize % 16 == 0;
+    else if (const auto *Add = dyn_cast<BinaryOperator>(V))
+      Step = Add->getOpcode() == Instruction::Add &&
+             Add->getOperand(0) == Phi && match(Add->getOperand(1), m_One());
+  }
+  return Start && Step;
+}
+
 InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
                                              Align Alignment,
                                              unsigned AddressSpace,
@@ -281,7 +330,7 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
   // takes 1 slot. An unaligned one goes through a stack temporary: ldl/ldr x2,
   // sd x2, lq takes 10 cycles and sq, ld x2, sdl/sdr x2 takes 6.
   if (auto LT = getMMIType(Src)) {
-    if (Alignment >= Align(16))
+    if (Alignment >= Align(16) || isAlignedWhenWidened(I, Src, DL))
       return LT->first;
     return LT->first * (Opcode == Instruction::Load ? 10 : 6) * MMICycle;
   }
@@ -559,6 +608,14 @@ InstructionCost MipsTTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
 
   switch (Opcode) {
   case Instruction::Trunc:
+    // PPACH and PPACB pack two registers into a v8i16 or v16i8, one per pair
+    // of source registers.
+    if (ST->isR5900() && DstBits == 128 && SrcBits > 128 &&
+        SrcVTy->getScalarSizeInBits() <= 32 &&
+        (DstVTy->getScalarSizeInBits() == 16 ||
+         DstVTy->getScalarSizeInBits() == 8))
+      return (SrcBits / 128 - 1) * MMICycle;
+    [[fallthrough]];
   case Instruction::ZExt:
   case Instruction::SExt:
     // MMI integer vector extensions and truncations are scalarized.

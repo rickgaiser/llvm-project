@@ -101,3 +101,17 @@ define void @vector_ops(<4 x i32> %w, <4 x i16> %h4, i32 %s) {
   %red = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %w)
   ret void
 }
+
+; PPACH and PPACB pack two registers, one per pair of source registers.
+define void @pack_ops(<8 x i32> %w8, <16 x i16> %h16, <16 x i32> %w16) {
+; CHECK-LABEL: 'pack_ops'
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %h = trunc <8 x i32> %w8 to <8 x i16>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %b = trunc <16 x i16> %h16 to <16 x i8>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %bw = trunc <16 x i32> %w16 to <16 x i8>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %h = trunc <8 x i32> %w8 to <8 x i16>
+  %b = trunc <16 x i16> %h16 to <16 x i8>
+  %bw = trunc <16 x i32> %w16 to <16 x i8>
+  ret void
+}

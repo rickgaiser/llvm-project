@@ -72,6 +72,9 @@ public:
 
   unsigned getMinVectorRegisterBitWidth() const override;
 
+  bool shouldMaximizeVectorBandwidth(
+      TargetTransformInfo::RegisterKind K) const override;
+
   InstructionCost getArithmeticInstrCost(
       unsigned Opcode, Type *Ty, TTI::TargetCostKind CostKind,
       TTI::OperandValueInfo Op1Info = {TTI::OK_AnyValue, TTI::OP_None},

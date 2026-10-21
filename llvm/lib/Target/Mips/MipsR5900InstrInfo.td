@@ -34,6 +34,13 @@ def MipsPMSub : SDNode<"MipsISD::PMSub", SDT_PMult, [SDNPInGlue, SDNPOutGlue]>;
 // R5900 PLZCW - count leading bits matching MSB, returns (count - 1)
 def MipsPLZCW : SDNode<"MipsISD::PLZCW", SDTIntUnaryOp>;
 
+// R5900 PPACH/PPACB - pack the low halfwords/bytes of the elements of rs
+// (upper half of the result) and rt (lower half)
+def SDT_MipsPPAC : SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
+                                        SDTCisSameAs<1, 2>]>;
+def MipsPPACH : SDNode<"MipsISD::PPACH", SDT_MipsPPAC>;
+def MipsPPACB : SDNode<"MipsISD::PPACB", SDT_MipsPPAC>;
+
 //===----------------------------------------------------------------------===//
 // R5900 Enable/Disable Interrupt Instructions
 //===----------------------------------------------------------------------===//
@@ -908,6 +915,11 @@ let Predicates = [IsR5900] in {
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "ppacb\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b11011>;
+
+  def : Pat<(v8i16 (MipsPPACH v4i32:$rs, v4i32:$rt)),
+            (PPACH (v4i32 $rs), (v4i32 $rt))>;
+  def : Pat<(v16i8 (MipsPPACB v8i16:$rs, v8i16:$rt)),
+            (PPACB (v8i16 $rs), (v8i16 $rt))>;
 
   // --- Parallel Copy ---
   // PCPYLD - Parallel Copy Lower Doubleword

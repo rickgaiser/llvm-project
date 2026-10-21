@@ -478,6 +478,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   }
 
   if (Subtarget.isR5900()) {
+    setTargetDAGCombine(ISD::TRUNCATE);
+
     // R5900 FPU only supports 4 compare conditions: C.F, C.EQ, C.OLT, C.OLE
     // (and their inversions via bc1t/bc1f). Expand all conditions that would
     // require C.UN, C.UEQ, C.ULT, or C.ULE instructions (not available on
@@ -1319,6 +1321,37 @@ static SDValue performSETCCCombine(SDNode *N, SelectionDAG &DAG) {
                      N->getOperand(1), N->getOperand(2));
 }
 
+/// Truncate \p Src to the 128-bit vector type \p VT with R5900 MMI PPACH and
+/// PPACB, which pack the low halfwords or bytes of the elements of two
+/// registers. A source with elements of more than twice the width is
+/// truncated in steps.
+static SDValue truncateR5900MMI(SDValue Src, EVT VT, const SDLoc &DL,
+                                SelectionDAG &DAG) {
+  unsigned Bits = VT.getScalarSizeInBits();
+  auto [Lo, Hi] = DAG.SplitVector(Src, DL);
+  if (Src.getValueType().getScalarSizeInBits() > 2 * Bits) {
+    EVT MidVT = EVT::getVectorVT(*DAG.getContext(), MVT::getIntegerVT(2 * Bits),
+                                 VT.getVectorNumElements() / 2);
+    Lo = truncateR5900MMI(Lo, MidVT, DL, DAG);
+    Hi = truncateR5900MMI(Hi, MidVT, DL, DAG);
+  }
+  return DAG.getNode(Bits == 16 ? MipsISD::PPACH : MipsISD::PPACB, DL, VT, Hi,
+                     Lo);
+}
+
+/// R5900: (v8i16 (trunc v8i32)) and (v16i8 (trunc v16i16 or v16i32)) to
+/// PPACH/PPACB, before type legalization splits the source through the stack.
+static SDValue performR5900TRUNCATECombine(SDNode *N, SelectionDAG &DAG,
+                                           const MipsSubtarget &Subtarget) {
+  EVT VT = N->getValueType(0);
+  SDValue Src = N->getOperand(0);
+  EVT SrcVT = Src.getValueType();
+  if (!Subtarget.isR5900() || (VT != MVT::v8i16 && VT != MVT::v16i8) ||
+      !SrcVT.isSimple() || SrcVT.getScalarSizeInBits() > 32)
+    return SDValue();
+  return truncateR5900MMI(Src, VT, SDLoc(N), DAG);
+}
+
 static SDValue performVSELECTCombine(SDNode *N, SelectionDAG &DAG) {
   EVT Ty = N->getValueType(0);
 
@@ -1581,6 +1614,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::FP_TO_UINT:
     Val = performFP_TO_UINTCombine(N, DAG);
+    break;
+  case ISD::TRUNCATE:
+    Val = performR5900TRUNCATECombine(N, DAG, Subtarget);
     break;
   case MipsISD::VU0_BLEND:
     Val = performVU0BlendCombine(N, DAG, Subtarget);
