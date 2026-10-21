@@ -320,33 +320,33 @@ let Predicates = [IsR5900] in {
 
   // PMFHI - Parallel Move From HI Register
   // rd = HI (128-bit)
-  let Uses = [HI0],
+  let Uses = [HI0_64, HI1_64],
       DecoderNamespace =
-          "R5900" in def PMFHI : InstSE<(outs GPR64Opnd:$rd), (ins),
+          "R5900" in def PMFHI : InstSE<(outs GPR128Opnd:$rd), (ins),
                                         "pmfhi\t$rd", [], FrmR>,
       R5900_MMI2_RD_FM<0b01000>;
 
   // PMFLO - Parallel Move From LO Register
   // rd = LO (128-bit)
-  let Uses = [LO0],
+  let Uses = [LO0_64, LO1_64],
       DecoderNamespace =
-          "R5900" in def PMFLO : InstSE<(outs GPR64Opnd:$rd), (ins),
+          "R5900" in def PMFLO : InstSE<(outs GPR128Opnd:$rd), (ins),
                                         "pmflo\t$rd", [], FrmR>,
       R5900_MMI2_RD_FM<0b01001>;
 
   // PMTHI - Parallel Move To HI Register
   // HI = rs (128-bit)
-  let Defs = [HI0],
+  let Defs = [HI0_64, HI1_64],
       DecoderNamespace =
-          "R5900" in def PMTHI : InstSE<(outs), (ins GPR64Opnd:$rs),
+          "R5900" in def PMTHI : InstSE<(outs), (ins GPR128Opnd:$rs),
                                         "pmthi\t$rs", [], FrmR>,
       R5900_MMI3_RS_FM<0b01000>;
 
   // PMTLO - Parallel Move To LO Register
   // LO = rs (128-bit)
-  let Defs = [LO0],
+  let Defs = [LO0_64, LO1_64],
       DecoderNamespace =
-          "R5900" in def PMTLO : InstSE<(outs), (ins GPR64Opnd:$rs),
+          "R5900" in def PMTLO : InstSE<(outs), (ins GPR128Opnd:$rs),
                                         "pmtlo\t$rs", [], FrmR>,
       R5900_MMI3_RS_FM<0b01001>;
 
@@ -1014,23 +1014,23 @@ let Predicates = [IsR5900] in {
   // Multiplies 8 pairs of 16-bit signed integers, stores 32-bit results in
   // rd/HI/LO
   let DecoderNamespace = "R5900",
-      Defs = [HI0, LO0, HI0_64, LO0_64] in def PMULTH
+      Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMULTH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmulth\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b11100>;
 
   // PMADDH - Parallel Multiply-Add Halfword
   // Multiplies and accumulates 8 pairs of halfwords into HI/LO/rd
-  let DecoderNamespace = "R5900", Uses = [HI0, LO0, HI0_64, LO0_64],
-      Defs = [HI0, LO0, HI0_64, LO0_64] in def PMADDH
+  let DecoderNamespace = "R5900", Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
+      Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMADDH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmaddh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b10000>;
 
   // PMSUBH - Parallel Multiply-Subtract Halfword
   // Multiplies and subtracts 8 pairs of halfwords from HI/LO
-  let DecoderNamespace = "R5900", Uses = [HI0, LO0, HI0_64, LO0_64],
-      Defs = [HI0, LO0, HI0_64, LO0_64] in def PMSUBH
+  let DecoderNamespace = "R5900", Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
+      Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMSUBH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmsubh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b10100>;
@@ -1038,7 +1038,7 @@ let Predicates = [IsR5900] in {
   // PHMADH - Parallel Horizontal Multiply-Add Halfword
   // Horizontal multiply-add pairs of halfwords
   let DecoderNamespace = "R5900",
-      Defs = [HI0, LO0, HI0_64, LO0_64] in def PHMADH
+      Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PHMADH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "phmadh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b10001>;
@@ -1046,7 +1046,7 @@ let Predicates = [IsR5900] in {
   // PHMSBH - Parallel Horizontal Multiply-Subtract Halfword
   // Horizontal multiply-subtract pairs of halfwords
   let DecoderNamespace = "R5900",
-      Defs = [HI0, LO0, HI0_64, LO0_64] in def PHMSBH
+      Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PHMSBH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "phmsbh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b10101>;
