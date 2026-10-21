@@ -832,8 +832,9 @@ bool MipsBranchExpansion::handleForbiddenSlot() {
 }
 
 bool MipsBranchExpansion::handleFPUDelaySlot() {
-  // FPU delay slots are only defined for MIPS3 and below.
-  if (STI->hasMips32() || STI->hasMips4())
+  // FPU delay slots are only defined for MIPS3 and below. The R5900 interlocks
+  // MTC1, MFC1 and C.cond.S (measured).
+  if (STI->hasMips32() || STI->hasMips4() || STI->isR5900())
     return false;
 
   return handleSlot([this](auto &I) -> bool { return TII->HasFPUDelaySlot(I); },

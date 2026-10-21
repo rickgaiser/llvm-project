@@ -8,7 +8,6 @@ define i32 @test_oeq(float %a, float %b) {
 ; CHECK-LABEL: test_oeq:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.eq.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB0_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -25,7 +24,6 @@ define i32 @test_olt(float %a, float %b) {
 ; CHECK-LABEL: test_olt:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.olt.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB1_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -42,7 +40,6 @@ define i32 @test_ole(float %a, float %b) {
 ; CHECK-LABEL: test_ole:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.ole.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB2_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -59,7 +56,6 @@ define i32 @test_ogt(float %a, float %b) {
 ; CHECK-LABEL: test_ogt:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.olt.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB3_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -76,7 +72,6 @@ define i32 @test_oge(float %a, float %b) {
 ; CHECK-LABEL: test_oge:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.ole.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB4_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -98,7 +93,6 @@ define i32 @test_one(float %a, float %b) {
 ; CHECK-NEXT:    addiu $3, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    c.olt.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB5_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  .LBB5_2:
@@ -106,7 +100,6 @@ define i32 @test_one(float %a, float %b) {
 ; CHECK-NEXT:    or $2, $2, $3
 ; CHECK-NEXT:  .LBB5_3:
 ; CHECK-NEXT:    c.olt.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB5_2
 ; CHECK-NEXT:    addiu $3, $zero, 1
 ; CHECK-NEXT:  .LBB5_4:
@@ -129,7 +122,6 @@ define i32 @test_ueq(float %a, float %b) {
 ; CHECK-NEXT:    addiu $3, $zero, 1
 ; CHECK-NEXT:  .LBB6_2:
 ; CHECK-NEXT:    c.olt.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB6_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.3:
@@ -147,7 +139,6 @@ define i32 @test_ult(float %a, float %b) {
 ; CHECK-LABEL: test_ult:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.ole.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB7_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -164,7 +155,6 @@ define i32 @test_ule(float %a, float %b) {
 ; CHECK-LABEL: test_ule:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.olt.s $f13, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB8_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -181,7 +171,6 @@ define i32 @test_ugt(float %a, float %b) {
 ; CHECK-LABEL: test_ugt:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.ole.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB9_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -198,7 +187,6 @@ define i32 @test_uge(float %a, float %b) {
 ; CHECK-LABEL: test_uge:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.olt.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB10_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -215,7 +203,6 @@ define i32 @test_une(float %a, float %b) {
 ; CHECK-LABEL: test_une:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    c.eq.s $f12, $f13
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB11_2
 ; CHECK-NEXT:    addiu $2, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
@@ -237,7 +224,6 @@ define i32 @test_ord(float %a, float %b) {
 ; CHECK-NEXT:    addiu $3, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB12_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  .LBB12_2:
@@ -245,7 +231,6 @@ define i32 @test_ord(float %a, float %b) {
 ; CHECK-NEXT:    and $2, $2, $3
 ; CHECK-NEXT:  .LBB12_3:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB12_2
 ; CHECK-NEXT:    addiu $3, $zero, 1
 ; CHECK-NEXT:  .LBB12_4:
@@ -266,7 +251,6 @@ define i32 @test_uno(float %a, float %b) {
 ; CHECK-NEXT:    addiu $3, $zero, 0
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1f .LBB13_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  .LBB13_2:
@@ -274,7 +258,6 @@ define i32 @test_uno(float %a, float %b) {
 ; CHECK-NEXT:    or $2, $2, $3
 ; CHECK-NEXT:  .LBB13_3:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
-; CHECK-NEXT:    nop
 ; CHECK-NEXT:    bc1t .LBB13_2
 ; CHECK-NEXT:    addiu $3, $zero, 1
 ; CHECK-NEXT:  .LBB13_4:
