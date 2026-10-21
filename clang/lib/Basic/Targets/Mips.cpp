@@ -193,6 +193,9 @@ void MipsTargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasMSA)
     Builder.defineMacro("__mips_msa", Twine(1));
 
+  if (HasVU0)
+    Builder.defineMacro("__mips_vu0", Twine(1));
+
   if (DisableMadd4)
     Builder.defineMacro("__mips_no_madd4", Twine(1));
 

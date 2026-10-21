@@ -1736,6 +1736,11 @@
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPS-MSA %s
 // MIPS-MSA:#define __mips_msa 1
 
+// RUN: %clang_cc1 -target-feature +vu0 \
+// RUN:   -E -dM -triple=mips64el-none-none -target-cpu r5900 < /dev/null \
+// RUN:   | FileCheck -match-full-lines -check-prefix MIPS-VU0 %s
+// MIPS-VU0:#define __mips_vu0 1
+
 // RUN: %clang_cc1 -target-feature +nomadd4 \
 // RUN:   -E -dM -triple=mips-none-none < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPS-NOMADD4 %s
