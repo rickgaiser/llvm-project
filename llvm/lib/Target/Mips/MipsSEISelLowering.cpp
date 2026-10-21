@@ -801,6 +801,25 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   return MipsTargetLowering::LowerOperation(Op, DAG);
 }
 
+bool MipsSETargetLowering::shouldPushFreezeThroughOp(SDValue Op) const {
+  if (!Subtarget.isR5900() || Op.getValueType() != MVT::f32)
+    return true;
+  // Keep the nnan and ninf flags that select the R5900 FPU instruction over
+  // the libcall.
+  switch (Op.getOpcode()) {
+  case ISD::FADD:
+  case ISD::FSUB:
+  case ISD::FMUL:
+  case ISD::FDIV:
+  case ISD::FSQRT:
+  case ISD::FMINNUM:
+  case ISD::FMAXNUM:
+    return !Op->getFlags().hasNoNaNs() && !Op->getFlags().hasNoInfs();
+  default:
+    return true;
+  }
+}
+
 SDValue MipsSETargetLowering::lowerR5900FPOp(SDValue Op, SelectionDAG &DAG,
                                              RTLIB::Libcall LC) const {
   assert(Subtarget.isR5900());

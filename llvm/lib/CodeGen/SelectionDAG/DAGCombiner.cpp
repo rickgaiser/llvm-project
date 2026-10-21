@@ -18787,7 +18787,8 @@ SDValue DAGCombiner::visitFREEZE(SDNode *N) {
   // NOTE: we will strip poison-generating flags, so ignore them here.
   if (DAG.canCreateUndefOrPoison(N0, UndefPoisonKind::UndefOrPoison,
                                  /*ConsiderFlags*/ false) ||
-      N0->getNumValues() != 1 || !N0->hasOneUse())
+      N0->getNumValues() != 1 || !N0->hasOneUse() ||
+      !TLI.shouldPushFreezeThroughOp(N0))
     return SDValue();
 
   // TOOD: we should always allow multiple operands, however this increases the

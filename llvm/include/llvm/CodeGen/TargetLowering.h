@@ -699,6 +699,11 @@ public:
     return PredictableSelectIsExpensive;
   }
 
+  /// Return true if DAGCombiner may fold freeze(\p Op) into \p Op with frozen
+  /// operands. That drops the poison-generating flags of \p Op, so a target
+  /// whose lowering of \p Op depends on them can return false.
+  virtual bool shouldPushFreezeThroughOp(SDValue Op) const { return true; }
+
   virtual bool fallBackToDAGISel(const Instruction &Inst) const {
     return false;
   }

@@ -59,6 +59,8 @@ using TargetRegisterClass = MCRegisterClass;
 
     SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
+    bool shouldPushFreezeThroughOp(SDValue Op) const override;
+
     MachineBasicBlock *
     EmitInstrWithCustomInserter(MachineInstr &MI,
                                 MachineBasicBlock *MBB) const override;
