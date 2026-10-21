@@ -58,14 +58,14 @@ class VUImmAsmOperand<string name, string diag> : AsmOperandClass {
 
 def SImm5AsmOperand : VUImmAsmOperand<"SImm5",
     "immediate must be an integer in the range [-16, 15]">;
-def simm5 : Operand<i32> {
+def simm5 : Operand<i16> {
   let ParserMatchClass = SImm5AsmOperand;
   let DecoderMethod = "decodeSImmOperand<5>";
 }
 
 def SImm11AsmOperand : VUImmAsmOperand<"SImm11",
     "immediate must be an integer in the range [-1024, 1023]">;
-def simm11 : Operand<i32> {
+def simm11 : Operand<i16> {
   let ParserMatchClass = SImm11AsmOperand;
   let DecoderMethod = "decodeSImmOperand<11>";
 }
@@ -78,7 +78,7 @@ def uimm12 : Operand<i32> {
 
 def UImm15AsmOperand : VUImmAsmOperand<"UImm15",
     "immediate must be an integer in the range [0, 32767]">;
-def uimm15 : Operand<i32> {
+def uimm15 : Operand<i16> {
   let ParserMatchClass = UImm15AsmOperand;
 }
 
@@ -780,6 +780,7 @@ def ESIN   : EFUScalar<0x7c, "esin">;
 def EATAN  : EFUScalar<0x7d, "eatan">;
 def EEXP   : EFUScalar<0x7e, "eexp">;
 
+let hasSideEffects = 1 in
 def XTOP : VULowerExt<0x68, (outs VI:$it), (ins), "xtop\t$it"> {
   bits<5> it;
   let Inst{24-21} = 0;
@@ -796,9 +797,16 @@ def XGKICK : VULowerExt<0x6c, (outs), (ins VI:$is), "xgkick\t$is"> {
 
 } // Predicates = [HasVU1]
 
+let hasSideEffects = 1 in
 def XITOP : VULowerExt<0x69, (outs VI:$it), (ins), "xitop\t$it"> {
   bits<5> it;
   let Inst{24-21} = 0;
   let Inst{20-16} = it;
   let Inst{15-11} = 0;
 }
+
+//===----------------------------------------------------------------------===//
+// Code generation
+//===----------------------------------------------------------------------===//
+
+include "VUInstrPatterns.td"

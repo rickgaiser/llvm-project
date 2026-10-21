@@ -27,7 +27,11 @@ def Q   : VUReg<0, "q">,   DwarfRegNum<[50]>; // FDIV result
 def P   : VUReg<0, "p">,   DwarfRegNum<[51]>; // EFU result (VU1)
 def R   : VUReg<0, "r">,   DwarfRegNum<[52]>; // Random number
 
-def VF : RegisterClass<"VU", [v4f32], 128, (sequence "VF%u", 0, 31)>;
+// VF registers hold vectors, and scalar floats in the x field.
+def VF : RegisterClass<"VU", [v4f32, v4i32, f32], 128,
+                       (sequence "VF%u", 0, 31)>;
 def VI : RegisterClass<"VU", [i16], 16, (sequence "VI%u", 0, 15)>;
 def ACCR : RegisterClass<"VU", [v4f32], 128, (add ACC)>;
-def SPR : RegisterClass<"VU", [f32], 32, (add I, Q, P, R)>;
+// i32 is listed so that TableGen can type generic patterns; it is not a legal
+// type for instruction selection.
+def SPR : RegisterClass<"VU", [f32, i32], 32, (add I, Q, P, R)>;
