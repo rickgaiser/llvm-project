@@ -173,34 +173,18 @@ define void @splat_b(i8 %x, ptr %q) {
 define void @madd_chain(ptr %p, ptr %q, <8 x i16> %c, ptr %r) {
 ; CHECK-LABEL: madd_chain:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
-; CHECK-NEXT:    dsrl $1, $7, 48
-; CHECK-NEXT:    sh $1, 14($sp)
-; CHECK-NEXT:    dsrl $1, $7, 32
-; CHECK-NEXT:    sh $1, 12($sp)
-; CHECK-NEXT:    dsrl $1, $6, 48
-; CHECK-NEXT:    sh $1, 6($sp)
-; CHECK-NEXT:    dsrl $1, $6, 32
-; CHECK-NEXT:    sh $1, 4($sp)
-; CHECK-NEXT:    sll $1, $7, 0
-; CHECK-NEXT:    sll $2, $6, 0
-; CHECK-NEXT:    sh $1, 8($sp)
-; CHECK-NEXT:    srl $1, $1, 16
-; CHECK-NEXT:    sh $2, 0($sp)
-; CHECK-NEXT:    sh $1, 10($sp)
-; CHECK-NEXT:    srl $1, $2, 16
-; CHECK-NEXT:    sll $2, $5, 0
-; CHECK-NEXT:    sh $1, 2($sp)
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    lq $4, 0($2)
+; CHECK-NEXT:    sll $2, $5, 0
 ; CHECK-NEXT:    lq $3, 0($1)
+; CHECK-NEXT:    # kill: def $r7_64 killed $r7_64 def $r7_128
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    lq $4, 0($2)
 ; CHECK-NEXT:    lq $1, 16($1)
 ; CHECK-NEXT:    pmulth $4, $3, $4
 ; CHECK-NEXT:    lq $2, 16($2)
 ; CHECK-NEXT:    pmaddh $1, $1, $2
-; CHECK-NEXT:    lq $1, 0($sp)
 ; CHECK-NEXT:    sll $2, $8, 0
+; CHECK-NEXT:    pcpyld $1, $7, $6
 ; CHECK-NEXT:    lq $4, 16($2)
 ; CHECK-NEXT:    pmaddh $1, $3, $1
 ; CHECK-NEXT:    pmflo $1
@@ -211,9 +195,8 @@ define void @madd_chain(ptr %p, ptr %q, <8 x i16> %c, ptr %r) {
 ; CHECK-NEXT:    pcpyld $1, $3, $1
 ; CHECK-NEXT:    sq $4, 16($2)
 ; CHECK-NEXT:    paddw $1, $1, $5
-; CHECK-NEXT:    sq $1, 0($2)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    sq $1, 0($2)
   %a0 = load <8 x i16>, ptr %p, align 16
   %p1 = getelementptr i8, ptr %p, i32 16
   %a1 = load <8 x i16>, ptr %p1, align 16

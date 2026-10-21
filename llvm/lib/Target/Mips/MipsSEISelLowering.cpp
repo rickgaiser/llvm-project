@@ -495,8 +495,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   }
 
   if (Subtarget.isR5900()) {
-    setTargetDAGCombine(
-        {ISD::TRUNCATE, ISD::SIGN_EXTEND, ISD::ZERO_EXTEND, ISD::ANY_EXTEND});
+    setTargetDAGCombine({ISD::TRUNCATE, ISD::SIGN_EXTEND, ISD::ZERO_EXTEND,
+                         ISD::ANY_EXTEND, ISD::BITCAST,
+                         ISD::EXTRACT_VECTOR_ELT});
 
     // R5900 FPU only supports 4 compare conditions: C.F, C.EQ, C.OLT, C.OLE
     // (and their inversions via bc1t/bc1f). Expand all conditions that would
@@ -1608,6 +1609,55 @@ static SDValue performFP_TO_UINTCombine(SDNode *N, SelectionDAG &DAG) {
 // Optimize: bitcast(v4f32 load) -> v4i32 load
 // When a v4f32 is loaded (LQC2) and immediately bitcast to v4i32 (QMFC2),
 // we can load directly to GPR128 (LQ) avoiding the VF register round-trip.
+static bool isR5900MMIType(EVT VT) {
+  return VT == MVT::v4i32 || VT == MVT::v8i16 || VT == MVT::v16i8;
+}
+
+/// R5900: a 128-bit vector of two doublewords, such as an argument in a pair
+/// of GPRs, is PCPYLD of them. v2i64 is not a legal type, and the vector would
+/// be built in a stack temporary otherwise.
+static SDValue performR5900BITCASTCombine(SDNode *N, SelectionDAG &DAG,
+                                          const MipsSubtarget &Subtarget) {
+  EVT VT = N->getValueType(0);
+  SDValue Src = N->getOperand(0);
+  if (!Subtarget.isR5900() || !isR5900MMIType(VT) ||
+      Src.getOpcode() != ISD::BUILD_VECTOR || Src.getValueType() != MVT::v2i64)
+    return SDValue();
+  SDLoc DL(N);
+  auto ToVector = [&](SDValue X) {
+    return DAG.getTargetInsertSubreg(
+        Mips::sub_64, DL, VT,
+        SDValue(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, VT), 0), X);
+  };
+  SDValue Lo = ToVector(Src.getOperand(0));
+  if (Src.getOperand(1).isUndef())
+    return Lo;
+  return SDValue(
+      DAG.getMachineNode(Mips::PCPYLD, DL, VT, ToVector(Src.getOperand(1)), Lo),
+      0);
+}
+
+/// R5900: a doubleword of a 128-bit vector, such as a result in a pair of
+/// GPRs, is the low doubleword of the register, or that of PCPYUD for the high
+/// one.
+static SDValue
+performR5900EXTRACT_VECTOR_ELTCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  SDValue Src = N->getOperand(0);
+  auto *Idx = dyn_cast<ConstantSDNode>(N->getOperand(1));
+  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::i64 ||
+      Src.getValueType() != MVT::v2i64 || Src.getOpcode() != ISD::BITCAST ||
+      !isR5900MMIType(Src.getOperand(0).getValueType()) || !Idx ||
+      Idx->getZExtValue() > 1)
+    return SDValue();
+  SDLoc DL(N);
+  SDValue V = Src.getOperand(0);
+  if (Idx->getZExtValue() == 1)
+    V = SDValue(DAG.getMachineNode(Mips::PCPYUD, DL, V.getValueType(), V, V),
+                0);
+  return DAG.getTargetExtractSubreg(Mips::sub_64, DL, MVT::i64, V);
+}
+
 static SDValue performBITCASTCombine(SDNode *N, SelectionDAG &DAG,
                                      const MipsSubtarget &Subtarget) {
   if (!Subtarget.hasVU0())
@@ -1823,7 +1873,12 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performVU0BlendCombine(N, DAG, Subtarget);
     break;
   case ISD::BITCAST:
-    Val = performBITCASTCombine(N, DAG, Subtarget);
+    Val = performR5900BITCASTCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performBITCASTCombine(N, DAG, Subtarget);
+    break;
+  case ISD::EXTRACT_VECTOR_ELT:
+    Val = performR5900EXTRACT_VECTOR_ELTCombine(N, DAG, Subtarget);
     break;
   }
 

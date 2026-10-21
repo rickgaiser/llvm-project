@@ -8,19 +8,16 @@
 define <4 x i32> @load_align4(ptr %p) {
 ; CHECK-LABEL: load_align4:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    sll $1, $4, 0
 ; CHECK-NEXT:    ldl $2, 7($1)
 ; CHECK-NEXT:    ldl $3, 15($1)
 ; CHECK-NEXT:    ldr $2, 0($1)
 ; CHECK-NEXT:    ldr $3, 8($1)
-; CHECK-NEXT:    pcpyld $1, $3, $2
-; CHECK-NEXT:    sq $1, 0($sp)
-; CHECK-NEXT:    ld $2, 0($sp)
-; CHECK-NEXT:    ld $3, 8($sp)
+; CHECK-NEXT:    pcpyld $2, $3, $2
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    pcpyud $3, $2, $2
   %v = load <4 x i32>, ptr %p, align 4
   ret <4 x i32> %v
 }
@@ -28,17 +25,14 @@ define <4 x i32> @load_align4(ptr %p) {
 define <8 x i16> @load_align8(ptr %p) {
 ; CHECK-LABEL: load_align8:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    sll $1, $4, 0
 ; CHECK-NEXT:    ld $2, 0($1)
 ; CHECK-NEXT:    ld $1, 8($1)
-; CHECK-NEXT:    pcpyld $1, $1, $2
-; CHECK-NEXT:    sq $1, 0($sp)
-; CHECK-NEXT:    ld $2, 0($sp)
-; CHECK-NEXT:    ld $3, 8($sp)
+; CHECK-NEXT:    pcpyld $2, $1, $2
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    pcpyud $3, $2, $2
   %v = load <8 x i16>, ptr %p, align 8
   ret <8 x i16> %v
 }
@@ -67,34 +61,23 @@ define void @copy_align1(ptr %p, ptr %q) {
 define void @add_align2(ptr %p, ptr %q, <4 x i32> %b) {
 ; CHECK-LABEL: add_align2:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
-; CHECK-NEXT:    sll $1, $7, 0
-; CHECK-NEXT:    sw $1, 8($sp)
-; CHECK-NEXT:    sll $1, $6, 0
-; CHECK-NEXT:    sw $1, 0($sp)
-; CHECK-NEXT:    dsrl $1, $7, 32
-; CHECK-NEXT:    dsrl $2, $6, 32
-; CHECK-NEXT:    sll $1, $1, 0
-; CHECK-NEXT:    sw $1, 12($sp)
-; CHECK-NEXT:    sll $1, $2, 0
-; CHECK-NEXT:    sw $1, 4($sp)
-; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    ldl $2, 7($1)
-; CHECK-NEXT:    ldl $3, 15($1)
-; CHECK-NEXT:    ldr $2, 0($1)
-; CHECK-NEXT:    ldr $3, 8($1)
-; CHECK-NEXT:    lq $1, 0($sp)
-; CHECK-NEXT:    pcpyld $2, $3, $2
-; CHECK-NEXT:    paddw $1, $2, $1
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    # kill: def $r7_64 killed $r7_64 def $r7_128
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    ldl $3, 7($2)
+; CHECK-NEXT:    ldl $4, 15($2)
+; CHECK-NEXT:    ldr $3, 0($2)
+; CHECK-NEXT:    ldr $4, 8($2)
+; CHECK-NEXT:    pcpyld $1, $7, $6
+; CHECK-NEXT:    pcpyld $2, $4, $3
 ; CHECK-NEXT:    sll $3, $5, 0
-; CHECK-NEXT:    pcpyud $2, $1, $1
+; CHECK-NEXT:    paddw $1, $2, $1
 ; CHECK-NEXT:    sdl $1, 7($3)
+; CHECK-NEXT:    pcpyud $2, $1, $1
 ; CHECK-NEXT:    sdl $2, 15($3)
 ; CHECK-NEXT:    sdr $1, 0($3)
-; CHECK-NEXT:    sdr $2, 8($3)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    sdr $2, 8($3)
   %a = load <4 x i32>, ptr %p, align 2
   %s = add <4 x i32> %a, %b
   store <4 x i32> %s, ptr %q, align 2
