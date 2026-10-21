@@ -1,0 +1,151 @@
+# RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi n32 -run-pass=mips-r5900-issue \
+# RUN:   -pass-remarks-analysis=mips-r5900-issue -o /dev/null %s 2>&1 | FileCheck %s
+
+# A 3-operand MULT or MULT1 with a destination register writes it late through
+# the port of its pipe: an instruction that writes a GPR cannot use that pipe
+# 2 cycles later (measured). The remark gives the cycles of the input order.
+
+# A pipe 0 ALU operation 2 cycles after MULT waits a cycle, 3 cycles after or
+# after a MULT without a destination register it does not.
+# CHECK: remark: <unknown>:0:0: mult_alu_2 %bb.0, slot 0: 5 -> 5 cycles
+# CHECK: remark: <unknown>:0:0: mult_alu_3 %bb.0, slot 0: 5 -> 5 cycles
+# CHECK: remark: <unknown>:0:0: mult_zero_alu_2 %bb.0, slot 0: 4 -> 4 cycles
+# The same for a load 2 cycles after MULT1, but not 1 cycle after it.
+# CHECK: remark: <unknown>:0:0: mult1_lw_2 %bb.0, slot 0: 5 -> 5 cycles
+# CHECK: remark: <unknown>:0:0: mult1_lw_1 %bb.0, slot 0: 4 -> 4 cycles
+# Two ALU operations 2 cycles after MULT1 do not pair: one of them would need
+# pipe 1.
+# CHECK: remark: <unknown>:0:0: mult1_alu_alu_2 %bb.0, slot 0: 5 -> 5 cycles
+# The second of them issues by itself in pipe 0, so it also waits for the
+# write of the next MULT, unless that one has no destination register.
+# CHECK: remark: <unknown>:0:0: split_second %bb.0, slot 0: 7 -> 7 cycles
+# CHECK: remark: <unknown>:0:0: split_second_mult_zero %bb.0, slot 0: 6 -> 6 cycles
+
+--- |
+  define void @mult_alu_2() { ret void }
+  define void @mult_alu_3() { ret void }
+  define void @mult_zero_alu_2() { ret void }
+  define void @mult1_lw_2() { ret void }
+  define void @mult1_lw_1() { ret void }
+  define void @mult1_alu_alu_2() { ret void }
+  define void @split_second() { ret void }
+  define void @split_second_mult_zero() { ret void }
+...
+---
+name: mult_alu_2
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = R5900_MULT $r12, $r13, implicit-def dead $hi0, implicit-def dead $lo0
+    SW $r12, $r24, 32 :: (store (s32))
+    $f4 = FADD_S $f0, $f1, implicit $fcr31
+    SW $r12, $r24, 36 :: (store (s32))
+    $r3 = ADDu $r12, $r13
+    $r5 = LW $r24, 0 :: (load (s32))
+    RetRA
+...
+---
+name: mult_alu_3
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = R5900_MULT $r12, $r13, implicit-def dead $hi0, implicit-def dead $lo0
+    SW $r12, $r24, 32 :: (store (s32))
+    $f4 = FADD_S $f0, $f1, implicit $fcr31
+    SW $r12, $r24, 36 :: (store (s32))
+    $f5 = FADD_S $f0, $f1, implicit $fcr31
+    SW $r12, $r24, 40 :: (store (s32))
+    $r3 = ADDu $r12, $r13
+    $r5 = LW $r24, 0 :: (load (s32))
+    RetRA
+...
+---
+name: mult_zero_alu_2
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    MULT $r12, $r13, implicit-def $hi0, implicit-def $lo0
+    SW $r12, $r24, 32 :: (store (s32))
+    $f4 = FADD_S $f0, $f1, implicit $fcr31
+    SW $r12, $r24, 36 :: (store (s32))
+    $r3 = ADDu $r12, $r13
+    $r5 = LW $r24, 0 :: (load (s32))
+    RetRA
+...
+---
+name: mult1_lw_2
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = MULT1 $r12, $r13, implicit-def dead $hi1, implicit-def dead $lo1
+    $r6 = ADDu $r12, $r13
+    $r7 = ADDu $r12, $r13
+    SW $r12, $r24, 32 :: (store (s32))
+    $r3 = ADDu $r12, $r13
+    $r5 = LW $r24, 0 :: (load (s32))
+    RetRA
+...
+---
+name: mult1_lw_1
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = MULT1 $r12, $r13, implicit-def dead $hi1, implicit-def dead $lo1
+    $r6 = ADDu $r12, $r13
+    $r3 = ADDu $r12, $r13
+    $r5 = LW $r24, 0 :: (load (s32))
+    $r7 = ADDu $r12, $r13
+    SW $r12, $r24, 32 :: (store (s32))
+    RetRA
+...
+---
+name: mult1_alu_alu_2
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = MULT1 $r12, $r13, implicit-def dead $hi1, implicit-def dead $lo1
+    $r6 = ADDu $r12, $r13
+    $r7 = ADDu $r12, $r13
+    SW $r12, $r24, 32 :: (store (s32))
+    $r3 = ADDu $r12, $r13
+    $r5 = ADDu $r12, $r13
+    RetRA
+...
+---
+name: split_second
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = R5900_MULT $r12, $r13, implicit-def dead $hi0, implicit-def dead $lo0
+    $r5 = ADDu $r12, $r13
+    $r3 = MULT1 $r12, $r13, implicit-def dead $hi1, implicit-def dead $lo1
+    $r6 = ADDu $r12, $r13
+    $r8 = R5900_MULT $r12, $r13, implicit-def dead $hi0, implicit-def dead $lo0
+    $r7 = ADDu $r12, $r13
+    $r9 = ADDu $r12, $r13
+    $r10 = ADDu $r12, $r13
+    RetRA
+...
+---
+name: split_second_mult_zero
+alignment: 8
+tracksRegLiveness: false
+body: |
+  bb.0:
+    $r2 = R5900_MULT $r12, $r13, implicit-def dead $hi0, implicit-def dead $lo0
+    $r5 = ADDu $r12, $r13
+    $r3 = MULT1 $r12, $r13, implicit-def dead $hi1, implicit-def dead $lo1
+    $r6 = ADDu $r12, $r13
+    MULT $r12, $r13, implicit-def $hi0, implicit-def $lo0
+    $r7 = ADDu $r12, $r13
+    $r9 = ADDu $r12, $r13
+    $r10 = ADDu $r12, $r13
+    RetRA
+...

@@ -14,7 +14,12 @@
 //   - otherwise the first issues alone and the second issues by itself when
 //     it is ready; it never issues together with the first instruction of the
 //     next block.
-// The latencies and resources come from the R5900 scheduling model.
+// The latencies and resources come from the R5900 scheduling model, except for
+// a write port conflict (measured): a 3-operand MULT/MULT1 writes its GPR
+// result through the port of its pipe 2 cycles late, so an instruction that
+// writes a GPR cannot use that pipe 2 cycles after the multiply. An ALU
+// operation that issues after the first instruction of its block, not together
+// with it, uses pipe 0 (measured).
 //
 //===----------------------------------------------------------------------===//
 
@@ -82,12 +87,18 @@ private:
   const MachineInstr *Slot0MI = nullptr;
   unsigned Slot0Cycle = 0;
 
+  /// The resource kinds of pipe 0 and pipe 1.
+  unsigned PipeKind[2] = {0, 0};
+  /// The cycle in which each pipe cannot take an instruction that writes a
+  /// GPR, plus one; 0 if there is none.
+  unsigned PortConflict[2] = {0, 0};
+
   unsigned getReadyCycle(const MachineInstr &MI) const;
   bool dependsOn(const MachineInstr &MI, const MachineInstr &DefMI) const;
-  bool reserve(const MCSchedClassDesc *SC, unsigned Cycle,
-               SmallVectorImpl<unsigned> &Units) const;
-  bool fitsWithSlot0(const MCSchedClassDesc *SC) const;
-  unsigned getResourceCycle(const MCSchedClassDesc *SC, unsigned Cycle,
+  bool reserve(const MachineInstr &MI, unsigned Cycle,
+               SmallVectorImpl<unsigned> &Units, bool Pipe0Only = false) const;
+  bool fitsWithSlot0(const MachineInstr &MI) const;
+  unsigned getResourceCycle(const MachineInstr &MI, unsigned Cycle,
                             bool Pair) const;
 };
 
