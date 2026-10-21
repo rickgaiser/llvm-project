@@ -89,6 +89,8 @@ using TargetRegisterClass = MCRegisterClass;
     SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerVectorShift(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerR5900SETCC(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerR5900VSELECT(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue lowerMulDiv(SDValue Op, unsigned NewOpc, bool HasLo, bool HasHi,
                         SelectionDAG &DAG) const;

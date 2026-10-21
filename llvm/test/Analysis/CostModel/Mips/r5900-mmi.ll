@@ -39,7 +39,7 @@ define void @intrinsics(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w) {
 ; CHECK-LABEL: 'intrinsics'
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %abs.w = call <4 x i32> @llvm.abs.v4i32(<4 x i32> %w, i1 false)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %smax.h = call <8 x i16> @llvm.smax.v8i16(<8 x i16> %h, <8 x i16> %h)
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 236 for instruction: %smax.b = call <16 x i8> @llvm.smax.v16i8(<16 x i8> %b, <16 x i8> %b)
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %smax.b = call <16 x i8> @llvm.smax.v16i8(<16 x i8> %b, <16 x i8> %b)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %sadd.w = call <4 x i32> @llvm.sadd.sat.v4i32(<4 x i32> %w, <4 x i32> %w)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %uadd.b = call <16 x i8> @llvm.uadd.sat.v16i8(<16 x i8> %b, <16 x i8> %b)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %ctlz.w = call <4 x i32> @llvm.ctlz.v4i32(<4 x i32> %w, i1 false)
@@ -80,8 +80,8 @@ define void @vector_ops(<4 x i32> %w, <4 x i16> %h4, i32 %s) {
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %ins.undef = insertelement <4 x i32> poison, i32 %s, i32 0
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %splat = shufflevector <4 x i32> %w, <4 x i32> poison, <4 x i32> zeroinitializer
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %rev = shufflevector <4 x i32> %w, <4 x i32> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 34 for instruction: %cmp = icmp sgt <4 x i32> %w, %w
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 34 for instruction: %sel = select <4 x i1> %cmp, <4 x i32> %w, <4 x i32> zeroinitializer
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %cmp = icmp sgt <4 x i32> %w, %w
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %sel = select <4 x i1> %cmp, <4 x i32> %w, <4 x i32> zeroinitializer
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %zext = zext <4 x i16> %h4 to <4 x i32>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %trunc = trunc <4 x i32> %w to <4 x i16>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <8 x i16>
@@ -99,6 +99,36 @@ define void @vector_ops(<4 x i32> %w, <4 x i16> %h4, i32 %s) {
   %trunc = trunc <4 x i32> %w to <4 x i16>
   %bc = bitcast <4 x i32> %w to <8 x i16>
   %red = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %w)
+  ret void
+}
+
+; Compares are PCGT or PCEQ, with PNOR for an inverted mask and two PXOR of the
+; sign bits for an unsigned predicate. A select with a mask is three MMI
+; instructions.
+define void @compares(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w, <2 x i64> %d, i1 %c) {
+; CHECK-LABEL: 'compares'
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %eq.w = icmp eq <4 x i32> %w, %w
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %ne.h = icmp ne <8 x i16> %h, %h
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %slt.b = icmp slt <16 x i8> %b, %b
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %sge.w = icmp sge <4 x i32> %w, %w
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %ugt.h = icmp ugt <8 x i16> %h, %h
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %ule.b = icmp ule <16 x i8> %b, %b
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %eq.d = icmp eq <2 x i64> %d, %d
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %sel.b = select <16 x i1> %slt.b, <16 x i8> %b, <16 x i8> %b
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %sel.h = select <8 x i1> %ne.h, <8 x i16> %h, <8 x i16> %h
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 34 for instruction: %sel.s = select i1 %c, <4 x i32> %w, <4 x i32> %w
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %eq.w = icmp eq <4 x i32> %w, %w
+  %ne.h = icmp ne <8 x i16> %h, %h
+  %slt.b = icmp slt <16 x i8> %b, %b
+  %sge.w = icmp sge <4 x i32> %w, %w
+  %ugt.h = icmp ugt <8 x i16> %h, %h
+  %ule.b = icmp ule <16 x i8> %b, %b
+  %eq.d = icmp eq <2 x i64> %d, %d
+  %sel.b = select <16 x i1> %slt.b, <16 x i8> %b, <16 x i8> %b
+  %sel.h = select <8 x i1> %ne.h, <8 x i16> %h, <8 x i16> %h
+  %sel.s = select i1 %c, <4 x i32> %w, <4 x i32> %w
   ret void
 }
 

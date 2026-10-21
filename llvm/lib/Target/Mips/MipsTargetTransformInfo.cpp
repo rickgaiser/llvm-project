@@ -791,9 +791,27 @@ InstructionCost MipsTTIImpl::getCmpSelInstrCost(
   unsigned NumElts = VTy->getNumElements();
   Type *EltTy = VTy->getElementType();
 
-  // MMI integer vector compares and selects are scalarized.
-  if ((Opcode == Instruction::ICmp || Opcode == Instruction::Select) &&
-      getMMIType(VTy)) {
+  // MMI compares are PCGT and PCEQ, with the operands swapped, the mask
+  // inverted (PNOR) or the sign bits of the operands flipped (PXOR) for the
+  // other predicates. A select with a mask is PXOR, PAND and PXOR.
+  auto LT = getMMIType(VTy);
+  if (LT && LT->second.getScalarSizeInBits() != 64) {
+    if (Opcode == Instruction::Select && CondTy && CondTy->isVectorTy())
+      return LT->first * 3 * MMICycle;
+    if (Opcode == Instruction::ICmp) {
+      unsigned NumOps = 1;
+      if (ICmpInst::isUnsigned(VecPred))
+        NumOps += 2;
+      if (VecPred == ICmpInst::ICMP_NE || VecPred == ICmpInst::ICMP_SGE ||
+          VecPred == ICmpInst::ICMP_SLE || VecPred == ICmpInst::ICMP_UGE ||
+          VecPred == ICmpInst::ICMP_ULE)
+        NumOps += 1;
+      return LT->first * NumOps * MMICycle;
+    }
+  }
+
+  // Other MMI integer vector compares and selects are scalarized.
+  if ((Opcode == Instruction::ICmp || Opcode == Instruction::Select) && LT) {
     InstructionCost ScalarCost = getCmpSelInstrCost(
         Opcode, EltTy, CondTy ? CondTy->getScalarType() : nullptr, VecPred,
         CostKind, Op1Info.getNoProps(), Op2Info.getNoProps());

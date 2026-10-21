@@ -636,6 +636,21 @@ let Predicates = [IsR5900] in {
                "pceqb\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b01010>;
 
+  // The masks of compares, and selects with them. The other condition codes
+  // are legalized to SETGT and SETEQ.
+  foreach P = [[v4i32, PCGTW, PCEQW], [v8i16, PCGTH, PCEQH],
+               [v16i8, PCGTB, PCEQB]] in {
+    defvar VT = P[0];
+    def : Pat<(VT (setcc VT:$rs, VT:$rt, SETGT)),
+              (P[1] (VT $rs), (VT $rt))>;
+    def : Pat<(VT (setcc VT:$rs, VT:$rt, SETEQ)),
+              (P[2] (VT $rs), (VT $rt))>;
+    def : Pat<(VT (vnot (or VT:$rs, VT:$rt))), (PNOR (VT $rs), (VT $rt))>;
+    def : Pat<(VT (vnot VT:$rs)), (PNOR (VT $rs), (VT R0_128))>;
+    def : Pat<(VT immAllZerosV), (VT (COPY (VT R0_128)))>;
+    def : Pat<(VT immAllOnesV), (VT (PNOR (VT R0_128), (VT R0_128)))>;
+  }
+
   //===----------------------------------------------------------------------===//
   // Parallel Shift Operations (Immediate)
   // These perform SIMD shifts on packed words or halfwords with immediate

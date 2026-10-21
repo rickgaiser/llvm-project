@@ -193,6 +193,18 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       setOperationAction(ISD::UADDSAT, VT, Legal);
       setOperationAction(ISD::USUBSAT, VT, Legal);
     }
+
+    // Compares: PCGT and PCEQ give the masks of SETGT and SETEQ. The other
+    // signed conditions swap the operands or invert the mask, the unsigned
+    // ones flip the sign bits of the operands. Selects use the masks.
+    for (MVT VT : {MVT::v4i32, MVT::v8i16, MVT::v16i8}) {
+      setOperationAction(ISD::SETCC, VT, Legal);
+      setCondCodeAction({ISD::SETNE, ISD::SETLT, ISD::SETGE, ISD::SETLE}, VT,
+                        Expand);
+      setCondCodeAction({ISD::SETUGT, ISD::SETUGE, ISD::SETULT, ISD::SETULE},
+                        VT, Custom);
+      setOperationAction(ISD::VSELECT, VT, Custom);
+    }
   }
 
   if (Subtarget.hasDSP() || Subtarget.hasMSA()) {
@@ -766,6 +778,15 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::FMA:
     return lowerFMA(Op, DAG);
   case ISD::BUILD_VECTOR:       return lowerBUILD_VECTOR(Op, DAG);
+  case ISD::SETCC:
+    if (Op.getValueType().isVector()) {
+      assert(Subtarget.isR5900());
+      return lowerR5900SETCC(Op, DAG);
+    }
+    break;
+  case ISD::VSELECT:
+    assert(Subtarget.isR5900());
+    return lowerR5900VSELECT(Op, DAG);
   case ISD::VECTOR_SHUFFLE:
     return lowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::FP16_TO_FP:
@@ -2224,6 +2245,66 @@ SDValue MipsSETargetLowering::lowerVectorShift(SDValue Op,
   return SDValue(DAG.getMachineNode(Opc, DL, VT, Vec, ImmOp), 0);
 }
 
+/// R5900: an unsigned compare of 128-bit vectors as the signed compare of the
+/// operands with their sign bits flipped.
+SDValue MipsSETargetLowering::lowerR5900SETCC(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
+  ISD::CondCode SignedCC;
+  switch (CC) {
+  case ISD::SETUGT:
+    SignedCC = ISD::SETGT;
+    break;
+  case ISD::SETUGE:
+    SignedCC = ISD::SETGE;
+    break;
+  case ISD::SETULT:
+    SignedCC = ISD::SETLT;
+    break;
+  case ISD::SETULE:
+    SignedCC = ISD::SETLE;
+    break;
+  default:
+    llvm_unreachable("Unexpected condition code");
+  }
+  SDLoc DL(Op);
+  EVT VT = Op.getOperand(0).getValueType();
+  SDValue SignMask =
+      DAG.getConstant(APInt::getSignMask(VT.getScalarSizeInBits()), DL, VT);
+  SDValue A = DAG.getNode(ISD::XOR, DL, VT, Op.getOperand(0), SignMask);
+  SDValue B = DAG.getNode(ISD::XOR, DL, VT, Op.getOperand(1), SignMask);
+  return DAG.getSetCC(DL, Op.getValueType(), A, B, SignedCC);
+}
+
+/// R5900: (vselect M, T, F) with a mask M of all ones or all zeros in each
+/// element as F ^ ((F ^ T) & M), which needs no inverted mask. An inverted
+/// mask, also that of a compare that is legalized to an inverted one, swaps
+/// T and F instead.
+SDValue MipsSETargetLowering::lowerR5900VSELECT(SDValue Op,
+                                                SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+  SDValue Mask = Op.getOperand(0);
+  SDValue T = Op.getOperand(1), F = Op.getOperand(2);
+  if (isBitwiseNot(Mask)) {
+    Mask = Mask.getOperand(0);
+    std::swap(T, F);
+  } else if (Mask.getOpcode() == ISD::SETCC) {
+    ISD::CondCode CC = cast<CondCodeSDNode>(Mask.getOperand(2))->get();
+    if (CC == ISD::SETNE || CC == ISD::SETGE || CC == ISD::SETLE ||
+        CC == ISD::SETUGE || CC == ISD::SETULE) {
+      Mask = DAG.getSetCC(
+          DL, Mask.getValueType(), Mask.getOperand(0), Mask.getOperand(1),
+          ISD::getSetCCInverse(CC, Mask.getOperand(0).getValueType()));
+      std::swap(T, F);
+    }
+  }
+  Mask = DAG.getBitcast(VT, Mask);
+  SDValue Diff = DAG.getNode(ISD::XOR, DL, VT, F, T);
+  return DAG.getNode(ISD::XOR, DL, VT, F,
+                     DAG.getNode(ISD::AND, DL, VT, Diff, Mask));
+}
+
 SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,
                                           bool HasLo, bool HasHi,
                                           SelectionDAG &DAG) const {
@@ -3533,14 +3614,38 @@ static bool isConstantOrUndefBUILD_VECTOR(const BuildVectorSDNode *Op) {
 /// the low doubleword of a 128-bit register; PEXTLW/PEXTLB doubles a word or
 /// byte to the element below it, PCPYLD copies the low doubleword to the
 /// high one and PCPYH the low halfword of each doubleword to its others.
-/// Other vectors are expanded, constants to a load from the constant pool.
+/// All zeros are $zero and all ones PNOR of $zero, and a splat of a mask of
+/// the low or high bits of a word or halfword shifts all ones. Other vectors
+/// are expanded, constants to a load from the constant pool.
 static SDValue lowerR5900BUILD_VECTOR(BuildVectorSDNode *Node,
                                       SelectionDAG &DAG) {
-  SDValue Scalar = Node->getSplatValue();
-  if (!Scalar || isa<ConstantSDNode>(Scalar))
-    return SDValue();
   MVT VT = Node->getSimpleValueType(0);
   SDLoc DL(Node);
+  if (ISD::isBuildVectorAllZeros(Node) || ISD::isBuildVectorAllOnes(Node))
+    return SDValue(Node, 0);
+  SDValue Scalar = Node->getSplatValue();
+  if (!Scalar)
+    return SDValue();
+  if (auto *C = dyn_cast<ConstantSDNode>(Scalar)) {
+    if (VT == MVT::v16i8)
+      return SDValue();
+    unsigned EltBits = VT.getScalarSizeInBits();
+    APInt Mask = C->getAPIntValue().trunc(EltBits);
+    unsigned Opc, Amount;
+    if (Mask.isMask()) {
+      Opc = VT == MVT::v4i32 ? Mips::PSRLW : Mips::PSRLH;
+      Amount = Mask.countl_zero();
+    } else if ((~Mask).isMask()) {
+      Opc = VT == MVT::v4i32 ? Mips::PSLLW : Mips::PSLLH;
+      Amount = Mask.countr_zero();
+    } else {
+      return SDValue();
+    }
+    return SDValue(
+        DAG.getMachineNode(Opc, DL, VT, DAG.getAllOnesConstant(DL, VT),
+                           DAG.getTargetConstant(Amount, DL, MVT::i32)),
+        0);
+  }
   SDValue X = DAG.getTargetInsertSubreg(
       Mips::sub_64, DL, VT,
       SDValue(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, VT), 0),
