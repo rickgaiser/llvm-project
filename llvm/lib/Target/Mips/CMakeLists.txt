@@ -74,6 +74,7 @@ add_llvm_target(MipsCodeGen
   MicroMipsSizeReduction.cpp
   MipsMulMulBugPass.cpp
   MipsR5900Div1.cpp
+  MipsR5900Mult1.cpp
   MipsR5900FPUAccChain.cpp
   MipsR5900IssueModel.cpp
   MipsR5900IssuePass.cpp

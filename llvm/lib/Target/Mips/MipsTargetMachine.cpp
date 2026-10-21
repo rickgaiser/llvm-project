@@ -69,6 +69,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
   initializeMipsR5900Div1Pass(*PR);
+  initializeMipsR5900Mult1Pass(*PR);
   initializeMipsR5900FPUAccChainPass(*PR);
   initializeMipsR5900IssuePass(*PR);
   initializeMipsR5900VU0AccChainPass(*PR);
@@ -244,8 +245,10 @@ void MipsPassConfig::addPreRegAlloc() {
   // whose subtarget is not R5900 (or lacks VU0).
   addPass(createMipsR5900FPUAccChainPass());
   addPass(createMipsR5900VU0AccChainPass());
-  // R5900: Use the pipe 1 divider for independent divides.
+  // R5900: Use the pipe 1 divider for independent divides, and the pipe 1
+  // multiplier where it lowers the resource bound of a block.
   addPass(createMipsR5900Div1Pass());
+  addPass(createMipsR5900Mult1Pass());
 }
 
 void MipsPassConfig::addPreSched2() {
