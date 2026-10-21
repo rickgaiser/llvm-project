@@ -445,6 +445,11 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
 
   setMinFunctionAlignment(Subtarget.isGP64bit() ? Align(8) : Align(4));
 
+  // The R5900 dual-issues only the two instructions of an aligned 8-byte
+  // block (measured), so start loops at the beginning of a block.
+  if (Subtarget.isR5900())
+    setPrefLoopAlignment(Align(8));
+
   // The arguments on the stack are defined in terms of 4-byte slots on O32
   // and 8-byte slots on N32/N64.
   setMinStackArgumentAlignment((ABI.IsN32() || ABI.IsN64()) ? Align(8)

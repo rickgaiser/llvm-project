@@ -69,6 +69,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
   initializeMipsR5900FPUAccChainPass(*PR);
+  initializeMipsR5900IssuePass(*PR);
   initializeMipsR5900VU0AccChainPass(*PR);
   initializeMipsDAGToDAGISelLegacyPass(*PR);
 }
@@ -289,6 +290,11 @@ void MipsPassConfig::addPreEmitPass() {
   // The delay slot filler pass can potientially create forbidden slot hazards
   // for MIPSR6 and therefore it should go before MipsBranchExpansion pass.
   addPass(createMipsDelaySlotFillerPass());
+
+  // The R5900 dual-issues the instructions of aligned 8-byte blocks, so it is
+  // scheduled again once the addresses of the instructions are known.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createMipsR5900IssuePass());
 
   // This pass expands branches and takes care about the forbidden slot hazards.
   // Expanding branches may potentially create forbidden slot hazards for
