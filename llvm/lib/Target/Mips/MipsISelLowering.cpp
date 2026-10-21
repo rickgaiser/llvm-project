@@ -564,6 +564,49 @@ static Mips::CondCode condCodeToFCC(ISD::CondCode CC) {
   }
 }
 
+/// The R5900 FPU only has the F, EQ, LT and LE compares: the other condition
+/// fields are undefined. It has no NaNs, so a condition is the same as its
+/// unordered form, and the others are the inverse of one of the four.
+static Mips::CondCode condCodeToR5900FCC(ISD::CondCode CC) {
+  switch (CC) {
+  default:
+    llvm_unreachable("Unknown fp condition code!");
+  case ISD::SETUO:
+    return Mips::FCOND_F;
+  case ISD::SETO:
+    return Mips::FCOND_T;
+  case ISD::SETEQ:
+  case ISD::SETOEQ:
+  case ISD::SETUEQ:
+    return Mips::FCOND_OEQ;
+  case ISD::SETNE:
+  case ISD::SETONE:
+  case ISD::SETUNE:
+    return Mips::FCOND_UNE;
+  case ISD::SETLT:
+  case ISD::SETOLT:
+  case ISD::SETULT:
+    return Mips::FCOND_OLT;
+  case ISD::SETGE:
+  case ISD::SETOGE:
+  case ISD::SETUGE:
+    return Mips::FCOND_UGE;
+  case ISD::SETLE:
+  case ISD::SETOLE:
+  case ISD::SETULE:
+    return Mips::FCOND_OLE;
+  case ISD::SETGT:
+  case ISD::SETOGT:
+  case ISD::SETUGT:
+    return Mips::FCOND_UGT;
+  }
+}
+
+static Mips::CondCode condCodeToFCC(ISD::CondCode CC,
+                                    const MipsSubtarget &Subtarget) {
+  return Subtarget.isR5900() ? condCodeToR5900FCC(CC) : condCodeToFCC(CC);
+}
+
 /// This function returns true if the floating point conditional branches and
 /// conditional moves which use condition code CC should be inverted.
 static bool invertFPCondCodeUser(Mips::CondCode CC) {
@@ -578,7 +621,8 @@ static bool invertFPCondCodeUser(Mips::CondCode CC) {
 
 // Creates and returns an FPCmp node from a setcc node.
 // Returns Op if setcc is not a floating point comparison.
-static SDValue createFPCmp(SelectionDAG &DAG, const SDValue &Op) {
+static SDValue createFPCmp(SelectionDAG &DAG, const SDValue &Op,
+                           const MipsSubtarget &Subtarget) {
   // must be a SETCC node
   if (Op.getOpcode() != ISD::SETCC && Op.getOpcode() != ISD::STRICT_FSETCC &&
       Op.getOpcode() != ISD::STRICT_FSETCCS)
@@ -596,8 +640,9 @@ static SDValue createFPCmp(SelectionDAG &DAG, const SDValue &Op) {
   // node if necessary.
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
 
-  return DAG.getNode(MipsISD::FPCmp, DL, MVT::Glue, LHS, RHS,
-                     DAG.getConstant(condCodeToFCC(CC), DL, MVT::i32));
+  return DAG.getNode(
+      MipsISD::FPCmp, DL, MVT::Glue, LHS, RHS,
+      DAG.getConstant(condCodeToFCC(CC, Subtarget), DL, MVT::i32));
 }
 
 // Creates and returns a CMovFPT/F node.
@@ -2543,7 +2588,7 @@ SDValue MipsTargetLowering::lowerBRCOND(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
 
   assert(!Subtarget.hasMips32r6() && !Subtarget.hasMips64r6());
-  SDValue CondRes = createFPCmp(DAG, Op.getOperand(1));
+  SDValue CondRes = createFPCmp(DAG, Op.getOperand(1), Subtarget);
 
   // Return if flag is not set by a floating point comparison.
   if (CondRes.getOpcode() != MipsISD::FPCmp)
@@ -2562,7 +2607,7 @@ SDValue MipsTargetLowering::
 lowerSELECT(SDValue Op, SelectionDAG &DAG) const
 {
   assert(!Subtarget.hasMips32r6() && !Subtarget.hasMips64r6());
-  SDValue Cond = createFPCmp(DAG, Op.getOperand(0));
+  SDValue Cond = createFPCmp(DAG, Op.getOperand(0), Subtarget);
 
   // Return if flag is not set by a floating point comparison.
   if (Cond.getOpcode() != MipsISD::FPCmp)
@@ -2574,7 +2619,7 @@ lowerSELECT(SDValue Op, SelectionDAG &DAG) const
 
 SDValue MipsTargetLowering::lowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   assert(!Subtarget.hasMips32r6() && !Subtarget.hasMips64r6());
-  SDValue Cond = createFPCmp(DAG, Op);
+  SDValue Cond = createFPCmp(DAG, Op, Subtarget);
 
   assert(Cond.getOpcode() == MipsISD::FPCmp &&
          "Floating point operand expected.");
@@ -2595,8 +2640,9 @@ SDValue MipsTargetLowering::lowerFSETCC(SDValue Op, SelectionDAG &DAG) const {
   SDValue RHS = Op.getOperand(2);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(3))->get();
 
-  SDValue Cond = DAG.getNode(MipsISD::FPCmp, DL, MVT::Glue, LHS, RHS,
-                             DAG.getConstant(condCodeToFCC(CC), DL, MVT::i32));
+  SDValue Cond =
+      DAG.getNode(MipsISD::FPCmp, DL, MVT::Glue, LHS, RHS,
+                  DAG.getConstant(condCodeToFCC(CC, Subtarget), DL, MVT::i32));
   SDValue True = DAG.getConstant(1, DL, MVT::i32);
   SDValue False = DAG.getConstant(0, DL, MVT::i32);
   SDValue CMovFP = createCMovFP(DAG, Cond, True, False, DL);
