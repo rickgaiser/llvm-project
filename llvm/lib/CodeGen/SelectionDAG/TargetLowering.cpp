@@ -10347,6 +10347,14 @@ bool TargetLowering::expandFP_TO_UINT(SDNode *Node, SDValue &Result,
   bool Strict = Node->isStrictFPOpcode() ||
                 shouldUseStrictFP_TO_INT(SrcVT, DstVT, /*IsSigned*/ false);
 
+  // Where the result is defined, the subtraction of 0 or the sign mask is
+  // exact, and a NaN or infinity input makes the result poison, so the FSUB
+  // may assume neither. This lets targets that only handle these in software
+  // use their FPU.
+  SDNodeFlags ExactSubFlags;
+  ExactSubFlags.setNoNaNs(true);
+  ExactSubFlags.setNoInfs(true);
+
   if (Strict) {
     // Expand based on maximum range of FP_TO_SINT, if the value exceeds the
     // signmask then offset (the result of which should be fully representable).
@@ -10355,7 +10363,6 @@ bool TargetLowering::expandFP_TO_UINT(SDNode *Node, SDValue &Result,
     // IntOfs = select Sel, 0, 0x8000000000000000
     // Result = fp_to_sint(Src - FltOfs) ^ IntOfs
 
-    // TODO: Should any fast-math-flags be set for the FSUB?
     SDValue FltOfs = DAG.getSelect(dl, SrcVT, Sel,
                                    DAG.getConstantFP(0.0, dl, SrcVT), Cst);
     Sel = DAG.getBoolExtOrTrunc(Sel, dl, DstSetCCVT, DstVT);
@@ -10370,7 +10377,8 @@ bool TargetLowering::expandFP_TO_UINT(SDNode *Node, SDValue &Result,
                          { Val.getValue(1), Val });
       Chain = SInt.getValue(1);
     } else {
-      SDValue Val = DAG.getNode(ISD::FSUB, dl, SrcVT, Src, FltOfs);
+      SDValue Val =
+          DAG.getNode(ISD::FSUB, dl, SrcVT, Src, FltOfs, ExactSubFlags);
       SInt = DAG.getNode(ISD::FP_TO_SINT, dl, DstVT, Val);
     }
     Result = DAG.getNode(ISD::XOR, dl, DstVT, SInt, IntOfs);
@@ -10381,9 +10389,9 @@ bool TargetLowering::expandFP_TO_UINT(SDNode *Node, SDValue &Result,
     // Result = select (Src < 0x8000000000000000), True, False
 
     SDValue True = DAG.getNode(ISD::FP_TO_SINT, dl, DstVT, Src);
-    // TODO: Should any fast-math-flags be set for the FSUB?
-    SDValue False = DAG.getNode(ISD::FP_TO_SINT, dl, DstVT,
-                                DAG.getNode(ISD::FSUB, dl, SrcVT, Src, Cst));
+    SDValue False =
+        DAG.getNode(ISD::FP_TO_SINT, dl, DstVT,
+                    DAG.getNode(ISD::FSUB, dl, SrcVT, Src, Cst, ExactSubFlags));
     False = DAG.getNode(ISD::XOR, dl, DstVT, False,
                         DAG.getConstant(SignMask, dl, DstVT));
     Sel = DAG.getBoolExtOrTrunc(Sel, dl, DstSetCCVT, DstVT);
