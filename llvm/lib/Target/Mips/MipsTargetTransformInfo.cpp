@@ -32,6 +32,29 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                   C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
 }
 
+void MipsTTIImpl::getUnrollingPreferences(
+    Loop *L, ScalarEvolution &SE, TTI::UnrollingPreferences &UP,
+    OptimizationRemarkEmitter *ORE) const {
+  BaseT::getUnrollingPreferences(L, SE, UP, ORE);
+  if (!ST->isR5900() || UP.Partial)
+    return;
+
+  // Partial and runtime unrolling gives the R5900 more independent
+  // instructions to issue together (measured).
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB)
+      if (const auto *CB = dyn_cast<CallBase>(&I))
+        if (!CB->getCalledFunction() ||
+            isLoweredToCall(CB->getCalledFunction()))
+          return;
+
+  UP.Partial = UP.Runtime = UP.UpperBound = true;
+  UP.PartialThreshold = 120;
+  UP.OptSizeThreshold = 0;
+  UP.PartialOptSizeThreshold = 0;
+  UP.BEInsns = 2;
+}
+
 //===----------------------------------------------------------------------===//
 // R5900 Vectorization Support (VU0 and MMI)
 //===----------------------------------------------------------------------===//
