@@ -502,6 +502,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::FMUL, MVT::f32, Custom);
     setOperationAction(ISD::FDIV, MVT::f32, Custom);
     setOperationAction(ISD::FSQRT, MVT::f32, Custom);
+    // MIN.S and MAX.S do not handle NaN either.
+    setOperationAction(ISD::FMINNUM, MVT::f32, Custom);
+    setOperationAction(ISD::FMAXNUM, MVT::f32, Custom);
   }
 
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -776,6 +779,11 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
     return lowerR5900FPOp(Op, DAG, RTLIB::DIV_F32);
   case ISD::FSQRT:
     return lowerR5900FPOp(Op, DAG, RTLIB::SQRT_F32);
+  case ISD::FMINNUM:
+  case ISD::FMAXNUM:
+    // MIN.S and MAX.S without NaN, the libcall otherwise.
+    assert(Subtarget.isR5900());
+    return Op->getFlags().hasNoNaNs() ? Op : SDValue();
   }
 
   return MipsTargetLowering::LowerOperation(Op, DAG);
