@@ -176,5 +176,5 @@ bool SCEVAAWrapperPass::runOnFunction(Function &F) {
 
 void SCEVAAWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
-  AU.addRequired<ScalarEvolutionWrapperPass>();
+  AU.addRequiredTransitive<ScalarEvolutionWrapperPass>();
 }
