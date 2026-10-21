@@ -13,7 +13,7 @@ define void @arith(<4 x float> %a, <4 x float> %b, <8 x float> %c, <2 x float> %
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %sub = fsub <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %mul = fmul <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %neg = fneg <4 x float> %a
-; VU0-NEXT:  Cost Model: Found an estimated cost of 140 for instruction: %div = fdiv <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %div = fdiv <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %add8 = fadd <8 x float> %c, %c
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %add2 = fadd <2 x float> %d, %d
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %sadd = fadd float %s, %s
@@ -50,7 +50,7 @@ define void @intrinsics(<4 x float> %a, <4 x float> %b) {
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %max = call <4 x float> @llvm.maxnum.v4f32(<4 x float> %a, <4 x float> %b)
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %min = call <4 x float> @llvm.minnum.v4f32(<4 x float> %a, <4 x float> %b)
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %fma = call <4 x float> @llvm.fmuladd.v4f32(<4 x float> %a, <4 x float> %b, <4 x float> %a)
-; VU0-NEXT:  Cost Model: Found an estimated cost of 118 for instruction: %sqrt = call <4 x float> @llvm.sqrt.v4f32(<4 x float> %a)
+; VU0-NEXT:  Cost Model: Found an estimated cost of 38 for instruction: %sqrt = call <4 x float> @llvm.sqrt.v4f32(<4 x float> %a)
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %radd = call fast float @llvm.vector.reduce.fadd.v4f32(float 0.000000e+00, <4 x float> %a)
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %rmax = call float @llvm.vector.reduce.fmax.v4f32(<4 x float> %a)
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
@@ -113,11 +113,11 @@ define void @elements(<4 x float> %a, <4 x float> %b, float %s, i32 %i) {
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %e2 = extractelement <4 x float> %a, i32 2
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %e3 = extractelement <4 x float> %a, i32 3
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %ev = extractelement <4 x float> %a, i32 %i
-; VU0-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %ins = insertelement <4 x float> %a, float %s, i32 1
+; VU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %ins = insertelement <4 x float> %a, float %s, i32 1
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %splat = shufflevector <4 x float> %a, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %blend = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 5, i32 2, i32 7>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 110 for instruction: %rev = shufflevector <4 x float> %a, <4 x float> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 124 for instruction: %zip = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 4, i32 1, i32 5>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %rev = shufflevector <4 x float> %a, <4 x float> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %zip = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 4, i32 1, i32 5>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
 ; NOVU0-LABEL: 'elements'
@@ -149,7 +149,7 @@ define void @elements(<4 x float> %a, <4 x float> %b, float %s, i32 %i) {
 define void @casts_cmps(<4 x float> %a, <4 x float> %b, <4 x i32> %w) {
 ; VU0-LABEL: 'casts_cmps'
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %fptosi = fptosi <4 x float> %a to <4 x i32>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 110 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 30 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <4 x float>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 62 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b

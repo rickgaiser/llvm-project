@@ -158,11 +158,9 @@ static constexpr unsigned MMICycle = 2;
 //     operation or a load, so it takes one slot, as do lqc2 and sqc2.
 //   - qmfc2, qmtc2 and mtc1 issue one per cycle and do not pair with each
 //     other; qmfc2 to a GPR use is 3 cycles, qmfc2 and mtc1 to an FPU use 4.5.
-// Moving an element from VU0 to the FPU is such a chain of moves, so each
-// move takes both slots. Inserting an element, fdiv, sqrt, the conversions
-// and most shuffles are lowered through stack temporaries, about 12 loads
-// and stores per inserted element.
-static constexpr unsigned VU0InsertCycles = 12;
+// Moving an element between VU0 and the FPU is such a chain of moves, so
+// each move takes both slots, as do the MMI operations that build a vector
+// from its elements in a GPR (pextlw, pcpyld) or take one apart (pcpyud).
 
 /// Whether \p Ty is the v8i32 that PMULTH multiplies.
 static bool isPMULTHType(Type *Ty) {
@@ -215,7 +213,9 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
     TTI::TargetCostKind CostKind, bool ForPoisonSrc, ArrayRef<Value *> VL,
     TTI::VectorInstrContext VIC) const {
   // Per v4f32 part: extracting is a qmfc2, a pcpyud for the upper two
-  // elements, a dsrl32 for an odd one and an mtc1 per element.
+  // elements, a dsrl32 for an odd one and an mtc1 per element. Inserting is
+  // an mfc1 per element, a pextlw for an odd one, a pcpyld for the upper two
+  // and a qmtc2.
   if (auto Parts = getVU0Parts(Ty)) {
     InstructionCost Cost = 0;
     for (unsigned Part = 0; Part < *Parts; ++Part) {
@@ -234,7 +234,7 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
       if (Extract)
         Cost += (1 + Upper + Demanded) * MMICycle + Odd;
       if (Insert)
-        Cost += Demanded * VU0InsertCycles * MMICycle;
+        Cost += (Demanded + Odd + Upper + 1) * MMICycle;
     }
     return Cost;
   }
@@ -457,17 +457,18 @@ InstructionCost MipsTTIImpl::getVectorInstrCost(
     unsigned Opcode, Type *Val, TTI::TargetCostKind CostKind, unsigned Index,
     const Value *Op0, const Value *Op1, TTI::VectorInstrContext VIC) const {
   // VU0 v4f32 extract: qmfc2, then pcpyud for the upper two elements and a
-  // dsrl32 for an odd one, and mtc1. A variable element is stored with sqc2
-  // and loaded with lwc1. Inserting goes through stack temporaries.
+  // dsrl32 for an odd one, and mtc1. Insert: a vector with only that element
+  // built as above, then a vmove of the element unless the vector is
+  // undefined. A variable element goes through a stack temporary.
   if (getVU0Parts(Val)) {
-    if (Opcode == Instruction::ExtractElement) {
-      if (Index == -1U)
-        return 3 * MMICycle;
-      unsigned Elt = Index % 4;
+    if (Index == -1U)
+      return (Opcode == Instruction::ExtractElement ? 3 : 4) * MMICycle;
+    unsigned Elt = Index % 4;
+    if (Opcode == Instruction::ExtractElement)
       return (2 + (Elt >= 2)) * MMICycle + (Elt & 1);
-    }
     if (Opcode == Instruction::InsertElement)
-      return VU0InsertCycles * MMICycle;
+      return (2 + (Elt & 1) + (Elt >= 2)) * MMICycle +
+             !(Op0 && isa<UndefValue>(Op0));
   }
 
   // R5900 MMI integer vector extract/insert, through a stack temporary.
@@ -493,8 +494,8 @@ InstructionCost MipsTTIImpl::getShuffleCost(
     VectorType *SubTp, ArrayRef<const Value *> Args, const Instruction *CxtI,
     TTI::VectorInstrContext VIC) const {
   // VU0 v4f32 shuffles: vmove with a field mask blends two vectors, and vsub
-  // and vadd with a broadcast field splat an element. The others are lowered
-  // through stack temporaries, from the elements of each source.
+  // and vadd with a broadcast field splat an element. The others are a
+  // qmfc2 of each source, about four MMI or shift operations and a qmtc2.
   if (getVU0Parts(DstTy) == 1u && (!SrcTy || getVU0Parts(SrcTy) == 1u)) {
     unsigned NumElts = cast<FixedVectorType>(DstTy)->getNumElements();
     int First = -1;
@@ -516,11 +517,7 @@ InstructionCost MipsTTIImpl::getShuffleCost(
                                Kind == TTI::SK_Splice
                            ? 2
                            : 1;
-    APInt All = APInt::getAllOnes(NumElts);
-    return NumSrcs * getScalarizationOverhead(DstTy, All, /*Insert=*/false,
-                                              /*Extract=*/true, CostKind) +
-           getScalarizationOverhead(DstTy, All, /*Insert=*/true,
-                                    /*Extract=*/false, CostKind);
+    return (NumSrcs + 5) * MMICycle;
   }
 
   // R5900 MMI integer vector shuffles: the zips, unzips and half copies of

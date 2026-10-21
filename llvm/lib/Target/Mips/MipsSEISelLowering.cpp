@@ -286,6 +286,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::LOAD, MVT::v4f32, Legal);
     setOperationAction(ISD::STORE, MVT::v4f32, Legal);
 
+    // QMTC2 and QMFC2 move a vector between VU0 and a 128-bit GPR.
+    setOperationAction(ISD::BITCAST, MVT::v4f32, Legal);
+
     // Enable VU0 arithmetic operations (VADD, VSUB, VMUL)
     setOperationAction(ISD::FADD, MVT::v4f32, Legal);
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
@@ -3598,7 +3601,23 @@ SDValue MipsSETargetLowering::lowerINSERT_VECTOR_ELT(SDValue Op,
   if (!VecTy.is128BitVector())
     return SDValue();
 
-  // VU0 v4f32 insertion: bitcast to v4i32, insert i32, bitcast back to v4f32
+  // VU0 v4f32 insertion of a constant element: a vector with only that
+  // element defined, built in a GPR, then a VMOVE of that field.
+  if (Subtarget.hasVU0() && VecTy == MVT::v4f32 && ValTy == MVT::f32 &&
+      isa<ConstantSDNode>(Idx)) {
+    unsigned I = Idx->getAsZExtVal();
+    if (I > 3)
+      return SDValue();
+    SmallVector<SDValue, 4> Elts(4, DAG.getUNDEF(MVT::f32));
+    Elts[I] = Val;
+    SDValue Lane = DAG.getBuildVector(MVT::v4f32, DL, Elts);
+    if (Vec.isUndef())
+      return Lane;
+    return DAG.getNode(MipsISD::VU0_BLEND, DL, VecTy, Vec, Lane,
+                       DAG.getConstant(1 << (3 - I), DL, MVT::i32));
+  }
+
+  // Otherwise bitcast to v4i32, insert i32, bitcast back to v4f32
   if (Subtarget.hasVU0() && VecTy == MVT::v4f32 && ValTy == MVT::f32) {
     // Bitcast v4f32 -> v4i32 (VF register -> GPR128 via QMFC2)
     SDValue IntVec = DAG.getNode(ISD::BITCAST, DL, MVT::v4i32, Vec);
@@ -3720,6 +3739,72 @@ static SDValue lowerR5900BUILD_VECTOR(BuildVectorSDNode *Node,
   return CopyHalf(MMI(Mips::PCPYLD, X, X));
 }
 
+/// An f32 element of \p User as i32: a load of it only used by \p User is a
+/// load of an i32 instead, which the DAGCombiner does not do once the i32
+/// load is custom lowered.
+static SDValue bitcastToI32(SDValue Elt, SDNode *User, SelectionDAG &DAG) {
+  auto *Ld = dyn_cast<LoadSDNode>(Elt);
+  if (!Ld || !ISD::isNormalLoad(Ld) || !Ld->isSimple() ||
+      any_of(Ld->uses(), [&](SDUse &U) {
+        return U.getResNo() == 0 && U.getUser() != User;
+      }))
+    return DAG.getBitcast(MVT::i32, Elt);
+  SDValue NewLd = DAG.getLoad(MVT::i32, SDLoc(Ld), Ld->getChain(),
+                              Ld->getBasePtr(), Ld->getMemOperand());
+  DAG.ReplaceAllUsesOfValueWith(SDValue(Ld, 1), NewLd.getValue(1));
+  return NewLd;
+}
+
+/// VU0: a v4f32 is built in a 128-bit GPR from its elements as i32, then
+/// moved to VU0 with QMTC2. A splat is built as in lowerR5900BUILD_VECTOR,
+/// other vectors with a PEXTLW of each pair of elements and a PCPYLD of the
+/// pairs. Constants are loaded from the constant pool.
+static SDValue lowerVU0BUILD_VECTOR(BuildVectorSDNode *Node,
+                                    SelectionDAG &DAG) {
+  SDLoc DL(Node);
+  if (isConstantOrUndefBUILD_VECTOR(Node))
+    return SDValue();
+  SmallVector<SDValue, 4> Elts;
+  SmallDenseMap<SDValue, SDValue, 4> AsI32;
+  for (SDValue Elt : Node->op_values()) {
+    SDValue &I32 = AsI32[Elt];
+    if (!I32)
+      I32 =
+          Elt.isUndef() ? DAG.getUNDEF(MVT::i32) : bitcastToI32(Elt, Node, DAG);
+    Elts.push_back(I32);
+  }
+  SDValue Result;
+  if (Node->getSplatValue()) {
+    SDValue BV = DAG.getBuildVector(MVT::v4i32, DL, Elts);
+    Result = lowerR5900BUILD_VECTOR(cast<BuildVectorSDNode>(BV), DAG);
+  } else {
+    auto Undef = [&]() {
+      return SDValue(
+          DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32), 0);
+    };
+    auto ToGPR128 = [&](SDValue Elt) {
+      if (Elt.isUndef())
+        return Undef();
+      return DAG.getTargetInsertSubreg(Mips::sub_64, DL, MVT::v4i32, Undef(),
+                                       DAG.getAnyExtOrTrunc(Elt, DL, MVT::i64));
+    };
+    // The low doubleword of the result has Lo in its low word.
+    auto Pair = [&](SDValue Lo, SDValue Hi) {
+      if (Hi.isUndef())
+        return ToGPR128(Lo);
+      return SDValue(DAG.getMachineNode(Mips::PEXTLW, DL, MVT::v4i32,
+                                        ToGPR128(Hi), ToGPR128(Lo)),
+                     0);
+    };
+    Result = Pair(Elts[0], Elts[1]);
+    if (!Elts[2].isUndef() || !Elts[3].isUndef())
+      Result = SDValue(DAG.getMachineNode(Mips::PCPYLD, DL, MVT::v4i32,
+                                          Pair(Elts[2], Elts[3]), Result),
+                       0);
+  }
+  return DAG.getBitcast(MVT::v4f32, Result);
+}
+
 SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,
                                                 SelectionDAG &DAG) const {
   BuildVectorSDNode *Node = cast<BuildVectorSDNode>(Op);
@@ -3733,27 +3818,8 @@ SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,
       (ResTy == MVT::v4i32 || ResTy == MVT::v8i16 || ResTy == MVT::v16i8))
     return lowerR5900BUILD_VECTOR(Node, DAG);
 
-  // VU0 v4f32 BUILD_VECTOR handling
-  if (Subtarget.hasVU0() && ResTy == MVT::v4f32) {
-    // Check for constant vector - let it use constant pool + LQC2
-    if (isConstantOrUndefBUILD_VECTOR(Node)) {
-      // Return SDValue() to use default constant pool handling
-      return SDValue();
-    }
-
-    // Non-constant: use INSERT_VECTOR_ELT sequence
-    // This handles splats and general cases uniformly
-    unsigned NumElts = ResTy.getVectorNumElements();
-    SDValue Vector = DAG.getUNDEF(ResTy);
-    for (unsigned i = 0; i < NumElts; ++i) {
-      SDValue Elt = Node->getOperand(i);
-      if (!Elt.isUndef()) {
-        Vector = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, ResTy, Vector, Elt,
-                             DAG.getConstant(i, DL, MVT::i32));
-      }
-    }
-    return Vector;
-  }
+  if (Subtarget.hasVU0() && ResTy == MVT::v4f32)
+    return lowerVU0BUILD_VECTOR(Node, DAG);
 
   if (!Subtarget.hasMSA() || !ResTy.is128BitVector())
     return SDValue();
