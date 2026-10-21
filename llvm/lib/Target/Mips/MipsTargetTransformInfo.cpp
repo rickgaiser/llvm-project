@@ -11,6 +11,7 @@
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/PatternMatch.h"
 
 using namespace llvm;
@@ -309,13 +310,37 @@ static bool isAlignedWhenWidened(const Instruction *I, Type *VecTy,
       getLoadStoreType(const_cast<Instruction *>(I))->isVectorTy() ||
       VecTy->getPrimitiveSizeInBits().getFixedValue() % 128)
     return false;
-  auto *GEP = dyn_cast<GetElementPtrInst>(getLoadStorePointerOperand(I));
-  if (!GEP || GEP->getNumIndices() != 1 ||
-      DL.getTypeAllocSize(GEP->getSourceElementType()) !=
-          DL.getTypeStoreSize(getLoadStoreType(const_cast<Instruction *>(I))))
+  // A constant offset from a GEP whose last index is the induction variable
+  // and the others are constants, as in a[i], a[2][i] or &a[i] + 512.
+  const Value *Ptr = getLoadStorePointerOperand(I);
+  APInt Offset(DL.getIndexTypeSizeInBits(Ptr->getType()), 0);
+  auto *GEP = dyn_cast<GetElementPtrInst>(
+      Ptr->stripAndAccumulateConstantOffsets(DL, Offset,
+                                             /*AllowNonInbounds=*/true));
+  if (!GEP || GEP->getNumIndices() == 0)
+    return false;
+  Type *EltTy = nullptr;
+  for (gep_type_iterator GTI = gep_type_begin(GEP), E = gep_type_end(GEP);
+       GTI != E; ++GTI) {
+    if (std::next(GTI) == E) {
+      if (GTI.isStruct())
+        return false;
+      EltTy = GTI.getIndexedType();
+      break;
+    }
+    auto *C = dyn_cast<ConstantInt>(GTI.getOperand());
+    if (!C)
+      return false;
+    if (StructType *STy = GTI.getStructTypeOrNull())
+      Offset += DL.getStructLayout(STy)->getElementOffset(C->getZExtValue());
+    else
+      Offset += C->getValue().sextOrTrunc(Offset.getBitWidth()) *
+                GTI.getSequentialElementStride(DL);
+  }
+  if (DL.getTypeAllocSize(EltTy) !=
+      DL.getTypeStoreSize(getLoadStoreType(const_cast<Instruction *>(I))))
     return false;
 
-  APInt Offset(DL.getIndexTypeSizeInBits(GEP->getType()), 0);
   const Value *Base =
       GEP->getPointerOperand()->stripAndAccumulateConstantOffsets(
           DL, Offset, /*AllowNonInbounds=*/true);
@@ -324,10 +349,10 @@ static bool isAlignedWhenWidened(const Instruction *I, Type *VecTy,
     return false;
 
   // The index starts at a multiple of 16 bytes and steps by one element.
-  auto *Phi = dyn_cast<PHINode>(GEP->getOperand(1));
+  auto *Phi = dyn_cast<PHINode>(GEP->getOperand(GEP->getNumOperands() - 1));
   if (!Phi || Phi->getNumIncomingValues() != 2)
     return false;
-  uint64_t EltSize = DL.getTypeAllocSize(GEP->getSourceElementType());
+  uint64_t EltSize = DL.getTypeAllocSize(EltTy);
   bool Start = false, Step = false;
   for (const Value *V : Phi->incoming_values()) {
     if (const auto *C = dyn_cast<ConstantInt>(V))
@@ -817,9 +842,34 @@ InstructionCost MipsTTIImpl::getInterleavedMemoryOpCost(
                                              Alignment, AddressSpace, CostKind,
                                              UseMaskForCond, UseMaskForGaps);
 
-  // MMI integer vectors: the generic cost from the load/store and shuffle
-  // costs, as the (de)interleaving shuffles go through a stack temporary.
+  // MMI integer vectors of two members of whole 128-bit registers: the wide
+  // load or store and, per register of a member, PPACW/H/B for the even
+  // elements, two shifts or exchanges and a pack for the odd ones, or
+  // PEXTLx and PEXTUx to interleave a register of each member.
   auto *VTy = dyn_cast<FixedVectorType>(VecTy);
+  if (VTy && ST->isR5900() && getMMIType(VTy) && Factor == 2 &&
+      !UseMaskForCond && !UseMaskForGaps) {
+    auto *MemberTy = FixedVectorType::get(VTy->getElementType(),
+                                          VTy->getNumElements() / Factor);
+    auto LT = getMMIType(MemberTy);
+    if (LT && MemberTy->getPrimitiveSizeInBits() % 128 == 0 &&
+        LT->second.getScalarSizeInBits() == MemberTy->getScalarSizeInBits()) {
+      InstructionCost Cost =
+          getMemoryOpCost(Opcode, VTy, Alignment, AddressSpace, CostKind);
+      InstructionCost Ops = 0;
+      if (Opcode == Instruction::Store)
+        Ops = 2 * LT->first;
+      else if (Indices.empty())
+        Ops = 4 * LT->first;
+      else
+        for (unsigned Index : Indices)
+          Ops += (Index == 0 ? 1 : 3) * LT->first;
+      return Cost + Ops * MMICycle;
+    }
+  }
+
+  // Other MMI integer vectors: the generic cost from the load/store and
+  // shuffle costs.
   if (!VTy || getMMIType(VTy))
     return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
                                              Alignment, AddressSpace, CostKind,
