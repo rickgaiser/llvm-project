@@ -54,7 +54,19 @@ public:
   R5900IssueDAG(MachineFunction &MF)
       : ScheduleDAGInstrs(MF, nullptr, /*RemoveKillFlags=*/true) {}
 
-  void schedule() override { buildSchedGraph(nullptr); }
+  void schedule() override {
+    // The delay slot filler invalidates liveness, as it moves instructions
+    // between blocks, but buildSchedGraph reads the live-ins of the
+    // successors for the registers that are live at the end of a region. They
+    // only give the latencies to the end of the region, which stays in place,
+    // so a stale list does not affect correctness.
+    MachineFunctionProperties &Props = MF.getProperties();
+    bool TracksLiveness = Props.hasTracksLiveness();
+    Props.setTracksLiveness();
+    buildSchedGraph(nullptr);
+    if (!TracksLiveness)
+      Props.resetTracksLiveness();
+  }
 
   const DbgValueVector &getDbgValues() const { return DbgValues; }
 };
