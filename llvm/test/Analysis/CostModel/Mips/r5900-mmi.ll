@@ -157,3 +157,27 @@ define void @mmi_shuffles(<16 x i8> %a, <16 x i8> %b, <4 x i32> %c, <4 x i32> %d
   %other = shufflevector <4 x i32> %c, <4 x i32> %d, <4 x i32> <i32 1, i32 0, i32 4, i32 5>
   ret void
 }
+
+; Extensions of v8i16 and v16i8 are PEXTL/PEXTU per result register, and an
+; arithmetic shift for a sign extension. A v8i32 multiply of values sign
+; extended from i16 is PMULTH, PMFLO, PMFHI, PCPYLD and PCPYUD.
+define void @widen_ops(<8 x i16> %h, <8 x i16> %h2, <16 x i8> %b) {
+; CHECK-LABEL: 'widen_ops'
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %zh = zext <8 x i16> %h to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sh = sext <8 x i16> %h to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sh2 = sext <8 x i16> %h2 to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %zb = zext <16 x i8> %b to <16 x i16>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %sb = sext <16 x i8> %b to <16 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 10 for instruction: %m = mul nsw <8 x i32> %sh, %sh2
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 68 for instruction: %mz = mul nsw <8 x i32> %zh, %zh
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %zh = zext <8 x i16> %h to <8 x i32>
+  %sh = sext <8 x i16> %h to <8 x i32>
+  %sh2 = sext <8 x i16> %h2 to <8 x i32>
+  %zb = zext <16 x i8> %b to <16 x i16>
+  %sb = sext <16 x i8> %b to <16 x i32>
+  %m = mul nsw <8 x i32> %sh, %sh2
+  %mz = mul nsw <8 x i32> %zh, %zh
+  ret void
+}

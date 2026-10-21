@@ -101,6 +101,40 @@ bool MipsTTIImpl::shouldMaximizeVectorBandwidth(
   return ST->isR5900() && K == TargetTransformInfo::RGK_FixedWidthVector;
 }
 
+bool MipsTTIImpl::isProfitableToSinkOperands(
+    Instruction *I, SmallVectorImpl<Use *> &Ops) const {
+  // A v8i32 multiply of values sign extended from i16 is PMULTH. Instruction
+  // selection only sees the extensions in the block of the multiply, so sink
+  // them, also of a broadcast scalar.
+  if (!ST->isR5900() || I->getOpcode() != Instruction::Mul ||
+      I->getType() !=
+          FixedVectorType::get(Type::getInt32Ty(I->getContext()), 8))
+    return false;
+  auto IsSExt16 = [](Value *V) {
+    auto *SExt = dyn_cast<SExtInst>(V);
+    return SExt && SExt->getSrcTy()->getScalarSizeInBits() <= 16;
+  };
+  for (Use &U : I->operands()) {
+    if (IsSExt16(U.get())) {
+      Ops.push_back(&U);
+      continue;
+    }
+    Value *Scalar;
+    auto *Shuf = dyn_cast<ShuffleVectorInst>(U.get());
+    if (!Shuf ||
+        !match(Shuf,
+               m_Shuffle(m_InsertElt(m_Undef(), m_Value(Scalar), m_ZeroInt()),
+                         m_Undef(), m_ZeroMask())) ||
+        !IsSExt16(Scalar))
+      return false;
+    auto *Insert = cast<Instruction>(Shuf->getOperand(0));
+    Ops.push_back(&Insert->getOperandUse(1));
+    Ops.push_back(&Shuf->getOperandUse(0));
+    Ops.push_back(&U);
+  }
+  return true;
+}
+
 // R5900 MMI costs are in issue slots, from the bench uarch tests on hardware.
 // The R5900 issues two instructions per cycle, so an ALU operation, a load and
 // a store take one slot (half a cycle), like the scalar costs:
@@ -236,10 +270,23 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
           Op2Info.isConstant())
         return LT->first * MMICycle;
       break;
+    case Instruction::Mul:
+      // A v8i32 multiply of values sign extended from i16 is PMULTH, then
+      // PMFLO, PMFHI, PCPYLD and PCPYUD for the products in order.
+      if (ST->isR5900() &&
+          Ty == FixedVectorType::get(Type::getInt32Ty(Ty->getContext()), 8) &&
+          Args.size() == 2 && all_of(Args, [](const Value *V) {
+            if (auto *C = dyn_cast<ConstantInt>(V))
+              return C->getValue().isSignedIntN(16);
+            auto *SExt = dyn_cast<SExtInst>(V);
+            return SExt && SExt->getSrcTy()->getScalarSizeInBits() <= 16;
+          }))
+        return 5 * MMICycle;
+      break;
     default:
       break;
     }
-    // Everything else, including multiply, is scalarized.
+    // Everything else, including other multiplies, is scalarized.
     auto *VTy = cast<FixedVectorType>(Ty);
     InstructionCost ScalarCost =
         getArithmeticInstrCost(Opcode, VTy->getElementType(), CostKind,
@@ -628,7 +675,20 @@ InstructionCost MipsTTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
     [[fallthrough]];
   case Instruction::ZExt:
   case Instruction::SExt:
-    // MMI integer vector extensions and truncations are scalarized.
+    // PEXTLH/PEXTUH and PEXTLB/PEXTUB extend a v8i16 or v16i8 to two
+    // registers of elements twice as wide, a sign extension with an
+    // arithmetic shift of each; bytes to words in two steps.
+    if (ST->isR5900() && Opcode != Instruction::Trunc && SrcBits == 128 &&
+        DstBits > 128 && DstVTy->getScalarSizeInBits() <= 32 &&
+        (SrcVTy->getScalarSizeInBits() == 16 ||
+         SrcVTy->getScalarSizeInBits() == 8)) {
+      unsigned PerPart = Opcode == Instruction::SExt ? 2 : 1;
+      unsigned Parts = DstBits / 128;
+      // Bytes to words also extends the two halves to halfwords first.
+      unsigned Ops = Parts == 4 ? 2 * PerPart + 4 * PerPart : 2 * PerPart;
+      return Ops * MMICycle;
+    }
+    // Other MMI integer vector extensions and truncations are scalarized.
     if (getMMIType(Src) || getMMIType(Dst)) {
       InstructionCost ScalarCost =
           getCastInstrCost(Opcode, DstVTy->getElementType(),

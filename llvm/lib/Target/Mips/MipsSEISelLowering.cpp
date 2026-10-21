@@ -135,6 +135,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       // Shuffles: the zips, unzips and half copies of MMI, the others through
       // the stack.
       setOperationAction(ISD::VECTOR_SHUFFLE, VT, Custom);
+      // Splats of a register with MMI, the others through the stack.
+      setOperationAction(ISD::BUILD_VECTOR, VT, Custom);
 
       // Arithmetic: PADDW/PSUBW (v4i32), PADDH/PSUBH (v8i16), PADDB/PSUBB
       // (v16i8)
@@ -481,7 +483,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   }
 
   if (Subtarget.isR5900()) {
-    setTargetDAGCombine(ISD::TRUNCATE);
+    setTargetDAGCombine(
+        {ISD::TRUNCATE, ISD::SIGN_EXTEND, ISD::ZERO_EXTEND, ISD::ANY_EXTEND});
 
     // R5900 FPU only supports 4 compare conditions: C.F, C.EQ, C.OLT, C.OLE
     // (and their inversions via bc1t/bc1f). Expand all conditions that would
@@ -1324,6 +1327,96 @@ static SDValue performSETCCCombine(SDNode *N, SelectionDAG &DAG) {
                      N->getOperand(1), N->getOperand(2));
 }
 
+/// R5900: (v8i32 (mul A, B)) of values that fit in 16 bits to PMULTH, which
+/// multiplies 8 pairs of halfwords. It writes the products 0, 1, 4 and 5 to
+/// LO and 2, 3, 6 and 7 to HI, so PCPYLD and PCPYUD of LO and HI give them in
+/// order.
+static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+    return SDValue();
+  SDLoc DL(N);
+  auto Narrow = [&](SDValue X) -> SDValue {
+    if (X.getOpcode() == ISD::SIGN_EXTEND &&
+        X.getOperand(0).getValueType() == MVT::v8i16)
+      return X.getOperand(0);
+    // A splat of a halfword.
+    if (SDValue S = DAG.getSplatValue(X))
+      return DAG.ComputeNumSignBits(S) > 16
+                 ? DAG.getSplatBuildVector(MVT::v8i16, DL,
+                                           DAG.getSExtOrTrunc(S, DL, MVT::i16))
+                 : SDValue();
+    if (DAG.ComputeNumSignBits(X) <= 16)
+      return SDValue();
+    return DAG.getNode(ISD::TRUNCATE, DL, MVT::v8i16, X);
+  };
+  SDValue A = Narrow(N->getOperand(0));
+  SDValue B = A ? Narrow(N->getOperand(1)) : SDValue();
+  if (!B)
+    return SDValue();
+
+  // PMFLO and PMFHI are glued to PMULTH, so nothing else writes HI and LO in
+  // between.
+  SDValue MulOps[] = {A, B};
+  SDNode *Mul = DAG.getMachineNode(
+      Mips::PMULTH, DL, DAG.getVTList(MVT::v8i16, MVT::Glue), MulOps);
+  SDNode *Lo = DAG.getMachineNode(
+      Mips::PMFLO, DL, DAG.getVTList(MVT::v4i32, MVT::Glue), SDValue(Mul, 1));
+  SDNode *Hi = DAG.getMachineNode(Mips::PMFHI, DL, MVT::v4i32, SDValue(Lo, 1));
+  auto Copy = [&](unsigned Opc, SDNode *Rs, SDNode *Rt) {
+    return SDValue(
+        DAG.getMachineNode(Opc, DL, MVT::v4i32, SDValue(Rs, 0), SDValue(Rt, 0)),
+        0);
+  };
+  return DAG.getNode(ISD::CONCAT_VECTORS, DL, MVT::v8i32,
+                     Copy(Mips::PCPYLD, Hi, Lo), Copy(Mips::PCPYUD, Lo, Hi));
+}
+
+/// Extend the 128-bit vector \p Src to elements twice as wide with R5900 MMI
+/// PEXTLH/PEXTUH (halfwords) or PEXTLB/PEXTUB (bytes): they interleave the
+/// low or high half of two registers, here of \p Src and zero (zero
+/// extension) or itself followed by an arithmetic shift (sign extension).
+/// Returns the low and high halves of the result.
+static std::pair<SDValue, SDValue>
+extendR5900MMI(SDValue Src, bool Signed, const SDLoc &DL, SelectionDAG &DAG) {
+  MVT VT = Src.getSimpleValueType();
+  bool Half = VT == MVT::v8i16;
+  MVT WideVT = Half ? MVT::v4i32 : MVT::v8i16;
+  // $zero is zero in all 128 bits.
+  SDValue Other = Signed ? Src : DAG.getRegister(Mips::R0_128, VT);
+  auto Interleave = [&](unsigned Opc) {
+    SDValue V = DAG.getBitcast(
+        WideVT, SDValue(DAG.getMachineNode(Opc, DL, VT, Other, Src), 0));
+    if (!Signed)
+      return V;
+    return DAG.getNode(ISD::SRA, DL, WideVT, V,
+                       DAG.getConstant(VT.getScalarSizeInBits(), DL, WideVT));
+  };
+  return {Interleave(Half ? Mips::PEXTLH : Mips::PEXTLB),
+          Interleave(Half ? Mips::PEXTUH : Mips::PEXTUB)};
+}
+
+/// R5900: sign, zero or any extension of v8i16 or v16i8 to elements two or
+/// four times as wide, before type legalization splits it through the stack.
+static SDValue performR5900ExtendCombine(SDNode *N, SelectionDAG &DAG,
+                                         const MipsSubtarget &Subtarget) {
+  SDValue Src = N->getOperand(0);
+  EVT VT = N->getValueType(0);
+  EVT SrcVT = Src.getValueType();
+  if (!Subtarget.isR5900() || (SrcVT != MVT::v8i16 && SrcVT != MVT::v16i8) ||
+      !VT.isSimple() || VT.getScalarSizeInBits() > 32)
+    return SDValue();
+  bool Signed = N->getOpcode() == ISD::SIGN_EXTEND;
+  SDLoc DL(N);
+  auto [Lo, Hi] = extendR5900MMI(Src, Signed, DL, DAG);
+  if (Lo.getValueType().getScalarSizeInBits() == VT.getScalarSizeInBits())
+    return DAG.getNode(ISD::CONCAT_VECTORS, DL, VT, Lo, Hi);
+  // Bytes to words: extend each half again.
+  auto [LoLo, LoHi] = extendR5900MMI(Lo, Signed, DL, DAG);
+  auto [HiLo, HiHi] = extendR5900MMI(Hi, Signed, DL, DAG);
+  return DAG.getNode(ISD::CONCAT_VECTORS, DL, VT, LoLo, LoHi, HiLo, HiHi);
+}
+
 /// Truncate \p Src to the 128-bit vector type \p VT with R5900 MMI PPACH and
 /// PPACB, which pack the low halfwords or bytes of the elements of two
 /// registers. A source with elements of more than twice the width is
@@ -1599,6 +1692,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performVU0FMULCombine(N, DAG, Subtarget);
     break;
   case ISD::MUL:
+    if (SDValue V = performR5900MULCombine(N, DAG, Subtarget))
+      return V;
     return performMULCombine(N, DAG, DCI, this, Subtarget);
   case ISD::SHL:
     Val = performSHLCombine(N, DAG, DCI, Subtarget);
@@ -1620,6 +1715,11 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::TRUNCATE:
     Val = performR5900TRUNCATECombine(N, DAG, Subtarget);
+    break;
+  case ISD::SIGN_EXTEND:
+  case ISD::ZERO_EXTEND:
+  case ISD::ANY_EXTEND:
+    Val = performR5900ExtendCombine(N, DAG, Subtarget);
     break;
   case MipsISD::VU0_BLEND:
     Val = performVU0BlendCombine(N, DAG, Subtarget);
@@ -3300,6 +3400,37 @@ static bool isConstantOrUndefBUILD_VECTOR(const BuildVectorSDNode *Op) {
 // - Non-constant splats are legal as-is.
 // - Non-constant non-splats are lowered to sequences of INSERT_VECTOR_ELT.
 // - All others are illegal and must be expanded.
+/// R5900: a splat of a register to v4i32, v8i16 or v16i8. The scalar is in
+/// the low doubleword of a 128-bit register; PEXTLW/PEXTLB doubles a word or
+/// byte to the element below it, PCPYLD copies the low doubleword to the
+/// high one and PCPYH the low halfword of each doubleword to its others.
+/// Other vectors are expanded, constants to a load from the constant pool.
+static SDValue lowerR5900BUILD_VECTOR(BuildVectorSDNode *Node,
+                                      SelectionDAG &DAG) {
+  SDValue Scalar = Node->getSplatValue();
+  if (!Scalar || isa<ConstantSDNode>(Scalar))
+    return SDValue();
+  MVT VT = Node->getSimpleValueType(0);
+  SDLoc DL(Node);
+  SDValue X = DAG.getTargetInsertSubreg(
+      Mips::sub_64, DL, VT,
+      SDValue(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, VT), 0),
+      DAG.getAnyExtOrTrunc(Scalar, DL, MVT::i64));
+  auto MMI = [&](unsigned Opc, SDValue Rs, SDValue Rt) {
+    return SDValue(DAG.getMachineNode(Opc, DL, VT, Rs, Rt), 0);
+  };
+  auto CopyHalf = [&](SDValue V) {
+    return SDValue(DAG.getMachineNode(Mips::PCPYH, DL, VT, V), 0);
+  };
+  if (VT == MVT::v4i32) {
+    SDValue W = MMI(Mips::PEXTLW, X, X);
+    return MMI(Mips::PCPYLD, W, W);
+  }
+  if (VT == MVT::v16i8)
+    X = MMI(Mips::PEXTLB, X, X);
+  return CopyHalf(MMI(Mips::PCPYLD, X, X));
+}
+
 SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,
                                                 SelectionDAG &DAG) const {
   BuildVectorSDNode *Node = cast<BuildVectorSDNode>(Op);
@@ -3308,6 +3439,10 @@ SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,
   APInt SplatValue, SplatUndef;
   unsigned SplatBitSize;
   bool HasAnyUndefs;
+
+  if (Subtarget.isR5900() &&
+      (ResTy == MVT::v4i32 || ResTy == MVT::v8i16 || ResTy == MVT::v16i8))
+    return lowerR5900BUILD_VECTOR(Node, DAG);
 
   // VU0 v4f32 BUILD_VECTOR handling
   if (Subtarget.hasVU0() && ResTy == MVT::v4f32) {
