@@ -1186,9 +1186,23 @@ let Predicates = [IsR5900, IsNotSoftFloat], DecoderNamespace = "R5900" in {
   // R5900 RSQRT.S is 3-operand: fd = fs / sqrt(ft)
   // This differs from MIPS IV RSQRT.S which is 2-operand: fd = 1/sqrt(fs)
 
+  let hasSideEffects = 0 in
   def R5900_RSQRT_S
       : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$fs, FGR32Opnd:$ft),
                "rsqrt.s\t$fd, $fs, $ft", [], FrmFR, "rsqrt.s">,
         ADDS_FM<0x16, 16>;
 
 } // Predicates = [IsR5900, IsNotSoftFloat]
+
+// x / sqrt(y) as one RSQRT.S with approximate functions, like gcc with
+// -ffast-math. The square root is not needed otherwise: RSQRT.S takes longer
+// than a DIV.S after it.
+def r5900_afn_fdiv : PatFrag<(ops node:$a, node:$b), (fdiv node:$a, node:$b), [{
+  return N->getFlags().hasApproximateFuncs();
+}]>;
+def r5900_fsqrt_oneuse : PatFrag<(ops node:$a), (fsqrt node:$a), [{
+  return N->hasOneUse();
+}]>;
+let Predicates = [IsR5900, IsNotSoftFloat] in
+def : MipsPat<(r5900_afn_fdiv FGR32Opnd:$fs, (r5900_fsqrt_oneuse FGR32Opnd:$ft)),
+              (R5900_RSQRT_S FGR32Opnd:$fs, FGR32Opnd:$ft)>;
