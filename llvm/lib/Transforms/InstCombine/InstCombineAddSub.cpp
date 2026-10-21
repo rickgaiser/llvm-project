@@ -2186,6 +2186,25 @@ Instruction *InstCombinerImpl::visitFAdd(BinaryOperator &I) {
     return BinaryOperator::CreateFSubFMF(Z, XY, &I);
   }
 
+  // (X * -C) + Y --> Y - (X * C) if (X * C) already exists, to reuse it.
+  // This comes up when the constants are only known after unrolling.
+  for (unsigned Idx : {0, 1}) {
+    Constant *C;
+    Value *Mul = I.getOperand(Idx);
+    if (!match(Mul, m_OneUse(m_FMul(m_Value(X), m_ImmConstant(C)))))
+      continue;
+    Constant *NegC = ConstantFoldUnaryOpOperand(Instruction::FNeg, C, DL);
+    if (!NegC)
+      continue;
+    FastMathFlags FMF = cast<Instruction>(Mul)->getFastMathFlags();
+    for (User *U : X->users()) {
+      auto *Other = dyn_cast<Instruction>(U);
+      if (Other && match(Other, m_FMul(m_Specific(X), m_Specific(NegC))) &&
+          Other->getFastMathFlags() == FMF && DT.dominates(Other, &I))
+        return BinaryOperator::CreateFSubFMF(I.getOperand(1 - Idx), Other, &I);
+    }
+  }
+
   // Check for (fadd double (sitofp x), y), see if we can merge this into an
   // integer add followed by a promotion.
   if (Instruction *R = foldFBinOpOfIntCasts(I))
