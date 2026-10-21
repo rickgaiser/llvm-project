@@ -152,6 +152,18 @@ bool MipsTTIImpl::isProfitableToSinkOperands(
 // temporary, so their cost is twice the number of loads and stores.
 static constexpr unsigned MMICycle = 2;
 
+// VU0 costs are in the same issue slots, from the bench uarch tests:
+//   - a VU0 operation (vadd, vmul, vmax, vabs, vmove), like an FPU operation,
+//     has a latency of 4 and issues one per cycle. It pairs with an ALU
+//     operation or a load, so it takes one slot, as do lqc2 and sqc2.
+//   - qmfc2, qmtc2 and mtc1 issue one per cycle and do not pair with each
+//     other; qmfc2 to a GPR use is 3 cycles, qmfc2 and mtc1 to an FPU use 4.5.
+// Moving an element from VU0 to the FPU is such a chain of moves, so each
+// move takes both slots. Inserting an element, fdiv, sqrt, the conversions
+// and most shuffles are lowered through stack temporaries, about 12 loads
+// and stores per inserted element.
+static constexpr unsigned VU0InsertCycles = 12;
+
 /// Whether \p Ty is the v8i32 that PMULTH multiplies.
 static bool isPMULTHType(Type *Ty) {
   return Ty == FixedVectorType::get(Type::getInt32Ty(Ty->getContext()), 8);
@@ -180,10 +192,17 @@ MipsTTIImpl::getMMIType(Type *Ty) const {
   return LT;
 }
 
+std::optional<unsigned> MipsTTIImpl::getVU0Parts(Type *Ty) const {
+  auto *VTy = dyn_cast<FixedVectorType>(Ty);
+  if (!ST->hasVU0() || !VTy || !VTy->getElementType()->isFloatTy())
+    return std::nullopt;
+  return divideCeil(VTy->getNumElements(), 4);
+}
+
 InstructionCost
-MipsTTIImpl::getMMIScalarizedCost(FixedVectorType *VTy, unsigned NumVecOps,
-                                  InstructionCost ScalarCost,
-                                  TTI::TargetCostKind CostKind) const {
+MipsTTIImpl::getR5900ScalarizedCost(FixedVectorType *VTy, unsigned NumVecOps,
+                                    InstructionCost ScalarCost,
+                                    TTI::TargetCostKind CostKind) const {
   return VTy->getNumElements() * ScalarCost +
          getScalarizationOverhead(VTy, /*Insert=*/true, /*Extract=*/false,
                                   CostKind) +
@@ -195,6 +214,31 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
     VectorType *Ty, const APInt &DemandedElts, bool Insert, bool Extract,
     TTI::TargetCostKind CostKind, bool ForPoisonSrc, ArrayRef<Value *> VL,
     TTI::VectorInstrContext VIC) const {
+  // Per v4f32 part: extracting is a qmfc2, a pcpyud for the upper two
+  // elements, a dsrl32 for an odd one and an mtc1 per element.
+  if (auto Parts = getVU0Parts(Ty)) {
+    InstructionCost Cost = 0;
+    for (unsigned Part = 0; Part < *Parts; ++Part) {
+      unsigned Demanded = 0, Odd = 0;
+      bool Upper = false;
+      for (unsigned I = 0; I < 4 && Part * 4 + I < DemandedElts.getBitWidth();
+           ++I) {
+        if (!DemandedElts[Part * 4 + I])
+          continue;
+        ++Demanded;
+        Odd += I & 1;
+        Upper |= I >= 2;
+      }
+      if (!Demanded)
+        continue;
+      if (Extract)
+        Cost += (1 + Upper + Demanded) * MMICycle + Odd;
+      if (Insert)
+        Cost += Demanded * VU0InsertCycles * MMICycle;
+    }
+    return Cost;
+  }
+
   auto LT = getMMIType(Ty);
   if (!LT)
     return BaseT::getScalarizationOverhead(Ty, DemandedElts, Insert, Extract,
@@ -228,40 +272,33 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
     TTI::OperandValueInfo Op1Info, TTI::OperandValueInfo Op2Info,
     ArrayRef<const Value *> Args, const Instruction *CxtI) const {
 
-  // VU0 vector float operations
-  if (ST->hasVU0() && Ty->isVectorTy()) {
-    auto *VTy = cast<VectorType>(Ty);
-    if (VTy->getElementType()->isFloatTy()) {
-      unsigned NumElts = VTy->getElementCount().getKnownMinValue();
-
-      // Only v4f32 is natively supported on VU0.
-      // Other widths (v2f32, v8f32, etc.) require expensive scalarization
-      // or widening/splitting which adds significant overhead.
-      if (NumElts != 4) {
-        // Very expensive: scalarization or widening costs
-        // v2f32: widens to v4f32, wastes half the vector width
-        // Plus insertelement/extractelement overhead
-        return 20;
-      }
-
-      // Native v4f32 operations
-      switch (Opcode) {
-      case Instruction::FAdd:
-      case Instruction::FSub:
-      case Instruction::FMul:
-        return 1; // Native VU0 operation (4 cycle latency, 1 throughput)
-      case Instruction::FDiv:
-        // VDIV is sequential per component: Q = fs[fsf] / ft[ftf]
-        // Must execute 4 times with VWAITQ between each
-        return 29; // 4 * (7 cycle latency) + overhead
-      case Instruction::FRem:
-        // No native FRem support - very expensive scalarization
-        return 100;
-      default:
-        break;
-      }
+  if (auto Parts = getVU0Parts(Ty)) {
+    switch (Opcode) {
+    case Instruction::FAdd:
+    case Instruction::FSub:
+    case Instruction::FMul:
+      return *Parts;
+    case Instruction::FNeg:
+      // qmfc2, pxor with the sign bits and qmtc2.
+      return *Parts * 4 * MMICycle;
+    default:
+      break;
     }
+    // Everything else, such as fdiv, is scalarized.
+    auto *VTy = cast<FixedVectorType>(Ty);
+    InstructionCost ScalarCost =
+        getArithmeticInstrCost(Opcode, VTy->getElementType(), CostKind,
+                               Op1Info.getNoProps(), Op2Info.getNoProps());
+    unsigned NumVecOps =
+        Opcode == Instruction::FNeg || Op2Info.isConstant() ? 1 : 2;
+    return getR5900ScalarizedCost(VTy, NumVecOps, ScalarCost, CostKind);
   }
+
+  // An FPU add, subtract or multiply takes one slot, like the VU0 ones.
+  if (ST->isR5900() && Ty->isFloatTy() &&
+      (Opcode == Instruction::FAdd || Opcode == Instruction::FSub ||
+       Opcode == Instruction::FMul))
+    return 1;
 
   // R5900 MMI integer vector operations
   if (auto LT = getMMIType(Ty)) {
@@ -300,7 +337,7 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
         getArithmeticInstrCost(Opcode, VTy->getElementType(), CostKind,
                                Op1Info.getNoProps(), Op2Info.getNoProps());
     unsigned NumVecOps = Op2Info.isConstant() ? 1 : 2;
-    return getMMIScalarizedCost(VTy, NumVecOps, ScalarCost, CostKind);
+    return getR5900ScalarizedCost(VTy, NumVecOps, ScalarCost, CostKind);
   }
 
   return BaseT::getArithmeticInstrCost(Opcode, Ty, CostKind, Op1Info, Op2Info,
@@ -377,24 +414,18 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
                                              TTI::TargetCostKind CostKind,
                                              TTI::OperandValueInfo OpInfo,
                                              const Instruction *I) const {
-  // VU0 vector float load/store via LQC2/SQC2
-  if (ST->hasVU0() && Src->isVectorTy()) {
-    auto *VTy = cast<VectorType>(Src);
-    if (VTy->getElementType()->isFloatTy()) {
-      unsigned NumElts = VTy->getElementCount().getKnownMinValue();
-
-      // Only v4f32 is natively supported for load/store
-      if (NumElts != 4) {
-        // Non-native widths require scalarization or widening
-        return 15;
-      }
-
-      // Native v4f32 LQC2/SQC2 require 16-byte alignment
-      if (Alignment >= Align(16))
-        return 1; // Single aligned 128-bit load/store
-      // Unaligned access requires scalar fallback
-      return 8;
-    }
+  // VU0 v4f32 load/store: an aligned lqc2/sqc2 takes 1 slot. Otherwise a
+  // load is ld/sd x2, or ldl/ldr and sd x2, to a stack temporary and an
+  // lqc2; a store an sqc2, then ld/sd x2, or ld and sdl/sdr x2. A vector
+  // that is not a multiple of v4f32, such as v2f32, goes element by element
+  // through stack temporaries and the FPU.
+  if (auto Parts = getVU0Parts(Src)) {
+    unsigned NumElts = cast<FixedVectorType>(Src)->getNumElements();
+    if (NumElts % 4)
+      return (2 * NumElts + 5) * MMICycle;
+    if (Alignment >= Align(16) || isAlignedWhenWidened(I, Src, DL))
+      return *Parts;
+    return *Parts * (Alignment >= Align(8) ? 5 : 7) * MMICycle;
   }
 
   // A smaller integer vector, such as v8i8, is promoted to a 128-bit MMI type
@@ -425,33 +456,18 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
 InstructionCost MipsTTIImpl::getVectorInstrCost(
     unsigned Opcode, Type *Val, TTI::TargetCostKind CostKind, unsigned Index,
     const Value *Op0, const Value *Op1, TTI::VectorInstrContext VIC) const {
-  // VU0 vector float extract/insert costs
-  // These are expensive because VU0 has no direct element access - must go
-  // through GPR128:
-  //   Extract: QMFC2 + DSRL32 (for upper elements) + MTC1 = 4-6 cycles
-  //   Insert: QMFC2 + GPR manipulation + QMTC2 = 6-10 cycles
-  // Variable index is even more expensive due to computed shifts.
-  if (ST->hasVU0() && Val->isVectorTy()) {
-    auto *VTy = cast<VectorType>(Val);
-    if (VTy->getElementType()->isFloatTy()) {
-      unsigned NumElts = VTy->getElementCount().getKnownMinValue();
-
-      // Non-native vector widths are very expensive
-      if (NumElts != 4) {
-        // Widening/scalarization overhead plus element access
-        return (Opcode == Instruction::ExtractElement) ? 10 : 15;
-      }
-
-      // Native v4f32 costs
-      if (Opcode == Instruction::ExtractElement) {
-        // QMFC2 (2 cy) + DSRL32 (1 cy) + MTC1 (2 cy) + possible shift/mask
-        return (Index == -1U) ? 8 : 5;
-      }
-      if (Opcode == Instruction::InsertElement) {
-        // QMFC2 (2 cy) + GPR mask/shift (2-4 cy) + QMTC2 (2 cy + 1 cy stall)
-        return (Index == -1U) ? 12 : 8;
-      }
+  // VU0 v4f32 extract: qmfc2, then pcpyud for the upper two elements and a
+  // dsrl32 for an odd one, and mtc1. A variable element is stored with sqc2
+  // and loaded with lwc1. Inserting goes through stack temporaries.
+  if (getVU0Parts(Val)) {
+    if (Opcode == Instruction::ExtractElement) {
+      if (Index == -1U)
+        return 3 * MMICycle;
+      unsigned Elt = Index % 4;
+      return (2 + (Elt >= 2)) * MMICycle + (Elt & 1);
     }
+    if (Opcode == Instruction::InsertElement)
+      return VU0InsertCycles * MMICycle;
   }
 
   // R5900 MMI integer vector extract/insert, through a stack temporary.
@@ -476,41 +492,35 @@ InstructionCost MipsTTIImpl::getShuffleCost(
     TTI::TargetCostKind CostKind, ArrayRef<int> Mask, int Index,
     VectorType *SubTp, ArrayRef<const Value *> Args, const Instruction *CxtI,
     TTI::VectorInstrContext VIC) const {
-  // VU0 vector float shuffle costs
-  VectorType *Tp = SrcTy ? SrcTy : DstTy;
-  if (ST->hasVU0() && Tp && Tp->getElementType()->isFloatTy()) {
-    unsigned NumElts = Tp->getElementCount().getKnownMinValue();
-
-    // Non-native vector widths are very expensive
-    if (NumElts != 4) {
-      // Widening/scalarization overhead plus shuffle
-      return 15;
+  // VU0 v4f32 shuffles: vmove with a field mask blends two vectors, and vsub
+  // and vadd with a broadcast field splat an element. The others are lowered
+  // through stack temporaries, from the elements of each source.
+  if (getVU0Parts(DstTy) == 1u && (!SrcTy || getVU0Parts(SrcTy) == 1u)) {
+    unsigned NumElts = cast<FixedVectorType>(DstTy)->getNumElements();
+    int First = -1;
+    bool Splat = true, Blend = true;
+    for (auto [I, M] : enumerate(Mask)) {
+      if (M < 0)
+        continue;
+      if (First < 0)
+        First = M;
+      Splat &= M == First;
+      Blend &= unsigned(M) % NumElts == I;
     }
-
-    // Native v4f32 shuffle costs
-    switch (Kind) {
-    case TTI::SK_Broadcast:
-      // Splat: need to replicate one element to all positions
-      // QMFC2 + shift + replicate (PCPYH/PCPYLD) + QMTC2
-      return 4;
-    case TTI::SK_Select:
-      // Blend/select between two vectors using VU0 masked move
+    if (Kind == TTI::SK_Select || (First >= 0 && Blend))
       return 1;
-    case TTI::SK_PermuteSingleSrc:
-      // Permute within single vector: QMFC2 + GPR shuffle + QMTC2
-      return 6;
-    case TTI::SK_PermuteTwoSrc:
-      // Permute from two vectors: more complex
-      return 12;
-    case TTI::SK_Reverse:
-      // Reverse order: GPR manipulation
-      return 6;
-    case TTI::SK_Splice:
-      // Concatenate and extract: expensive
-      return 10;
-    default:
-      break;
-    }
+    if (Kind == TTI::SK_Broadcast || (First >= 0 && Splat))
+      return 2;
+    unsigned NumSrcs = Kind == TTI::SK_PermuteTwoSrc ||
+                               Kind == TTI::SK_Transpose ||
+                               Kind == TTI::SK_Splice
+                           ? 2
+                           : 1;
+    APInt All = APInt::getAllOnes(NumElts);
+    return NumSrcs * getScalarizationOverhead(DstTy, All, /*Insert=*/false,
+                                              /*Extract=*/true, CostKind) +
+           getScalarizationOverhead(DstTy, All, /*Insert=*/true,
+                                    /*Extract=*/false, CostKind);
   }
 
   // R5900 MMI integer vector shuffles: the zips, unzips and half copies of
@@ -543,32 +553,19 @@ MipsTTIImpl::getIntrinsicInstrCost(const IntrinsicCostAttributes &ICA,
                                    TTI::TargetCostKind CostKind) const {
   Type *RetTy = ICA.getReturnType();
 
-  // VU0 v4f32 intrinsic costs
-  if (ST->hasVU0() && RetTy->isVectorTy()) {
-    auto *VTy = dyn_cast<FixedVectorType>(RetTy);
-    if (VTy && VTy->getElementType()->isFloatTy() &&
-        VTy->getNumElements() == 4) {
-      switch (ICA.getID()) {
-      case Intrinsic::fabs:
-        return 1; // VABS
-      case Intrinsic::minnum:
-      case Intrinsic::maxnum:
-        return 1; // VMINI/VMAX
-      case Intrinsic::fma:
-      case Intrinsic::fmuladd:
-        // FMA lowering: FMUL + FADD (no direct fused multiply-add with single
-        // latency) VMADD requires ACC setup, so it's effectively 2 operations
-        return 2;
-      case Intrinsic::sqrt:
-        // VSQRT is sequential per component (Q = sqrt(ft[ftf]))
-        // Must execute 4 times with VWAITQ between each
-        return 32; // 4 * 8 cycle latency
-      case Intrinsic::copysign:
-        // Need to extract sign bits, combine - fairly expensive
-        return 8;
-      default:
-        break;
-      }
+  // VU0 v4f32 intrinsics: vabs, vmini, vmax, and vmul and vadd for a
+  // multiply-add. The others, such as sqrt, are scalarized.
+  if (auto Parts = getVU0Parts(RetTy)) {
+    switch (ICA.getID()) {
+    case Intrinsic::fabs:
+    case Intrinsic::minnum:
+    case Intrinsic::maxnum:
+      return *Parts;
+    case Intrinsic::fma:
+    case Intrinsic::fmuladd:
+      return 2 * *Parts;
+    default:
+      break;
     }
   }
 
@@ -614,31 +611,11 @@ MipsTTIImpl::getArithmeticReductionCost(unsigned Opcode, VectorType *Ty,
   if (!ST->hasVU0() && !ST->isR5900())
     return BaseT::getArithmeticReductionCost(Opcode, Ty, FMF, CostKind);
 
-  auto *VTy = dyn_cast<FixedVectorType>(Ty);
-  if (!VTy)
-    return BaseT::getArithmeticReductionCost(Opcode, Ty, FMF, CostKind);
-
-  unsigned NumElts = VTy->getNumElements();
-  Type *EltTy = VTy->getElementType();
-
-  // VU0 v4f32 reduction (no horizontal ops, tree reduction)
-  // This is VERY expensive on VU0 because there are no native horizontal
-  // reduction instructions. The tree reduction requires:
-  //   Level 1: QMFC2 + GPR shuffle + QMTC2 + VADD = ~10 cycles
-  //   Level 2: QMFC2 + GPR shuffle + QMTC2 + VADD = ~10 cycles
-  //   Extract: QMFC2 + MTC1 = ~4 cycles
-  // Total: ~24 cycles, which is much worse than scalar FPU ACC chain (~4
-  // cycles)
-  if (ST->hasVU0() && EltTy->isFloatTy() && NumElts == 4) {
-    switch (Opcode) {
-    case Instruction::FAdd:
-    case Instruction::FMul:
-      // High cost to discourage vectorization of reduction patterns
-      return 24;
-    default:
-      break;
-    }
-  }
+  // VU0 v4f32 fadd and fmul reductions: the upper half goes through the FPU
+  // and a stack temporary, then two VU0 operations and qmfc2 and mtc1 for the
+  // result, a chain of about 14 cycles.
+  if (getVU0Parts(Ty) == 1u)
+    return 14 * MMICycle;
 
   // MMI integer reductions use the generic shuffle tree costs.
   return BaseT::getArithmeticReductionCost(Opcode, Ty, FMF, CostKind);
@@ -652,21 +629,9 @@ MipsTTIImpl::getMinMaxReductionCost(Intrinsic::ID IID, VectorType *Ty,
   if (!ST->hasVU0() && !ST->isR5900())
     return BaseT::getMinMaxReductionCost(IID, Ty, FMF, CostKind);
 
-  auto *VTy = dyn_cast<FixedVectorType>(Ty);
-  if (!VTy)
-    return BaseT::getMinMaxReductionCost(IID, Ty, FMF, CostKind);
-
-  unsigned NumElts = VTy->getNumElements();
-  Type *EltTy = VTy->getElementType();
-
-  // VU0 v4f32 min/max reduction (VMAX/VMINI + tree reduction)
-  // Same expensive shuffle path as arithmetic reductions
-  if (ST->hasVU0() && EltTy->isFloatTy() && NumElts == 4) {
-    // Level 1: QMFC2 + GPR shuffle + QMTC2 + VMAX/VMINI = ~10 cycles
-    // Level 2: QMFC2 + GPR shuffle + QMTC2 + VMAX/VMINI = ~10 cycles
-    // Extract: QMFC2 + MTC1 = ~4 cycles
-    return 24;
-  }
+  // VU0 v4f32 min/max reductions are lowered like the fadd ones.
+  if (getVU0Parts(Ty) == 1u)
+    return 14 * MMICycle;
 
   // MMI integer reductions use the generic shuffle tree costs.
   return BaseT::getMinMaxReductionCost(IID, Ty, FMF, CostKind);
@@ -747,12 +712,16 @@ InstructionCost MipsTTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
   case Instruction::FPToUI:
   case Instruction::SIToFP:
   case Instruction::UIToFP:
-    // VU0 lacks native vector FP<->Int conversion (VFTOI/VITOF not implemented)
-    // These scalarize, which is very expensive
-    if (ST->hasVU0() && SrcVTy->getElementType()->isFloatTy() &&
-        SrcVTy->getNumElements() == 4) {
-      // 4 extracts + 4 scalar converts + 4 inserts
-      return 20;
+    // VU0 v4f32 conversions are scalarized.
+    if (getVU0Parts(Src) || getVU0Parts(Dst)) {
+      InstructionCost ScalarCost =
+          getCastInstrCost(Opcode, DstVTy->getElementType(),
+                           SrcVTy->getElementType(), CCH, CostKind);
+      return getScalarizationOverhead(SrcVTy, /*Insert=*/false,
+                                      /*Extract=*/true, CostKind) +
+             DstVTy->getNumElements() * ScalarCost +
+             getScalarizationOverhead(DstVTy, /*Insert=*/true,
+                                      /*Extract=*/false, CostKind);
     }
     break;
 
@@ -815,21 +784,24 @@ InstructionCost MipsTTIImpl::getCmpSelInstrCost(
     InstructionCost ScalarCost = getCmpSelInstrCost(
         Opcode, EltTy, CondTy ? CondTy->getScalarType() : nullptr, VecPred,
         CostKind, Op1Info.getNoProps(), Op2Info.getNoProps());
-    return getMMIScalarizedCost(VTy, 2, ScalarCost, CostKind);
+    return getR5900ScalarizedCost(VTy, 2, ScalarCost, CostKind);
   }
 
-  // FCmp for VU0 - no native vector compare, expensive
-  if (Opcode == Instruction::FCmp && ST->hasVU0()) {
-    if (EltTy->isFloatTy() && NumElts == 4) {
-      // No native v4f32 compare - scalarizes
-      return 10;
+  // VU0 v4f32 compares are scalarized, each a c.cond.s and a branch over a
+  // li, to an MMI mask. A select with a mask is qmfc2 of both operands, pand,
+  // pnor, pand, por and qmtc2.
+  if (auto Parts = getVU0Parts(VTy)) {
+    if (Opcode == Instruction::FCmp) {
+      auto *MaskTy = VectorType::getInteger(VTy);
+      return 2 * getScalarizationOverhead(VTy, /*Insert=*/false,
+                                          /*Extract=*/true, CostKind) +
+             NumElts * 3 * MMICycle +
+             getScalarizationOverhead(MaskTy, /*Insert=*/true,
+                                      /*Extract=*/false, CostKind);
     }
+    if (Opcode == Instruction::Select && CondTy && CondTy->isVectorTy())
+      return *Parts * 7 * MMICycle;
   }
-
-  // VU0 has no native masked select - expensive
-  if (Opcode == Instruction::Select && ST->hasVU0() && EltTy->isFloatTy() &&
-      NumElts == 4)
-    return 8;
 
   return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy, VecPred, CostKind,
                                    Op1Info, Op2Info, I);
@@ -903,42 +875,9 @@ InstructionCost MipsTTIImpl::getInterleavedMemoryOpCost(
     }
   }
 
-  // Other MMI integer vectors: the generic cost from the load/store and
-  // shuffle costs.
-  if (!VTy || getMMIType(VTy))
-    return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
-                                             Alignment, AddressSpace, CostKind,
-                                             UseMaskForCond, UseMaskForGaps);
-
-  // Unaligned interleaved access is very expensive
-  if (Alignment < Align(16)) {
-    return InstructionCost::getInvalid();
-  }
-
-  // Basic cost: Factor * (load/store cost) + shuffle overhead
-  InstructionCost MemCost = Factor; // Each LQ/SQ is 1 cycle
-
-  // Shuffle overhead depends on factor and element arrangement
-  InstructionCost ShuffleCost;
-  switch (Factor) {
-  case 2:
-    // Interleave factor 2: relatively simple shuffle
-    ShuffleCost = 2;
-    break;
-  case 3:
-    // Factor 3: more complex shuffling
-    ShuffleCost = 4;
-    break;
-  case 4:
-    // Factor 4: significant shuffle overhead
-    ShuffleCost = 6;
-    break;
-  default:
-    // Higher factors: fall back to base cost
-    return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
-                                             Alignment, AddressSpace, CostKind,
-                                             UseMaskForCond, UseMaskForGaps);
-  }
-
-  return MemCost + ShuffleCost;
+  // Everything else, including VU0 vectors, from the load/store and shuffle
+  // costs.
+  return BaseT::getInterleavedMemoryOpCost(Opcode, VecTy, Factor, Indices,
+                                           Alignment, AddressSpace, CostKind,
+                                           UseMaskForCond, UseMaskForGaps);
 }

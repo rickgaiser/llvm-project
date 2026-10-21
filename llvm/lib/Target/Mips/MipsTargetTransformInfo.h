@@ -33,11 +33,16 @@ class MipsTTIImpl final : public BasicTTIImplBase<MipsTTIImpl> {
   /// the number of 128-bit parts and the legal part type.
   std::optional<std::pair<InstructionCost, MVT>> getMMIType(Type *Ty) const;
 
-  /// The cost of doing an operation on each element of an MMI vector, with
-  /// NumVecOps vector operands extracted and the result inserted.
-  InstructionCost getMMIScalarizedCost(FixedVectorType *VTy, unsigned NumVecOps,
-                                       InstructionCost ScalarCost,
-                                       TTI::TargetCostKind CostKind) const;
+  /// If Ty is a VU0 float vector (a multiple of 4 floats), returns the number
+  /// of v4f32 parts.
+  std::optional<unsigned> getVU0Parts(Type *Ty) const;
+
+  /// The cost of doing an operation on each element of an MMI or VU0 vector,
+  /// with NumVecOps vector operands extracted and the result inserted.
+  InstructionCost getR5900ScalarizedCost(FixedVectorType *VTy,
+                                         unsigned NumVecOps,
+                                         InstructionCost ScalarCost,
+                                         TTI::TargetCostKind CostKind) const;
 
 public:
   explicit MipsTTIImpl(const MipsTargetMachine *TM, const Function &F)
