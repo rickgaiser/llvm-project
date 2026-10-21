@@ -156,16 +156,19 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
   unsigned PartElts = LT->second.getVectorNumElements();
   unsigned NumElts = cast<FixedVectorType>(Ty)->getNumElements();
   InstructionCost Cost = 0;
+  // A vector smaller than its legal type, such as v2i8 widened to v16i8, has
+  // fewer elements than a part.
   for (unsigned Part = 0; Part < NumElts; Part += PartElts) {
+    unsigned End = std::min(Part + PartElts, NumElts);
     unsigned Demanded = 0;
-    for (unsigned I = Part; I < Part + PartElts; ++I)
+    for (unsigned I = Part; I < End; ++I)
       Demanded += DemandedElts[I];
     if (!Demanded)
       continue;
     if (Extract)
       Cost += 1 + Demanded;
     if (Insert)
-      Cost += Demanded + 1 + (!ForPoisonSrc && Demanded != PartElts);
+      Cost += Demanded + 1 + (!ForPoisonSrc && Demanded != End - Part);
   }
   return Cost * MMICycle;
 }

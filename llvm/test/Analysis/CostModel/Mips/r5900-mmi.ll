@@ -115,3 +115,27 @@ define void @pack_ops(<8 x i32> %w8, <16 x i16> %h16, <16 x i32> %w16) {
   %bw = trunc <16 x i32> %w16 to <16 x i8>
   ret void
 }
+
+; Vectors with fewer elements than their legal type (v2i8 is widened to
+; v16i8): the scalarization overhead stays within the vector.
+define void @small_vectors(<2 x i8> %b2, <3 x i8> %b3, <2 x i16> %h2, <2 x i32> %w2, <3 x i32> %w3) {
+; CHECK-LABEL: 'small_vectors'
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %qb2 = udiv <2 x i8> %b2, %b2
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 27 for instruction: %qb3 = udiv <3 x i8> %b3, %b3
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %qh2 = udiv <2 x i16> %h2, %h2
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %qw2 = udiv <2 x i32> %w2, %w2
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 27 for instruction: %qw3 = udiv <3 x i32> %w3, %w3
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %ib2 = insertelement <2 x i8> %b2, i8 0, i32 1
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %iw3 = insertelement <3 x i32> %w3, i32 0, i32 2
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %qb2 = udiv <2 x i8> %b2, %b2
+  %qb3 = udiv <3 x i8> %b3, %b3
+  %qh2 = udiv <2 x i16> %h2, %h2
+  %qw2 = udiv <2 x i32> %w2, %w2
+  %qw3 = udiv <3 x i32> %w3, %w3
+  %ib2 = insertelement <2 x i8> %b2, i8 0, i32 1
+  %iw3 = insertelement <3 x i32> %w3, i32 0, i32 2
+  ret void
+}
+
