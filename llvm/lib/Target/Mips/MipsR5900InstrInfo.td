@@ -240,7 +240,7 @@ let Predicates = [IsR5900] in {
 
   // PLZCW rd, rs - Count leading zeros/ones in rs[31:0] and rs[63:32]
   // Result is (count - 1) stored in rd[31:0] and rd[63:32] respectively
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PLZCW : InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs),
                                     "plzcw\t$rd, $rs", [], FrmR>,
       R5900_MMI_PLZCW_FM;
@@ -320,7 +320,7 @@ let Predicates = [IsR5900] in {
 
   // PMFHI - Parallel Move From HI Register
   // rd = HI (128-bit)
-  let Uses = [HI0_64, HI1_64],
+  let hasSideEffects = 0, Uses = [HI0_64, HI1_64],
       DecoderNamespace =
           "R5900" in def PMFHI : InstSE<(outs GPR128Opnd:$rd), (ins),
                                         "pmfhi\t$rd", [], FrmR>,
@@ -328,7 +328,7 @@ let Predicates = [IsR5900] in {
 
   // PMFLO - Parallel Move From LO Register
   // rd = LO (128-bit)
-  let Uses = [LO0_64, LO1_64],
+  let hasSideEffects = 0, Uses = [LO0_64, LO1_64],
       DecoderNamespace =
           "R5900" in def PMFLO : InstSE<(outs GPR128Opnd:$rd), (ins),
                                         "pmflo\t$rd", [], FrmR>,
@@ -336,7 +336,7 @@ let Predicates = [IsR5900] in {
 
   // PMTHI - Parallel Move To HI Register
   // HI = rs (128-bit)
-  let Defs = [HI0_64, HI1_64],
+  let hasSideEffects = 0, Defs = [HI0_64, HI1_64],
       DecoderNamespace =
           "R5900" in def PMTHI : InstSE<(outs), (ins GPR128Opnd:$rs),
                                         "pmthi\t$rs", [], FrmR>,
@@ -344,7 +344,7 @@ let Predicates = [IsR5900] in {
 
   // PMTLO - Parallel Move To LO Register
   // LO = rs (128-bit)
-  let Defs = [LO0_64, LO1_64],
+  let hasSideEffects = 0, Defs = [LO0_64, LO1_64],
       DecoderNamespace =
           "R5900" in def PMTLO : InstSE<(outs), (ins GPR128Opnd:$rs),
                                         "pmtlo\t$rs", [], FrmR>,
@@ -558,7 +558,7 @@ let Predicates = [IsR5900] in {
 
   // PNOR - Parallel NOR
   // rd = ~(rs | rt) (128-bit)
-  let DecoderNamespace = "R5900" in def PNOR
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PNOR
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pnor\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI3_FM<0b10011>;
@@ -583,42 +583,42 @@ let Predicates = [IsR5900] in {
 
   // PCGTW - Parallel Compare for Greater Than Word
   // rd = (rs > rt) ? 0xFFFFFFFF : 0 for each of 4 packed 32-bit signed words
-  let DecoderNamespace = "R5900" in def PCGTW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCGTW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pcgtw\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b00010>;
 
   // PCGTH - Parallel Compare for Greater Than Halfword
   // rd = (rs > rt) ? 0xFFFF : 0 for each of 8 packed 16-bit signed halfwords
-  let DecoderNamespace = "R5900" in def PCGTH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCGTH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pcgth\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b00110>;
 
   // PCGTB - Parallel Compare for Greater Than Byte
   // rd = (rs > rt) ? 0xFF : 0 for each of 16 packed 8-bit signed bytes
-  let DecoderNamespace = "R5900" in def PCGTB
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCGTB
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pcgtb\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b01010>;
 
   // PCEQW - Parallel Compare for Equal Word
   // rd = (rs == rt) ? 0xFFFFFFFF : 0 for each of 4 packed 32-bit words
-  let DecoderNamespace = "R5900" in def PCEQW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCEQW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pceqw\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b00010>;
 
   // PCEQH - Parallel Compare for Equal Halfword
   // rd = (rs == rt) ? 0xFFFF : 0 for each of 8 packed 16-bit halfwords
-  let DecoderNamespace = "R5900" in def PCEQH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCEQH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pceqh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b00110>;
 
   // PCEQB - Parallel Compare for Equal Byte
   // rd = (rs == rt) ? 0xFF : 0 for each of 16 packed 8-bit bytes
-  let DecoderNamespace = "R5900" in def PCEQB
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCEQB
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pceqb\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b01010>;
@@ -631,42 +631,42 @@ let Predicates = [IsR5900] in {
 
   // PSLLH - Parallel Shift Left Logical Halfword
   // rd = rt << sa for each of 8 packed 16-bit halfwords
-  let DecoderNamespace = "R5900" in def PSLLH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSLLH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
                "psllh\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b110100>;
 
   // PSRLH - Parallel Shift Right Logical Halfword
   // rd = rt >> sa (logical) for each of 8 packed 16-bit halfwords
-  let DecoderNamespace = "R5900" in def PSRLH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRLH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
                "psrlh\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b110110>;
 
   // PSRAH - Parallel Shift Right Arithmetic Halfword
   // rd = rt >> sa (arithmetic) for each of 8 packed 16-bit halfwords
-  let DecoderNamespace = "R5900" in def PSRAH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRAH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm4:$sa),
                "psrah\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b110111>;
 
   // PSLLW - Parallel Shift Left Logical Word
   // rd = rt << sa for each of 4 packed 32-bit words
-  let DecoderNamespace = "R5900" in def PSLLW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSLLW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
                "psllw\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b111100>;
 
   // PSRLW - Parallel Shift Right Logical Word
   // rd = rt >> sa (logical) for each of 4 packed 32-bit words
-  let DecoderNamespace = "R5900" in def PSRLW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRLW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
                "psrlw\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b111110>;
 
   // PSRAW - Parallel Shift Right Arithmetic Word
   // rd = rt >> sa (arithmetic) for each of 4 packed 32-bit words
-  let DecoderNamespace = "R5900" in def PSRAW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRAW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, uimm5:$sa),
                "psraw\t$rd, $rt, $sa", [], FrmR>,
       R5900_MMI_SHIFT_FM<0b111111>;
@@ -684,7 +684,7 @@ let Predicates = [IsR5900] in {
   // WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
   // rd[63:0] = sign_extend(rt[31:0] << rs[4:0])
   // rd[127:64] = sign_extend(rt[95:64] << rs[68:64])
-  let DecoderNamespace = "R5900" in def PSLLVW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSLLVW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                "psllvw\t$rd, $rt, $rs", [], FrmR>,
       R5900_MMI2_FM<0b00010>;
@@ -693,7 +693,7 @@ let Predicates = [IsR5900] in {
   // WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
   // rd[63:0] = sign_extend(rt[31:0] >> rs[4:0])
   // rd[127:64] = sign_extend(rt[95:64] >> rs[68:64])
-  let DecoderNamespace = "R5900" in def PSRLVW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRLVW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                "psrlvw\t$rd, $rt, $rs", [], FrmR>,
       R5900_MMI2_FM<0b00011>;
@@ -702,7 +702,7 @@ let Predicates = [IsR5900] in {
   // WARNING: Only shifts 2 words (elements 0 and 2), destroys elements 1 and 3!
   // rd[63:0] = sign_extend(rt[31:0] >> rs[4:0]) (arithmetic)
   // rd[127:64] = sign_extend(rt[95:64] >> rs[68:64]) (arithmetic)
-  let DecoderNamespace = "R5900" in def PSRAVW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PSRAVW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt, GPR128Opnd:$rs),
                "psravw\t$rd, $rt, $rs", [], FrmR>,
       R5900_MMI3_FM<0b00011>;
@@ -861,45 +861,45 @@ let Predicates = [IsR5900] in {
   // --- Parallel Extend Lower (interleave with zeros) ---
   // PEXTLW - Parallel Extend Lower from Word
   // Interleaves lower words from rs and rt
-  let DecoderNamespace = "R5900" in def PEXTLW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTLW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextlw\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b10010>;
 
   // PEXTLH - Parallel Extend Lower from Halfword
-  let DecoderNamespace = "R5900" in def PEXTLH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTLH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextlh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b10110>;
 
   // PEXTLB - Parallel Extend Lower from Byte
-  let DecoderNamespace = "R5900" in def PEXTLB
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTLB
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextlb\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b11010>;
 
   // --- Parallel Extend Upper ---
   // PEXTUW - Parallel Extend Upper from Word
-  let DecoderNamespace = "R5900" in def PEXTUW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTUW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextuw\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b10010>;
 
   // PEXTUH - Parallel Extend Upper from Halfword
-  let DecoderNamespace = "R5900" in def PEXTUH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTUH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextuh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b10110>;
 
   // PEXTUB - Parallel Extend Upper from Byte
-  let DecoderNamespace = "R5900" in def PEXTUB
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PEXTUB
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pextub\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b11010>;
 
   // --- Parallel Pack ---
   // PPACW - Parallel Pack to Word
-  let DecoderNamespace = "R5900" in def PPACW
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PPACW
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "ppacw\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI0_FM<0b10011>;
@@ -923,83 +923,83 @@ let Predicates = [IsR5900] in {
 
   // --- Parallel Copy ---
   // PCPYLD - Parallel Copy Lower Doubleword
-  let DecoderNamespace = "R5900" in def PCPYLD
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCPYLD
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pcpyld\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b01110>;
 
   // PCPYUD - Parallel Copy Upper Doubleword
-  let DecoderNamespace = "R5900" in def PCPYUD
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PCPYUD
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pcpyud\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI3_FM<0b01110>;
 
   // PCPYH - Parallel Copy Halfword
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PCPYH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pcpyh\t$rd, $rt", [], FrmR>,
       R5900_MMI3_2R_FM<0b11011>;
 
   // --- Parallel Interleave ---
   // PINTH - Parallel Interleave Halfword
-  let DecoderNamespace = "R5900" in def PINTH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PINTH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pinth\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI2_FM<0b01010>;
 
   // PINTEH - Parallel Interleave Even Halfword
-  let DecoderNamespace = "R5900" in def PINTEH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PINTEH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pinteh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI3_FM<0b01010>;
 
   // --- Parallel Exchange ---
   // PEXEH - Parallel Exchange Even Halfword
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PEXEH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pexeh\t$rd, $rt", [], FrmR>,
       R5900_MMI2_2R_FM<0b11010>;
 
   // PEXEW - Parallel Exchange Even Word
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PEXEW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pexew\t$rd, $rt", [], FrmR>,
       R5900_MMI2_2R_FM<0b11110>;
 
   // PEXCH - Parallel Exchange Center Halfword
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PEXCH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pexch\t$rd, $rt", [], FrmR>,
       R5900_MMI3_2R_FM<0b11010>;
 
   // PEXCW - Parallel Exchange Center Word
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PEXCW : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pexcw\t$rd, $rt", [], FrmR>,
       R5900_MMI3_2R_FM<0b11110>;
 
   // --- Other Rearrangement ---
   // PREVH - Parallel Reverse Halfword
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PREVH : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "prevh\t$rd, $rt", [], FrmR>,
       R5900_MMI2_2R_FM<0b11011>;
 
   // PROT3W - Parallel Rotate 3 Words Left
-  let DecoderNamespace = "R5900" in def PROT3W
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PROT3W
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                "prot3w\t$rd, $rt", [], FrmR>,
       R5900_MMI2_2R_FM<0b11111>;
 
   // --- RGB Packing/Unpacking ---
   // PEXT5 - Parallel Extend from 5 bits (RGB555 to RGBA32)
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PEXT5 : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "pext5\t$rd, $rt", [], FrmR>,
       R5900_MMI0_2R_FM<0b11110>;
 
   // PPAC5 - Parallel Pack to 5 bits (RGBA32 to RGB555)
-  let DecoderNamespace =
+  let hasSideEffects = 0, DecoderNamespace =
       "R5900" in def PPAC5 : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rt),
                                     "ppac5\t$rd, $rt", [], FrmR>,
       R5900_MMI0_2R_FM<0b11111>;
@@ -1013,7 +1013,7 @@ let Predicates = [IsR5900] in {
   // PMULTH - Parallel Multiply Halfword
   // Multiplies 8 pairs of 16-bit signed integers, stores 32-bit results in
   // rd/HI/LO
-  let DecoderNamespace = "R5900",
+  let hasSideEffects = 0, DecoderNamespace = "R5900",
       Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMULTH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmulth\t$rd, $rs, $rt", [], FrmR>,
@@ -1021,7 +1021,8 @@ let Predicates = [IsR5900] in {
 
   // PMADDH - Parallel Multiply-Add Halfword
   // Multiplies and accumulates 8 pairs of halfwords into HI/LO/rd
-  let DecoderNamespace = "R5900", Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
+  let hasSideEffects = 0, DecoderNamespace = "R5900",
+      Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
       Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMADDH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmaddh\t$rd, $rs, $rt", [], FrmR>,
@@ -1029,7 +1030,8 @@ let Predicates = [IsR5900] in {
 
   // PMSUBH - Parallel Multiply-Subtract Halfword
   // Multiplies and subtracts 8 pairs of halfwords from HI/LO
-  let DecoderNamespace = "R5900", Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
+  let hasSideEffects = 0, DecoderNamespace = "R5900",
+      Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
       Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PMSUBH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "pmsubh\t$rd, $rs, $rt", [], FrmR>,
@@ -1037,7 +1039,7 @@ let Predicates = [IsR5900] in {
 
   // PHMADH - Parallel Horizontal Multiply-Add Halfword
   // Horizontal multiply-add pairs of halfwords
-  let DecoderNamespace = "R5900",
+  let hasSideEffects = 0, DecoderNamespace = "R5900",
       Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PHMADH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "phmadh\t$rd, $rs, $rt", [], FrmR>,
@@ -1045,7 +1047,7 @@ let Predicates = [IsR5900] in {
 
   // PHMSBH - Parallel Horizontal Multiply-Subtract Halfword
   // Horizontal multiply-subtract pairs of halfwords
-  let DecoderNamespace = "R5900",
+  let hasSideEffects = 0, DecoderNamespace = "R5900",
       Defs = [HI0_64, LO0_64, HI1_64, LO1_64] in def PHMSBH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "phmsbh\t$rd, $rs, $rt", [], FrmR>,
@@ -1087,7 +1089,7 @@ let Predicates = [IsR5900] in {
   // PADSBH - Parallel Add/Subtract Halfword
   // Lower 4 halfwords: subtract, Upper 4 halfwords: add
   // No direct LLVM pattern - this is a unique hybrid operation
-  let DecoderNamespace = "R5900" in def PADSBH
+  let hasSideEffects = 0, DecoderNamespace = "R5900" in def PADSBH
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "padsbh\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b00100>;

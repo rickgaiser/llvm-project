@@ -12,12 +12,12 @@ define void @sext_h_w(ptr %p, ptr %q) {
 ; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    pextlh $2, $1, $1
-; CHECK-NEXT:    psraw $2, $2, 16
 ; CHECK-NEXT:    pextuh $1, $1, $1
-; CHECK-NEXT:    psraw $1, $1, 16
-; CHECK-NEXT:    sq $1, 16($3)
-; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    psraw $2, $2, 16
 ; CHECK-NEXT:    sq $2, 0($3)
+; CHECK-NEXT:    psraw $1, $1, 16
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 16($3)
   %v = load <8 x i16>, ptr %p, align 16
   %e = sext <8 x i16> %v to <8 x i32>
   store <8 x i32> %e, ptr %q, align 32
@@ -30,10 +30,10 @@ define void @zext_b_h(ptr %p, ptr %q) {
 ; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    pextlb $2, $zero, $1
-; CHECK-NEXT:    pextub $1, $zero, $1
-; CHECK-NEXT:    sq $1, 16($3)
-; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $2, 0($3)
+; CHECK-NEXT:    pextub $1, $zero, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 16($3)
   %v = load <16 x i8>, ptr %p, align 16
   %e = zext <16 x i8> %v to <16 x i16>
   store <16 x i16> %e, ptr %q, align 32
@@ -46,22 +46,22 @@ define void @sext_b_w(ptr %p, ptr %q) {
 ; CHECK-NEXT:    sll $5, $5, 0
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    pextlb $2, $1, $1
-; CHECK-NEXT:    psrah $2, $2, 8
-; CHECK-NEXT:    pextlh $3, $2, $2
-; CHECK-NEXT:    psraw $3, $3, 16
-; CHECK-NEXT:    pextuh $2, $2, $2
-; CHECK-NEXT:    psraw $2, $2, 16
 ; CHECK-NEXT:    pextub $1, $1, $1
+; CHECK-NEXT:    psrah $2, $2, 8
 ; CHECK-NEXT:    psrah $1, $1, 8
+; CHECK-NEXT:    pextlh $3, $2, $2
+; CHECK-NEXT:    pextuh $2, $2, $2
 ; CHECK-NEXT:    pextlh $4, $1, $1
-; CHECK-NEXT:    psraw $4, $4, 16
 ; CHECK-NEXT:    pextuh $1, $1, $1
-; CHECK-NEXT:    psraw $1, $1, 16
-; CHECK-NEXT:    sq $4, 32($5)
-; CHECK-NEXT:    sq $1, 48($5)
-; CHECK-NEXT:    sq $2, 16($5)
-; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    psraw $3, $3, 16
 ; CHECK-NEXT:    sq $3, 0($5)
+; CHECK-NEXT:    psraw $2, $2, 16
+; CHECK-NEXT:    sq $2, 16($5)
+; CHECK-NEXT:    psraw $4, $4, 16
+; CHECK-NEXT:    sq $4, 32($5)
+; CHECK-NEXT:    psraw $1, $1, 16
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 48($5)
   %v = load <16 x i8>, ptr %p, align 16
   %e = sext <16 x i8> %v to <16 x i32>
   store <16 x i32> %e, ptr %q, align 64
@@ -80,10 +80,10 @@ define void @mul_sext(ptr %p, ptr %q, ptr %r) {
 ; CHECK-NEXT:    pmflo $1
 ; CHECK-NEXT:    pmfhi $2
 ; CHECK-NEXT:    pcpyld $3, $2, $1
-; CHECK-NEXT:    pcpyud $1, $1, $2
-; CHECK-NEXT:    sq $1, 16($4)
-; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $3, 0($4)
+; CHECK-NEXT:    pcpyud $1, $1, $2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 16($4)
   %a = load <8 x i16>, ptr %p, align 16
   %b = load <8 x i16>, ptr %q, align 16
   %ea = sext <8 x i16> %a to <8 x i32>
@@ -97,8 +97,8 @@ define void @mul_splat(ptr %p, i16 %v, ptr %r) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    sll $1, $4, 0
 ; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
-; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    pcpyld $2, $5, $5
+; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    pcpyh $2, $2
 ; CHECK-NEXT:    pmulth $1, $1, $2
 ; CHECK-NEXT:    pmflo $1
@@ -107,10 +107,10 @@ define void @mul_splat(ptr %p, i16 %v, ptr %r) {
 ; CHECK-NEXT:    pcpyld $1, $2, $1
 ; CHECK-NEXT:    sll $2, $6, 0
 ; CHECK-NEXT:    psraw $1, $1, 15
-; CHECK-NEXT:    psraw $3, $3, 15
-; CHECK-NEXT:    sq $3, 16($2)
-; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $1, 0($2)
+; CHECK-NEXT:    psraw $3, $3, 15
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $3, 16($2)
   %a = load <8 x i16>, ptr %p, align 16
   %ea = sext <8 x i16> %a to <8 x i32>
   %ev = sext i16 %v to i32
@@ -167,3 +167,4 @@ define void @splat_b(i8 %x, ptr %q) {
   store <16 x i8> %s, ptr %q, align 16
   ret void
 }
+

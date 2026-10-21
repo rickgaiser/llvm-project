@@ -55,8 +55,8 @@ define void @copy_align1(ptr %p, ptr %q) {
 ; CHECK-NEXT:    pcpyld $2, $3, $2
 ; CHECK-NEXT:    sdl $2, 7($1)
 ; CHECK-NEXT:    pcpyud $3, $2, $2
-; CHECK-NEXT:    sdr $2, 0($1)
 ; CHECK-NEXT:    sdl $3, 15($1)
+; CHECK-NEXT:    sdr $2, 0($1)
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sdr $3, 8($1)
   %v = load <16 x i8>, ptr %p, align 1
@@ -86,10 +86,10 @@ define void @add_align2(ptr %p, ptr %q, <4 x i32> %b) {
 ; CHECK-NEXT:    ldr $3, 8($1)
 ; CHECK-NEXT:    lq $1, 0($sp)
 ; CHECK-NEXT:    pcpyld $2, $3, $2
-; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    paddw $1, $2, $1
-; CHECK-NEXT:    sdl $1, 7($3)
+; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    pcpyud $2, $1, $1
+; CHECK-NEXT:    sdl $1, 7($3)
 ; CHECK-NEXT:    sdl $2, 15($3)
 ; CHECK-NEXT:    sdr $1, 0($3)
 ; CHECK-NEXT:    sdr $2, 8($3)
