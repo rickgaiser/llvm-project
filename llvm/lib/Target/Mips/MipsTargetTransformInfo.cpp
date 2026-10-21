@@ -91,7 +91,9 @@ unsigned MipsTTIImpl::getMinVectorRegisterBitWidth() const {
   return 0;
 }
 
-// R5900 MMI costs are in cycles, from the bench uarch tests on hardware:
+// R5900 MMI costs are in issue slots, from the bench uarch tests on hardware.
+// The R5900 issues two instructions per cycle, so an ALU operation, a load and
+// a store take one slot (half a cycle), like the scalar costs:
 //   - an MMI operation (paddw, pcgtw, pmaxw, pand, psllw and the pextlw,
 //     ppacw, pcpyld, pcpyud, pexew, pcpyh, prot3w shuffles) has a latency of 1
 //     and issues one per cycle. It uses both integer pipes, so it does not pair
@@ -99,14 +101,19 @@ unsigned MipsTTIImpl::getMinVectorRegisterBitWidth() const {
 //   - lq and sq issue one per cycle, like the other loads and stores; lq has a
 //     latency of 2.
 //   - a load of a just stored value does not stall (sq->lw: 3 cycles).
+// An MMI operation, and a cycle of the loads and stores of a stack temporary
+// that nothing pairs with, take both slots.
 // Operations without a single MMI instruction are lowered through a stack
-// temporary, so their cost is the number of loads and stores.
+// temporary, so their cost is twice the number of loads and stores.
+static constexpr unsigned MMICycle = 2;
 
 std::optional<std::pair<InstructionCost, MVT>>
 MipsTTIImpl::getMMIType(Type *Ty) const {
+  // Smaller vectors, such as v8i8, are promoted to a 128-bit MMI type.
   auto *VTy = dyn_cast<FixedVectorType>(Ty);
   if (!ST->isR5900() || !VTy || !VTy->getElementType()->isIntegerTy() ||
-      VTy->getPrimitiveSizeInBits() % 128 != 0)
+      (VTy->getPrimitiveSizeInBits() > 128 &&
+       VTy->getPrimitiveSizeInBits() % 128 != 0))
     return std::nullopt;
   std::pair<InstructionCost, MVT> LT = getTypeLegalizationCost(VTy);
   if (!LT.second.isVector() || LT.second.getSizeInBits() != 128)
@@ -151,7 +158,7 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
     if (Insert)
       Cost += Demanded + 1 + (!ForPoisonSrc && Demanded != PartElts);
   }
-  return Cost;
+  return Cost * MMICycle;
 }
 
 InstructionCost MipsTTIImpl::getArithmeticInstrCost(
@@ -206,7 +213,7 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
       // paddb/h/w, psubb/h/w, pand, por, pxor. The 64-bit element forms are
       // currently scalarized.
       if (EltBits != 64)
-        return LT->first;
+        return LT->first * MMICycle;
       break;
     case Instruction::Shl:
     case Instruction::LShr:
@@ -214,7 +221,7 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
       // psllh/w, psrlh/w, psrah/w only take an immediate shift amount.
       if ((EltBits == 16 || EltBits == 32) && Op2Info.isUniform() &&
           Op2Info.isConstant())
-        return LT->first;
+        return LT->first * MMICycle;
       break;
     default:
       break;
@@ -258,13 +265,25 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
     }
   }
 
+  // A smaller integer vector, such as v8i8, is promoted to a 128-bit MMI type
+  // with wider elements. Its load goes through a stack temporary: a load and a
+  // store of each element, then lq; its store the other way around. Loads and
+  // stores issue one per cycle.
+  if (auto *VTy = dyn_cast<FixedVectorType>(Src);
+      ST->isR5900() && VTy && VTy->getElementType()->isIntegerTy()) {
+    MVT LT = getTypeLegalizationCost(VTy).second;
+    if (LT.isVector() && LT.getSizeInBits() == 128 &&
+        LT.getScalarSizeInBits() != VTy->getScalarSizeInBits())
+      return (2 * VTy->getNumElements() + 1) * MMICycle;
+  }
+
   // R5900 MMI integer vector load/store, per 128-bit part: an aligned lq/sq
-  // takes 1 cycle. An unaligned one goes through a stack temporary: ldl/ldr x2,
+  // takes 1 slot. An unaligned one goes through a stack temporary: ldl/ldr x2,
   // sd x2, lq takes 10 cycles and sq, ld x2, sdl/sdr x2 takes 6.
   if (auto LT = getMMIType(Src)) {
     if (Alignment >= Align(16))
       return LT->first;
-    return LT->first * (Opcode == Instruction::Load ? 10 : 6);
+    return LT->first * (Opcode == Instruction::Load ? 10 : 6) * MMICycle;
   }
 
   return BaseT::getMemoryOpCost(Opcode, Src, Alignment, AddressSpace, CostKind,
@@ -307,13 +326,13 @@ InstructionCost MipsTTIImpl::getVectorInstrCost(
   if (getMMIType(Val)) {
     // sq, then a load of the element.
     if (Opcode == Instruction::ExtractElement)
-      return 2;
+      return 2 * MMICycle;
     if (Opcode == Instruction::InsertElement) {
       // Into an undefined vector: a store of the element and an lq.
       if (Op0 && isa<UndefValue>(Op0))
-        return 2;
+        return 2 * MMICycle;
       // Otherwise the element is merged in memory: 12 loads and stores.
-      return 12;
+      return 12 * MMICycle;
     }
   }
 
@@ -368,13 +387,13 @@ InstructionCost MipsTTIImpl::getShuffleCost(
   if (auto LT = getMMIType(DstTy)) {
     unsigned PartElts = LT->second.getVectorNumElements();
     if (Kind == TTI::SK_Broadcast)
-      return LT->first * (PartElts + 1) + 2;
+      return (LT->first * (PartElts + 1) + 2) * MMICycle;
     unsigned NumSrcs =
         Kind == TTI::SK_PermuteTwoSrc || Kind == TTI::SK_Select ||
                 Kind == TTI::SK_Transpose || Kind == TTI::SK_Splice
             ? 2
             : 1;
-    return LT->first * (NumSrcs + 2 * PartElts + 1);
+    return LT->first * (NumSrcs + 2 * PartElts + 1) * MMICycle;
   }
 
   return BaseT::getShuffleCost(Kind, DstTy, SrcTy, CostKind, Mask, Index, SubTp,
@@ -424,7 +443,7 @@ MipsTTIImpl::getIntrinsicInstrCost(const IntrinsicCostAttributes &ICA,
     case Intrinsic::smax:
       // pabsh/w, pminh/w, pmaxh/w
       if (EltBits == 16 || EltBits == 32)
-        return LT->first;
+        return LT->first * MMICycle;
       break;
     case Intrinsic::sadd_sat:
     case Intrinsic::ssub_sat:
@@ -432,7 +451,7 @@ MipsTTIImpl::getIntrinsicInstrCost(const IntrinsicCostAttributes &ICA,
     case Intrinsic::usub_sat:
       // paddsb/h/w, psubsb/h/w, paddub/h/w, psubub/h/w
       if (EltBits != 64)
-        return LT->first;
+        return LT->first * MMICycle;
       break;
     default:
       break;
