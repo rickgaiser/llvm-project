@@ -122,3 +122,44 @@ define i32 @divrem(i32 %a, i32 %b, i32 %c, i32 %d) {
   %s = mul i32 %s1, %s2
   ret i32 %s
 }
+
+; A 3-operand MULT writes HI/LO directly, so it stays after the MFLO of the
+; divide instead of forcing a spill of HI/LO.
+define void @div_mul(i32 %a, i32 %b, i32 %c, i32 %d, ptr %p) {
+; R5900-LABEL: div_mul:
+; R5900:       # %bb.0:
+; R5900-NEXT:    sll $1, $5, 0
+; R5900-NEXT:    sll $2, $4, 0
+; R5900-NEXT:    div $zero, $2, $1
+; R5900-NEXT:    sll $2, $7, 0
+; R5900-NEXT:    sll $3, $6, 0
+; R5900-NEXT:    teq $1, $zero, 7
+; R5900-NEXT:    mflo $4
+; R5900-NEXT:    mult $2, $3, $2
+; R5900-NEXT:    sll $3, $8, 0
+; R5900-NEXT:    sw $4, 0($3)
+; R5900-NEXT:    jr $ra
+; R5900-NEXT:    sw $2, 4($3)
+;
+; MIPS3-LABEL: div_mul:
+; MIPS3:       # %bb.0:
+; MIPS3-NEXT:    sll $1, $5, 0
+; MIPS3-NEXT:    sll $2, $4, 0
+; MIPS3-NEXT:    div $zero, $2, $1
+; MIPS3-NEXT:    teq $1, $zero, 7
+; MIPS3-NEXT:    mflo $1
+; MIPS3-NEXT:    sll $2, $7, 0
+; MIPS3-NEXT:    sll $3, $6, 0
+; MIPS3-NEXT:    mult $3, $2
+; MIPS3-NEXT:    mflo $2
+; MIPS3-NEXT:    sll $3, $8, 0
+; MIPS3-NEXT:    sw $2, 4($3)
+; MIPS3-NEXT:    jr $ra
+; MIPS3-NEXT:    sw $1, 0($3)
+  %x = sdiv i32 %a, %b
+  %m = mul i32 %c, %d
+  store i32 %x, ptr %p
+  %q = getelementptr i32, ptr %p, i32 1
+  store i32 %m, ptr %q
+  ret void
+}

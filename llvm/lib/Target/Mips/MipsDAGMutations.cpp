@@ -14,7 +14,9 @@
 // stack. This mutation keeps the input order of the live ranges in such a
 // register class: it adds an artificial edge from each reader of a value to
 // the instruction that defines the next value. Other instructions can still be
-// scheduled between the definition of a value and its readers.
+// scheduled between the definition of a value and its readers, except for an
+// instruction that writes the accumulator directly, such as an R5900 3-operand
+// MULT with dead HI/LO results: it also ends the value.
 //
 // The R5900 fills a cache line that misses in the order of its words, so the
 // loads of a line are faster in the order of their addresses (measured: 4%
@@ -69,11 +71,28 @@ static MCRegister getAccumulator(const MachineRegisterInfo &MRI, Register Reg) {
   return RC->getRegister(0);
 }
 
+/// Keep the readers of \p Value before \p SU, which ends the value.
+static void endValue(ScheduleDAGInstrs *DAG, AccumulatorValue &Value,
+                     SUnit &SU) {
+  for (SUnit *Reader : Value.Readers)
+    if (Reader != &SU && DAG->canAddEdge(&SU, Reader))
+      DAG->addEdge(&SU, SDep(Reader, SDep::Artificial));
+}
+
 void MipsAccumulatorDAGMutation::apply(ScheduleDAGInstrs *DAG) {
   // Only virtual registers are tracked, so this does nothing after register
   // allocation.
   const MachineRegisterInfo &MRI = DAG->MRI;
+  const TargetRegisterInfo *TRI = DAG->TRI;
   DenseMap<MCRegister, AccumulatorValue> Live;
+  for (SUnit &SU : DAG->SUnits)
+    for (const MachineOperand &MO : SU.getInstr()->operands())
+      if (MO.isReg())
+        if (MCRegister Acc = getAccumulator(MRI, MO.getReg()))
+          Live.try_emplace(Acc);
+  if (Live.empty())
+    return;
+
   for (SUnit &SU : DAG->SUnits) {
     const MachineInstr *MI = SU.getInstr();
 
@@ -91,14 +110,30 @@ void MipsAccumulatorDAGMutation::apply(ScheduleDAGInstrs *DAG) {
     }
 
     for (const MachineOperand &MO : MI->all_defs()) {
+      // A direct write ends the value, and the next value is defined after
+      // it. All readers of the value go before it, also those after it in
+      // the input order.
+      if (MO.getReg().isPhysical()) {
+        for (auto &[Acc, Value] : Live) {
+          if (!TRI->regsOverlap(MO.getReg(), Acc))
+            continue;
+          endValue(DAG, Value, SU);
+          if (Value.Reg)
+            for (MachineInstr &UseMI : MRI.use_nodbg_instructions(Value.Reg))
+              if (SUnit *Reader = DAG->getSUnit(&UseMI))
+                if (Reader != &SU && DAG->canAddEdge(&SU, Reader))
+                  DAG->addEdge(&SU, SDep(Reader, SDep::Artificial));
+          Value.Reg = Register();
+          Value.Readers.assign(1, &SU);
+        }
+        continue;
+      }
       MCRegister Acc = getAccumulator(MRI, MO.getReg());
       if (!Acc)
         continue;
       AccumulatorValue &Value = Live[Acc];
       // The previous value must be dead before the new one is defined.
-      for (SUnit *Reader : Value.Readers)
-        if (Reader != &SU && DAG->canAddEdge(&SU, Reader))
-          DAG->addEdge(&SU, SDep(Reader, SDep::Artificial));
+      endValue(DAG, Value, SU);
       Value.Reg = MO.getReg();
       Value.Readers.clear();
     }

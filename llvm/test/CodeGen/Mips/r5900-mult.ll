@@ -222,31 +222,24 @@ define i32 @test_mulhu(i32 zeroext %a, i32 zeroext %b) {
 define i64 @test_mul64(i64 %a, i64 %b) {
 ; CHECK-LABEL: test_mul64:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    daddiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    dsrl $1, $5, 32
 ; CHECK-NEXT:    sll $2, $4, 0
 ; CHECK-NEXT:    sll $1, $1, 0
 ; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    mult $1, $2, $1
+; CHECK-NEXT:    dsrl $4, $4, 32
+; CHECK-NEXT:    sll $4, $4, 0
 ; CHECK-NEXT:    multu $2, $3
-; CHECK-NEXT:    pmfhl.lw $2
-; CHECK-NEXT:    sd $2, 8($sp) # 8-byte Folded Spill
-; CHECK-NEXT:    dsrl $2, $4, 32
-; CHECK-NEXT:    sll $2, $2, 0
-; CHECK-NEXT:    mult $2, $2, $3
-; CHECK-NEXT:    ld $3, 8($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    pmthl.lw $3
-; CHECK-NEXT:    mfhi $3
-; CHECK-NEXT:    mflo $4
-; CHECK-NEXT:    addu $1, $3, $1
-; CHECK-NEXT:    addu $1, $1, $2
-; CHECK-NEXT:    dsll $2, $4, 32
-; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    mfhi $2
+; CHECK-NEXT:    mflo $5
+; CHECK-NEXT:    addu $1, $2, $1
+; CHECK-NEXT:    mult $3, $4, $3
+; CHECK-NEXT:    dsll $2, $5, 32
 ; CHECK-NEXT:    dsrl $2, $2, 32
-; CHECK-NEXT:    or $2, $2, $1
+; CHECK-NEXT:    addu $1, $1, $3
+; CHECK-NEXT:    dsll $1, $1, 32
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    daddiu $sp, $sp, 16
+; CHECK-NEXT:    or $2, $2, $1
   %result = mul i64 %a, %b
   ret i64 %result
 }
