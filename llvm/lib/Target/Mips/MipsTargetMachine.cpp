@@ -23,6 +23,7 @@
 #include "MipsTargetTransformInfo.h"
 #include "TargetInfo/MipsTargetInfo.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/BasicTTIImpl.h"
 #include "llvm/CodeGen/GlobalISel/CSEInfo.h"
@@ -196,6 +197,12 @@ public:
     return getTM<MipsTargetMachine>();
   }
 
+  /// The R5900 schedulers use SCEV based alias analysis.
+  bool useSCEVAA() const {
+    return getOptLevel() != CodeGenOptLevel::None &&
+           TM->getTargetCPU() == "r5900";
+  }
+
   void addIRPasses() override;
   bool addInstSelector() override;
   void addPreEmitPass() override;
@@ -231,6 +238,14 @@ void MipsPassConfig::addIRPasses() {
 // Install an instruction selector pass using
 // the ISelDag to gen Mips code.
 bool MipsPassConfig::addInstSelector() {
+  // R5900: The schedulers use alias analysis to move loads above stores. SCEV
+  // based alias analysis also tells apart accesses to different arrays of one
+  // object that are indexed by the loop counter, such as a table lookup and the
+  // store of its result. It is added right before instruction selection, as
+  // the IR passes before it do not preserve it; the machine passes do, and the
+  // R5900 issue pass keeps it alive.
+  if (useSCEVAA())
+    addPass(createSCEVAAWrapperPass());
   addPass(createMips16ISelDag(getMipsTargetMachine(), getOptLevel()));
   addPass(createMipsSEISelDag(getMipsTargetMachine(), getOptLevel()));
   return false;
@@ -308,7 +323,7 @@ void MipsPassConfig::addPreEmitPass() {
   // The R5900 dual-issues the instructions of aligned 8-byte blocks, so it is
   // scheduled again once the addresses of the instructions are known.
   if (getOptLevel() != CodeGenOptLevel::None)
-    addPass(createMipsR5900IssuePass());
+    addPass(createMipsR5900IssuePass(/*KeepSCEVAA=*/useSCEVAA()));
 
   // This pass expands branches and takes care about the forbidden slot hazards.
   // Expanding branches may potentially create forbidden slot hazards for

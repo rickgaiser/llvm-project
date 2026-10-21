@@ -53,7 +53,7 @@ FunctionPass *createMipsMulMulBugPass();
 FunctionPass *createMipsR5900Div1Pass();
 FunctionPass *createMipsR5900Mult1Pass();
 FunctionPass *createMipsR5900FPUAccChainPass();
-FunctionPass *createMipsR5900IssuePass();
+FunctionPass *createMipsR5900IssuePass(bool KeepSCEVAA = false);
 FunctionPass *createMipsR5900VU0AccChainPass();
 
 InstructionSelector *

@@ -25,6 +25,7 @@
 #include "MipsSubtarget.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
@@ -75,7 +76,8 @@ class MipsR5900Issue : public MachineFunctionPass {
 public:
   static char ID;
 
-  MipsR5900Issue() : MachineFunctionPass(ID) {}
+  explicit MipsR5900Issue(bool KeepSCEVAA = false)
+      : MachineFunctionPass(ID), KeepSCEVAA(KeepSCEVAA) {}
 
   StringRef getPassName() const override { return "Mips R5900 Dual Issue"; }
 
@@ -86,6 +88,11 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<MachineLoopInfoWrapperPass>();
     AU.addRequired<MachineOptimizationRemarkEmitterPass>();
+    // The alias analysis results of the schedulers refer to the SCEV based
+    // alias analysis added before instruction selection, but only use it if
+    // available, which does not keep it alive. Requiring it here does.
+    if (KeepSCEVAA)
+      AU.addRequired<SCEVAAWrapperPass>();
     AU.setPreservesCFG();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
@@ -93,6 +100,7 @@ public:
   bool runOnMachineFunction(MachineFunction &MF) override;
 
 private:
+  bool KeepSCEVAA;
   const MipsInstrInfo *TII = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
   const MachineLoopInfo *MLI = nullptr;
@@ -120,7 +128,9 @@ char MipsR5900Issue::ID = 0;
 INITIALIZE_PASS(MipsR5900Issue, DEBUG_TYPE, "Mips R5900 Dual Issue", false,
                 false)
 
-FunctionPass *llvm::createMipsR5900IssuePass() { return new MipsR5900Issue(); }
+FunctionPass *llvm::createMipsR5900IssuePass(bool KeepSCEVAA) {
+  return new MipsR5900Issue(KeepSCEVAA);
+}
 
 /// Returns the size of \p MI in bytes, or nothing if it is not known.
 static std::optional<unsigned> getSize(const MachineInstr &MI) {
