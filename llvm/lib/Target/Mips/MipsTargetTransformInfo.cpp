@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MipsTargetTransformInfo.h"
+#include "MipsSEISelLowering.h"
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -433,11 +434,17 @@ InstructionCost MipsTTIImpl::getShuffleCost(
     }
   }
 
-  // R5900 MMI integer vector shuffles are lowered through a stack temporary:
-  // per 128-bit result part, an sq per source, a load and a store per element
-  // and an lq. A broadcast loads the element once.
+  // R5900 MMI integer vector shuffles: the zips, unzips and half copies of
+  // one 128-bit vector are MMI instructions. The others are lowered through a
+  // stack temporary: per 128-bit result part, an sq per source, a load and a
+  // store per element and an lq. A broadcast loads the element once.
   if (auto LT = getMMIType(DstTy)) {
     unsigned PartElts = LT->second.getVectorNumElements();
+    if (LT->first == 1 && Mask.size() == PartElts) {
+      bool SingleSrc = all_of(Mask, [&](int M) { return M < (int)PartElts; });
+      if (unsigned Ops = getR5900ShuffleOps(Mask, PartElts, SingleSrc))
+        return Ops * MMICycle;
+    }
     if (Kind == TTI::SK_Broadcast)
       return (LT->first * (PartElts + 1) + 2) * MMICycle;
     unsigned NumSrcs =

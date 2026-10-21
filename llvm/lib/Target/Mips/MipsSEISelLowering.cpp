@@ -132,6 +132,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       setOperationAction(ISD::LOAD, VT, Custom);
       setOperationAction(ISD::STORE, VT, Custom);
       setOperationAction(ISD::BITCAST, VT, Legal);
+      // Shuffles: the zips, unzips and half copies of MMI, the others through
+      // the stack.
+      setOperationAction(ISD::VECTOR_SHUFFLE, VT, Custom);
 
       // Arithmetic: PADDW/PSUBW (v4i32), PADDH/PSUBH (v8i16), PADDB/PSUBB
       // (v16i8)
@@ -3867,6 +3870,118 @@ static SDValue lowerVECTOR_SHUFFLE_VSHF(SDValue Op, EVT ResTy,
 
 // Lower VECTOR_SHUFFLE into one of a number of instructions depending on the
 // indices in the shuffle.
+/// The R5900 MMI instructions that a shuffle of two 128-bit integer vectors A
+/// and B can be lowered to, by its mask.
+enum class R5900Shuffle {
+  None,
+  UnzipEven, // PPACW/H/B B, A
+  UnzipOdd,  // PPACH/B of A and B shifted right by an element, PCPYUD of
+             // PEXCW A and B for words
+  ZipLo,     // PEXTLW/H/B B, A
+  ZipHi,     // PEXTUW/H/B B, A
+  CatLo,     // PCPYLD B, A: the low halves of A and B
+  CatHi,     // PCPYUD A, B: the high halves of A and B
+};
+
+/// Classify a shuffle mask of \p NumElts elements. With \p SingleSrc both
+/// operands are the same vector, so an index into the second one is the same
+/// element of the first.
+static R5900Shuffle classifyR5900Shuffle(ArrayRef<int> Mask, unsigned NumElts,
+                                         bool SingleSrc) {
+  auto Matches = [&](function_ref<unsigned(unsigned)> Expected) {
+    for (unsigned I = 0; I < NumElts; ++I) {
+      int M = Mask[I];
+      unsigned E = Expected(I);
+      if (M >= 0 && (unsigned)M != E &&
+          !(SingleSrc && (unsigned)M % NumElts == E % NumElts))
+        return false;
+    }
+    return true;
+  };
+  unsigned Half = NumElts / 2;
+  if (Matches([](unsigned I) { return 2 * I; }))
+    return R5900Shuffle::UnzipEven;
+  if (Matches([](unsigned I) { return 2 * I + 1; }))
+    return R5900Shuffle::UnzipOdd;
+  if (Matches([&](unsigned I) { return (I % 2) * NumElts + I / 2; }))
+    return R5900Shuffle::ZipLo;
+  if (Matches([&](unsigned I) { return (I % 2) * NumElts + Half + I / 2; }))
+    return R5900Shuffle::ZipHi;
+  if (Matches([&](unsigned I) { return I < Half ? I : NumElts + I - Half; }))
+    return R5900Shuffle::CatLo;
+  if (Matches([&](unsigned I) { return I < Half ? Half + I : NumElts + I; }))
+    return R5900Shuffle::CatHi;
+  return R5900Shuffle::None;
+}
+
+/// The number of MMI instructions of a shuffle kind for \p NumElts elements.
+unsigned llvm::getR5900ShuffleOps(ArrayRef<int> Mask, unsigned NumElts,
+                                  bool SingleSrc) {
+  switch (classifyR5900Shuffle(Mask, NumElts, SingleSrc)) {
+  case R5900Shuffle::None:
+    return 0;
+  case R5900Shuffle::UnzipOdd:
+    // Two shifts or exchanges and a pack, one less from a single source.
+    return SingleSrc ? 2 : 3;
+  default:
+    return 1;
+  }
+}
+
+static SDValue lowerR5900VECTOR_SHUFFLE(ShuffleVectorSDNode *Node,
+                                        SelectionDAG &DAG) {
+  EVT VT = Node->getValueType(0);
+  if (VT != MVT::v4i32 && VT != MVT::v8i16 && VT != MVT::v16i8)
+    return SDValue();
+  SDLoc DL(Node);
+  SDValue A = Node->getOperand(0), B = Node->getOperand(1);
+  unsigned NumElts = VT.getVectorNumElements();
+  bool SingleSrc = B.isUndef() || A == B;
+  if (SingleSrc)
+    B = A;
+
+  auto Op = [&](unsigned W, unsigned H, unsigned Bt) {
+    return VT == MVT::v4i32 ? W : VT == MVT::v8i16 ? H : Bt;
+  };
+  auto MMI = [&](unsigned Opc, SDValue Rs, SDValue Rt) {
+    return SDValue(DAG.getMachineNode(Opc, DL, VT, Rs, Rt), 0);
+  };
+  switch (classifyR5900Shuffle(Node->getMask(), NumElts, SingleSrc)) {
+  case R5900Shuffle::None:
+    return SDValue();
+  case R5900Shuffle::UnzipEven:
+    return MMI(Op(Mips::PPACW, Mips::PPACH, Mips::PPACB), B, A);
+  case R5900Shuffle::UnzipOdd: {
+    if (VT == MVT::v4i32) {
+      auto Exchange = [&](SDValue V) {
+        return SDValue(DAG.getMachineNode(Mips::PEXCW, DL, VT, V), 0);
+      };
+      SDValue XA = Exchange(A);
+      return MMI(Mips::PCPYUD, XA, SingleSrc ? XA : Exchange(B));
+    }
+    // Move the odd elements to the even ones of the elements twice as wide.
+    MVT WideVT = VT == MVT::v8i16 ? MVT::v4i32 : MVT::v8i16;
+    unsigned Bits = VT.getScalarSizeInBits();
+    auto Shift = [&](SDValue V) {
+      return DAG.getBitcast(VT, DAG.getNode(ISD::SRL, DL, WideVT,
+                                            DAG.getBitcast(WideVT, V),
+                                            DAG.getConstant(Bits, DL, WideVT)));
+    };
+    SDValue SA = Shift(A);
+    return MMI(Op(0, Mips::PPACH, Mips::PPACB), SingleSrc ? SA : Shift(B), SA);
+  }
+  case R5900Shuffle::ZipLo:
+    return MMI(Op(Mips::PEXTLW, Mips::PEXTLH, Mips::PEXTLB), B, A);
+  case R5900Shuffle::ZipHi:
+    return MMI(Op(Mips::PEXTUW, Mips::PEXTUH, Mips::PEXTUB), B, A);
+  case R5900Shuffle::CatLo:
+    return MMI(Mips::PCPYLD, B, A);
+  case R5900Shuffle::CatHi:
+    return MMI(Mips::PCPYUD, A, B);
+  }
+  llvm_unreachable("unknown R5900 shuffle");
+}
+
 SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
                                                   SelectionDAG &DAG) const {
   ShuffleVectorSDNode *Node = cast<ShuffleVectorSDNode>(Op);
@@ -3874,6 +3989,10 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
 
   if (!ResTy.is128BitVector())
     return SDValue();
+
+  // The other R5900 integer shuffles are expanded, there is no MSA.
+  if (Subtarget.isR5900() && ResTy.isInteger())
+    return lowerR5900VECTOR_SHUFFLE(Node, DAG);
 
   // VU0 v4f32 shuffles: detect blend patterns for destination masking
   if (Subtarget.hasVU0() && ResTy == MVT::v4f32) {

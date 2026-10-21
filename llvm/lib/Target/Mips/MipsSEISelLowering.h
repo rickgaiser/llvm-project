@@ -19,6 +19,12 @@
 
 namespace llvm {
 
+/// The number of R5900 MMI instructions a shuffle of 128-bit integer vectors
+/// of \p NumElts elements is lowered to, or 0 if it goes through the stack.
+/// With \p SingleSrc both operands are the same vector.
+unsigned getR5900ShuffleOps(ArrayRef<int> Mask, unsigned NumElts,
+                            bool SingleSrc);
+
 class MachineBasicBlock;
 class MachineInstr;
 class MipsSubtarget;
