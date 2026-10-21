@@ -233,6 +233,19 @@ let Predicates = [IsR5900] in {
                "divu1\t$$zero, $rs, $rt", [], FrmR>,
       R5900_MMI_2R_FM<0x1b>;
 
+  // Divides on the pipe 1 accumulator, chosen by MipsR5900Div1 for a divide
+  // that is independent of the previous one.
+  let hasSideEffects = 0 in {
+    def PseudoSDIV1
+        : PseudoSE<(outs ACC64_1:$ac), (ins GPR32Opnd:$rs, GPR32Opnd:$rt), []>,
+          PseudoInstExpansion<(DIV1 GPR32Opnd:$rs, GPR32Opnd:$rt)>;
+    def PseudoUDIV1
+        : PseudoSE<(outs ACC64_1:$ac), (ins GPR32Opnd:$rs, GPR32Opnd:$rt), []>,
+          PseudoInstExpansion<(DIVU1 GPR32Opnd:$rs, GPR32Opnd:$rt)>;
+    def PseudoMFHI1 : PseudoSE<(outs GPR32:$rd), (ins ACC64_1:$hilo), []>;
+    def PseudoMFLO1 : PseudoSE<(outs GPR32:$rd), (ins ACC64_1:$hilo), []>;
+  }
+
   //===----------------------------------------------------------------------===//
   // PLZCW - Parallel Leading Zero or one Count Word
   // Counts leading zeros/ones in two 32-bit words in parallel

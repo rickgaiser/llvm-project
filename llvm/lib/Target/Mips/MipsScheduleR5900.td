@@ -174,8 +174,10 @@ def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO],
 def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO,
               ReadDefault, ReadDefault, R5900ReadAcc1, R5900ReadAcc1],
              (instrs MADD1, MADDU1)>;
-def : InstRW<[R5900WriteDiv1, R5900WriteDiv1HILO], (instrs DIV1, DIVU1)>;
-def : InstRW<[R5900WriteMoveHILO1], (instrs MFHI1, MFLO1, MTHI1, MTLO1)>;
+def : InstRW<[R5900WriteDiv1, R5900WriteDiv1HILO],
+             (instrs DIV1, DIVU1, PseudoSDIV1, PseudoUDIV1)>;
+def : InstRW<[R5900WriteMoveHILO1], (instrs MFHI1, MFLO1, MTHI1, MTLO1,
+                                     PseudoMFHI1, PseudoMFLO1)>;
 
 // Loads, stores and other pipe 1 instructions
 // ===========================================

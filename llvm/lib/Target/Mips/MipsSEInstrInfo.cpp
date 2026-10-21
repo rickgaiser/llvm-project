@@ -97,6 +97,12 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     } else if (Mips::LO32RegClass.contains(SrcReg)) {
       Opc = isMicroMips ? Mips::MFLO16_MM : Mips::MFLO;
       SrcReg = 0;
+    } else if (Mips::HI32_1RegClass.contains(SrcReg)) {
+      Opc = Mips::MFHI1;
+      SrcReg = 0;
+    } else if (Mips::LO32_1RegClass.contains(SrcReg)) {
+      Opc = Mips::MFLO1;
+      SrcReg = 0;
     } else if (Mips::HI32DSPRegClass.contains(SrcReg))
       Opc = Mips::MFHI_DSP;
     else if (Mips::LO32DSPRegClass.contains(SrcReg))
@@ -118,6 +124,10 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
       Opc = Mips::MTHI, DestReg = 0;
     else if (Mips::LO32RegClass.contains(DestReg))
       Opc = Mips::MTLO, DestReg = 0;
+    else if (Mips::HI32_1RegClass.contains(DestReg))
+      Opc = Mips::MTHI1, DestReg = 0;
+    else if (Mips::LO32_1RegClass.contains(DestReg))
+      Opc = Mips::MTLO1, DestReg = 0;
     else if (Mips::HI32DSPRegClass.contains(DestReg))
       Opc = Mips::MTHI_DSP;
     else if (Mips::LO32DSPRegClass.contains(DestReg))
@@ -240,6 +250,8 @@ void MipsSEInstrInfo::storeRegToStack(MachineBasicBlock &MBB,
     Opc = Mips::SD;
   else if (Mips::ACC64RegClass.hasSubClassEq(RC))
     Opc = Mips::STORE_ACC64;
+  else if (Mips::ACC64_1RegClass.hasSubClassEq(RC))
+    Opc = Mips::STORE_ACC64_1;
   else if (Mips::ACC64DSPRegClass.hasSubClassEq(RC))
     Opc = Mips::STORE_ACC64DSP;
   else if (Mips::ACC128RegClass.hasSubClassEq(RC))
@@ -322,6 +334,8 @@ void MipsSEInstrInfo::loadRegFromStack(MachineBasicBlock &MBB,
     Opc = Mips::LD;
   else if (Mips::ACC64RegClass.hasSubClassEq(RC))
     Opc = Mips::LOAD_ACC64;
+  else if (Mips::ACC64_1RegClass.hasSubClassEq(RC))
+    Opc = Mips::LOAD_ACC64_1;
   else if (Mips::ACC64DSPRegClass.hasSubClassEq(RC))
     Opc = Mips::LOAD_ACC64DSP;
   else if (Mips::ACC128RegClass.hasSubClassEq(RC))
@@ -411,6 +425,12 @@ bool MipsSEInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     break;
   case Mips::PseudoMFLO:
     expandPseudoMFHiLo(MBB, MI, Mips::MFLO);
+    break;
+  case Mips::PseudoMFHI1:
+    expandPseudoMFHiLo(MBB, MI, Mips::MFHI1);
+    break;
+  case Mips::PseudoMFLO1:
+    expandPseudoMFHiLo(MBB, MI, Mips::MFLO1);
     break;
   case Mips::PseudoMFLO_MM:
     expandPseudoMFHiLo(MBB, MI, Mips::MFLO16_MM);

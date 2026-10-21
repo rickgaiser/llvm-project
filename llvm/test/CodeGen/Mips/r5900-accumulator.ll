@@ -80,16 +80,16 @@ define i32 @divrem(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; R5900-NEXT:    sll $2, $4, 0
 ; R5900-NEXT:    div $zero, $2, $1
 ; R5900-NEXT:    sll $3, $7, 0
-; R5900-NEXT:    sll $4, $6, 0
-; R5900-NEXT:    teq $1, $zero, 7
-; R5900-NEXT:    teq $3, $zero, 7
+; R5900-NEXT:    sll $2, $6, 0
+; R5900-NEXT:    divu1 $zero, $2, $3
 ; R5900-NEXT:    mfhi $2
-; R5900-NEXT:    mflo $5
-; R5900-NEXT:    divu $zero, $4, $3
-; R5900-NEXT:    addu $2, $5, $2
-; R5900-NEXT:    mfhi $4
-; R5900-NEXT:    mflo $6
-; R5900-NEXT:    addu $4, $6, $4
+; R5900-NEXT:    mflo $4
+; R5900-NEXT:    mfhi1 $5
+; R5900-NEXT:    addu $2, $4, $2
+; R5900-NEXT:    mflo1 $6
+; R5900-NEXT:    teq $1, $zero, 7
+; R5900-NEXT:    addu $4, $6, $5
+; R5900-NEXT:    teq $3, $zero, 7
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    mult $2, $2, $4
 ;

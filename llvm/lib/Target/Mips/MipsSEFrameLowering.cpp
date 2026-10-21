@@ -49,6 +49,10 @@ static std::pair<unsigned, unsigned> getMFHiLoOpc(unsigned Src) {
     return std::make_pair((unsigned)Mips::PseudoMFHI,
                           (unsigned)Mips::PseudoMFLO);
 
+  if (Mips::ACC64_1RegClass.contains(Src))
+    return std::make_pair((unsigned)Mips::PseudoMFHI1,
+                          (unsigned)Mips::PseudoMFLO1);
+
   if (Mips::ACC64DSPRegClass.contains(Src))
     return std::make_pair((unsigned)Mips::MFHI_DSP, (unsigned)Mips::MFLO_DSP);
 
@@ -128,6 +132,7 @@ bool ExpandPseudo::expandInstr(MachineBasicBlock &MBB, Iter I) {
     expandLoadACC(MBB, I, 4);
     break;
   case Mips::LOAD_ACC64DSP:
+  case Mips::LOAD_ACC64_1:
     expandLoadACC(MBB, I, 4);
     break;
   case Mips::LOAD_ACC128:
@@ -142,6 +147,9 @@ bool ExpandPseudo::expandInstr(MachineBasicBlock &MBB, Iter I) {
     break;
   case Mips::STORE_ACC64DSP:
     expandStoreACC(MBB, I, Mips::MFHI_DSP, Mips::MFLO_DSP, 4);
+    break;
+  case Mips::STORE_ACC64_1:
+    expandStoreACC(MBB, I, Mips::PseudoMFHI1, Mips::PseudoMFLO1, 4);
     break;
   case Mips::STORE_ACC128:
     expandStoreACC(MBB, I, Mips::PseudoMFHI64, Mips::PseudoMFLO64, 8);

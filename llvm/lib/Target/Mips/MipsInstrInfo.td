@@ -2035,6 +2035,8 @@ def ATOMIC_LOAD_UMAX_I32_POSTRA : Atomic2OpsPostRA<GPR32>;
 let isPseudo = 1, isCodeGenOnly = 1, hasNoSchedulingInfo = 1 in {
   def LOAD_ACC64  : Load<"", ACC64>;
   def STORE_ACC64 : Store<"", ACC64>;
+  def LOAD_ACC64_1  : Load<"", ACC64_1>;
+  def STORE_ACC64_1 : Store<"", ACC64_1>;
 }
 
 // We need these two pseudo instructions to avoid offset calculation for long
