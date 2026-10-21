@@ -436,9 +436,10 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
   setHasExtractBitsInsn(Subtarget.hasExtractInsert());
 
   // R5900 has no LL/SC instructions for atomic operations
-  if (Subtarget.isR5900())
+  if (Subtarget.isR5900()) {
     setMaxAtomicSizeInBitsSupported(0);
-  else if (Subtarget.isGP64bit())
+    setTargetDAGCombine(ISD::SETCC);
+  } else if (Subtarget.isGP64bit())
     setMaxAtomicSizeInBitsSupported(64);
   else
     setMaxAtomicSizeInBitsSupported(32);
@@ -1164,6 +1165,97 @@ static SDValue performR5900WideningMADDCombine(SDNode *N, SelectionDAG &DAG,
   return Result;
 }
 
+/// R5900: whether V is an i64 multiply of two values that fit in 32 bits,
+/// signed or unsigned, by their known bits.
+static bool isR5900WideningMul(SDValue V, SelectionDAG &DAG, bool &IsSigned) {
+  if (V.getOpcode() != ISD::MUL || V.getValueType() != MVT::i64)
+    return false;
+  SDValue A = V.getOperand(0), B = V.getOperand(1);
+  if (DAG.ComputeNumSignBits(A) > 32 && DAG.ComputeNumSignBits(B) > 32) {
+    IsSigned = true;
+    return true;
+  }
+  APInt High = APInt::getHighBitsSet(64, 32);
+  if (DAG.MaskedValueIsZero(A, High) && DAG.MaskedValueIsZero(B, High)) {
+    IsSigned = false;
+    return true;
+  }
+  return false;
+}
+
+/// PMULTW/PMULTUW only read the low word of their operands, so drop an
+/// extension of it.
+static SDValue getR5900MulOperand(SDValue V, SelectionDAG &DAG) {
+  switch (V.getOpcode()) {
+  case ISD::SIGN_EXTEND:
+  case ISD::ZERO_EXTEND:
+  case ISD::ANY_EXTEND:
+    if (V.getOperand(0).getValueType() == MVT::i32)
+      return DAG.getNode(ISD::ANY_EXTEND, SDLoc(V), MVT::i64, V.getOperand(0));
+    break;
+  case ISD::SIGN_EXTEND_INREG:
+    if (cast<VTSDNode>(V.getOperand(1))->getVT() == MVT::i32)
+      return V.getOperand(0);
+    break;
+  case ISD::AND:
+    if (isConstOrConstSplat(V.getOperand(1)) &&
+        isConstOrConstSplat(V.getOperand(1))->getZExtValue() == 0xffffffff)
+      return V.getOperand(0);
+    break;
+  }
+  return V;
+}
+
+/// R5900: a single widening multiply (32x32->64) to PMULTW/PMULTUW, which
+/// write the 64-bit product to rd (measured: 4 cycles, 8.5 with MULT and the
+/// MFLO, MFHI and shifts to combine them). Runs at legalization, after the
+/// add/sub combine above has taken the multiplies of PMADDW/PMSUBW chains.
+static SDValue lowerR5900WideningMUL(SDValue Op, SelectionDAG &DAG) {
+  bool IsSigned;
+  if (!isR5900WideningMul(Op, DAG, IsSigned))
+    return SDValue();
+
+  // Only the high word is used: MULT and MFHI, by the expansion, are faster.
+  if (all_of(Op->users(), [](const SDNode *U) {
+        auto *C = isConstOrConstSplat(U->getOperand(1));
+        return (U->getOpcode() == ISD::SRL || U->getOpcode() == ISD::SRA) &&
+               C && C->getZExtValue() >= 32;
+      }))
+    return SDValue();
+
+  SDVTList VTs = DAG.getVTList(MVT::i64, MVT::Glue);
+  return DAG.getNode(IsSigned ? MipsISD::PMult : MipsISD::PMultu, SDLoc(Op),
+                     VTs, getR5900MulOperand(Op.getOperand(0), DAG),
+                     getR5900MulOperand(Op.getOperand(1), DAG));
+}
+
+/// R5900: compare two signed widening multiplies by the sign of their
+/// difference:
+///   (setcc (mul a, b), (mul c, d), cc) -> (setcc (sub (mul a, b),
+///                                                     (mul c, d)), 0, cc)
+/// Products of two i32 differ by less than 2^63, so the subtraction does not
+/// overflow and the signed and equality conditions are kept. Then the
+/// difference is a PMULTW + PMSUBW chain.
+static SDValue
+performR5900WideningSETCCCombine(SDNode *N, SelectionDAG &DAG,
+                                 const MipsSubtarget &Subtarget) {
+  SDValue LHS = N->getOperand(0), RHS = N->getOperand(1);
+  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(2))->get();
+  if (!Subtarget.isR5900() || LHS.getValueType() != MVT::i64 ||
+      ISD::isUnsignedIntSetCC(CC) || !LHS.hasOneUse() || !RHS.hasOneUse())
+    return SDValue();
+
+  bool LSigned, RSigned;
+  if (!isR5900WideningMul(LHS, DAG, LSigned) ||
+      !isR5900WideningMul(RHS, DAG, RSigned) || !LSigned || !RSigned)
+    return SDValue();
+
+  SDLoc DL(N);
+  SDValue Sub = DAG.getNode(ISD::SUB, DL, MVT::i64, LHS, RHS);
+  return DAG.getSetCC(DL, N->getValueType(0), Sub,
+                      DAG.getConstant(0, DL, MVT::i64), CC);
+}
+
 static SDValue performMADD_MSUBCombine(SDNode *ROOTNode, SelectionDAG &CurDAG,
                                        const MipsSubtarget &Subtarget) {
   // ROOTNode must have a multiplication as an operand for the match to be
@@ -1439,6 +1531,10 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
     return performSUBCombine(N, DAG, DCI, Subtarget);
   case ISD::SIGN_EXTEND:
     return performSignExtendCombine(N, DAG, DCI, Subtarget);
+  case ISD::SETCC:
+    if (DCI.isBeforeLegalizeOps())
+      return performR5900WideningSETCCCombine(N, DAG, Subtarget);
+    break;
   }
 
   return SDValue();
@@ -1495,6 +1591,8 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const
   case ISD::JumpTable:          return lowerJumpTable(Op, DAG);
   case ISD::SELECT:             return lowerSELECT(Op, DAG);
   case ISD::SETCC:              return lowerSETCC(Op, DAG);
+  case ISD::MUL:
+    return lowerR5900WideningMUL(Op, DAG);
   case ISD::STRICT_FSETCC:
   case ISD::STRICT_FSETCCS:
     return lowerFSETCC(Op, DAG);

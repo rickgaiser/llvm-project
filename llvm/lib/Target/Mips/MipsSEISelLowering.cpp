@@ -346,7 +346,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::MUL,              MVT::i64, Legal);
   else if (Subtarget.isR5900()) {
     // R5900 doesn't have DMULT/DMULTU/DDIV/DDIVU - expand to 32-bit ops
-    setOperationAction(ISD::MUL, MVT::i64, Expand);
+    // A widening multiply is custom lowered to PMULTW/PMULTUW.
+    setOperationAction(ISD::MUL, MVT::i64, Custom);
     setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
     setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
     setOperationAction(ISD::MULHS, MVT::i64, Expand);
@@ -741,7 +742,10 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::UMUL_LOHI: return lowerMulDiv(Op, MipsISD::Multu, true, true, DAG);
   case ISD::MULHS:     return lowerMulDiv(Op, MipsISD::Mult, false, true, DAG);
   case ISD::MULHU:     return lowerMulDiv(Op, MipsISD::Multu, false, true, DAG);
-  case ISD::MUL:       return lowerMulDiv(Op, MipsISD::Mult, true, false, DAG);
+  case ISD::MUL:
+    if (Subtarget.isR5900())
+      break;
+    return lowerMulDiv(Op, MipsISD::Mult, true, false, DAG);
   case ISD::SDIVREM:   return lowerMulDiv(Op, MipsISD::DivRem, true, true, DAG);
   case ISD::UDIVREM:   return lowerMulDiv(Op, MipsISD::DivRemU, true, true,
                                           DAG);
