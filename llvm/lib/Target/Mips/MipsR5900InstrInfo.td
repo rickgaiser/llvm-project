@@ -1205,7 +1205,7 @@ class LQ_GPR<string opstr, RegisterOperand RC,
              SDPatternOperator OpNode = null_frag>
     : InstSE<(outs RC:$rt), (ins mem_simm16:$addr),
              !strconcat(opstr, "\t$rt, $addr"),
-             [(set RC:$rt, (OpNode addrDefault:$addr))], FrmI, opstr> {
+             [(set RC:$rt, (OpNode addr:$addr))], FrmI, opstr> {
   let DecoderMethod = "DecodeGPR128Mem";
   let DecoderNamespace = "R5900";
   let mayLoad = 1;
@@ -1215,7 +1215,7 @@ class SQ_GPR<string opstr, RegisterOperand RC,
              SDPatternOperator OpNode = null_frag>
     : InstSE<(outs), (ins RC:$rt, mem_simm16:$addr),
              !strconcat(opstr, "\t$rt, $addr"),
-             [(OpNode RC:$rt, addrDefault:$addr)], FrmI, opstr> {
+             [(OpNode RC:$rt, addr:$addr)], FrmI, opstr> {
   let DecoderMethod = "DecodeGPR128Mem";
   let DecoderNamespace = "R5900";
   let mayStore = 1;
@@ -1249,18 +1249,18 @@ let Predicates = [IsR5900] in {
   def SQ : SQ_GPR<"sq", GPR128Opnd>, LW_FM<0x1f>;
 
   // LQ patterns for each vector type (only match 16-byte aligned loads)
-  def : Pat<(v4i32 (aligned_load_128 addrDefault:$addr)),
-            (LQ addrDefault:$addr)>;
-  def : Pat<(v8i16 (aligned_load_128 addrDefault:$addr)),
-            (LQ addrDefault:$addr)>;
-  def : Pat<(v16i8 (aligned_load_128 addrDefault:$addr)),
-            (LQ addrDefault:$addr)>;
+  def : Pat<(v4i32 (aligned_load_128 addr:$addr)),
+            (LQ addr:$addr)>;
+  def : Pat<(v8i16 (aligned_load_128 addr:$addr)),
+            (LQ addr:$addr)>;
+  def : Pat<(v16i8 (aligned_load_128 addr:$addr)),
+            (LQ addr:$addr)>;
 
   // SQ patterns for each vector type (only match 16-byte aligned stores)
-  def : Pat<(aligned_store_128 v4i32:$rt, addrDefault:$addr),
-            (SQ $rt, addrDefault:$addr)>;
-  def : Pat<(aligned_store_128 v8i16:$rt, addrDefault:$addr),
-            (SQ $rt, addrDefault:$addr)>;
-  def : Pat<(aligned_store_128 v16i8:$rt, addrDefault:$addr),
-            (SQ $rt, addrDefault:$addr)>;
+  def : Pat<(aligned_store_128 v4i32:$rt, addr:$addr),
+            (SQ $rt, addr:$addr)>;
+  def : Pat<(aligned_store_128 v8i16:$rt, addr:$addr),
+            (SQ $rt, addr:$addr)>;
+  def : Pat<(aligned_store_128 v16i8:$rt, addr:$addr),
+            (SQ $rt, addr:$addr)>;
 } // Predicates = [IsR5900]

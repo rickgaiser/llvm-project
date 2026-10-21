@@ -22,7 +22,7 @@ class LW_VF<string opstr, RegisterOperand RC,
             SDPatternOperator OpNode = null_frag>
     : InstSE<(outs RC:$rt), (ins mem_simm16:$addr),
              !strconcat(opstr, "\t$rt, $addr"),
-             [(set RC:$rt, (OpNode addrDefault:$addr))], FrmFI, opstr> {
+             [(set RC:$rt, (OpNode addr:$addr))], FrmFI, opstr> {
   let DecoderMethod = "DecodeVFMem";
   let DecoderNamespace = "R5900";
   let mayLoad = 1;
@@ -32,7 +32,7 @@ class SW_VF<string opstr, RegisterOperand RC,
             SDPatternOperator OpNode = null_frag>
     : InstSE<(outs), (ins RC:$rt, mem_simm16:$addr),
              !strconcat(opstr, "\t$rt, $addr"),
-             [(OpNode RC:$rt, addrDefault:$addr)], FrmFI, opstr> {
+             [(OpNode RC:$rt, addr:$addr)], FrmFI, opstr> {
   let DecoderMethod = "DecodeVFMem";
   let DecoderNamespace = "R5900";
   let mayStore = 1;

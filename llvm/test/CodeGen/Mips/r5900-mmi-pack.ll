@@ -10,8 +10,7 @@ define void @trunc_v8i32_v8i16(ptr %p, ptr %q) {
 ; CHECK-NEXT:    sll $1, $4, 0
 ; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    lq $2, 0($1)
-; CHECK-NEXT:    addiu $1, $1, 16
-; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    lq $1, 16($1)
 ; CHECK-NEXT:    ppach $1, $1, $2
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $1, 0($3)
@@ -27,8 +26,7 @@ define void @trunc_v16i16_v16i8(ptr %p, ptr %q) {
 ; CHECK-NEXT:    sll $1, $4, 0
 ; CHECK-NEXT:    sll $3, $5, 0
 ; CHECK-NEXT:    lq $2, 0($1)
-; CHECK-NEXT:    addiu $1, $1, 16
-; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    lq $1, 16($1)
 ; CHECK-NEXT:    ppacb $1, $1, $2
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $1, 0($3)
@@ -42,13 +40,10 @@ define void @trunc_v16i32_v16i8(ptr %p, ptr %q) {
 ; CHECK-LABEL: trunc_v16i32_v16i8:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    addiu $2, $1, 32
 ; CHECK-NEXT:    lq $3, 0($1)
-; CHECK-NEXT:    addiu $4, $1, 16
-; CHECK-NEXT:    addiu $1, $1, 48
-; CHECK-NEXT:    lq $2, 0($2)
-; CHECK-NEXT:    lq $4, 0($4)
-; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    lq $4, 16($1)
+; CHECK-NEXT:    lq $2, 32($1)
+; CHECK-NEXT:    lq $1, 48($1)
 ; CHECK-NEXT:    ppach $3, $4, $3
 ; CHECK-NEXT:    ppach $1, $1, $2
 ; CHECK-NEXT:    sll $2, $5, 0
