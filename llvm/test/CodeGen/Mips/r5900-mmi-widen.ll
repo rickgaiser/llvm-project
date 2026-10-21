@@ -168,3 +168,154 @@ define void @splat_b(i8 %x, ptr %q) {
   ret void
 }
 
+; A chain of adds of 16-bit products accumulates in HI and LO: PMULTH, then
+; PMADDH; the other term is added after PMFLO and PMFHI.
+define void @madd_chain(ptr %p, ptr %q, <8 x i16> %c, ptr %r) {
+; CHECK-LABEL: madd_chain:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    addiu $sp, $sp, -16
+; CHECK-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-NEXT:    dsrl $1, $7, 48
+; CHECK-NEXT:    sh $1, 14($sp)
+; CHECK-NEXT:    dsrl $1, $7, 32
+; CHECK-NEXT:    sh $1, 12($sp)
+; CHECK-NEXT:    dsrl $1, $6, 48
+; CHECK-NEXT:    sh $1, 6($sp)
+; CHECK-NEXT:    dsrl $1, $6, 32
+; CHECK-NEXT:    sh $1, 4($sp)
+; CHECK-NEXT:    sll $1, $7, 0
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    sh $1, 8($sp)
+; CHECK-NEXT:    srl $1, $1, 16
+; CHECK-NEXT:    sh $2, 0($sp)
+; CHECK-NEXT:    sh $1, 10($sp)
+; CHECK-NEXT:    srl $1, $2, 16
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    sh $1, 2($sp)
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lq $4, 0($2)
+; CHECK-NEXT:    lq $3, 0($1)
+; CHECK-NEXT:    lq $1, 16($1)
+; CHECK-NEXT:    pmulth $4, $3, $4
+; CHECK-NEXT:    lq $2, 16($2)
+; CHECK-NEXT:    pmaddh $1, $1, $2
+; CHECK-NEXT:    lq $1, 0($sp)
+; CHECK-NEXT:    sll $2, $8, 0
+; CHECK-NEXT:    lq $4, 16($2)
+; CHECK-NEXT:    pmaddh $1, $3, $1
+; CHECK-NEXT:    pmflo $1
+; CHECK-NEXT:    pmfhi $3
+; CHECK-NEXT:    pcpyud $5, $1, $3
+; CHECK-NEXT:    paddw $4, $5, $4
+; CHECK-NEXT:    lq $5, 0($2)
+; CHECK-NEXT:    pcpyld $1, $3, $1
+; CHECK-NEXT:    sq $4, 16($2)
+; CHECK-NEXT:    paddw $1, $1, $5
+; CHECK-NEXT:    sq $1, 0($2)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    addiu $sp, $sp, 16
+  %a0 = load <8 x i16>, ptr %p, align 16
+  %p1 = getelementptr i8, ptr %p, i32 16
+  %a1 = load <8 x i16>, ptr %p1, align 16
+  %b0 = load <8 x i16>, ptr %q, align 16
+  %q1 = getelementptr i8, ptr %q, i32 16
+  %b1 = load <8 x i16>, ptr %q1, align 16
+  %base = load <8 x i32>, ptr %r, align 32
+  %ea0 = sext <8 x i16> %a0 to <8 x i32>
+  %ea1 = sext <8 x i16> %a1 to <8 x i32>
+  %eb0 = sext <8 x i16> %b0 to <8 x i32>
+  %eb1 = sext <8 x i16> %b1 to <8 x i32>
+  %ec = sext <8 x i16> %c to <8 x i32>
+  %m0 = mul <8 x i32> %ea0, %eb0
+  %m1 = mul <8 x i32> %ea1, %eb1
+  %m2 = mul <8 x i32> %ea0, %ec
+  %s0 = add <8 x i32> %base, %m0
+  %s1 = add <8 x i32> %s0, %m1
+  %s2 = add <8 x i32> %s1, %m2
+  store <8 x i32> %s2, ptr %r, align 32
+  ret void
+}
+
+; A tree of adds of products, one of them with a splat.
+define void @madd_tree(ptr %p, ptr %q, i16 %v, ptr %r) {
+; CHECK-LABEL: madd_tree:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $3, 0($1)
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    lq $2, 0($2)
+; CHECK-NEXT:    pcpyld $4, $6, $6
+; CHECK-NEXT:    lq $1, 16($1)
+; CHECK-NEXT:    pmulth $5, $3, $2
+; CHECK-NEXT:    pcpyh $4, $4
+; CHECK-NEXT:    pmaddh $4, $1, $4
+; CHECK-NEXT:    sll $4, $7, 0
+; CHECK-NEXT:    pmaddh $2, $1, $2
+; CHECK-NEXT:    pmaddh $1, $3, $1
+; CHECK-NEXT:    pmflo $1
+; CHECK-NEXT:    pmfhi $2
+; CHECK-NEXT:    pcpyld $3, $2, $1
+; CHECK-NEXT:    sq $3, 0($4)
+; CHECK-NEXT:    pcpyud $1, $1, $2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 16($4)
+  %a0 = load <8 x i16>, ptr %p, align 16
+  %p1 = getelementptr i8, ptr %p, i32 16
+  %a1 = load <8 x i16>, ptr %p1, align 16
+  %b0 = load <8 x i16>, ptr %q, align 16
+  %ea0 = sext <8 x i16> %a0 to <8 x i32>
+  %ea1 = sext <8 x i16> %a1 to <8 x i32>
+  %eb0 = sext <8 x i16> %b0 to <8 x i32>
+  %ev = sext i16 %v to i32
+  %ins = insertelement <8 x i32> poison, i32 %ev, i32 0
+  %splat = shufflevector <8 x i32> %ins, <8 x i32> poison, <8 x i32> zeroinitializer
+  %m0 = mul <8 x i32> %ea0, %eb0
+  %m1 = mul <8 x i32> %ea1, %splat
+  %m2 = mul <8 x i32> %ea1, %eb0
+  %m3 = mul <8 x i32> %ea0, %ea1
+  %s0 = add <8 x i32> %m0, %m1
+  %s1 = add <8 x i32> %m2, %m3
+  %s2 = add <8 x i32> %s0, %s1
+  store <8 x i32> %s2, ptr %r, align 32
+  ret void
+}
+
+; A product with another use is not part of the chain.
+define void @madd_multi_use(ptr %p, ptr %q, ptr %r) {
+; CHECK-LABEL: madd_multi_use:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    lq $2, 0($2)
+; CHECK-NEXT:    pmulth $2, $1, $2
+; CHECK-NEXT:    pmflo $2
+; CHECK-NEXT:    pmfhi $3
+; CHECK-NEXT:    pmulth $1, $1, $1
+; CHECK-NEXT:    pcpyud $4, $2, $3
+; CHECK-NEXT:    pcpyld $1, $3, $2
+; CHECK-NEXT:    pmflo $2
+; CHECK-NEXT:    pmfhi $3
+; CHECK-NEXT:    pcpyud $5, $2, $3
+; CHECK-NEXT:    pcpyld $2, $3, $2
+; CHECK-NEXT:    sll $3, $6, 0
+; CHECK-NEXT:    paddw $2, $1, $2
+; CHECK-NEXT:    sq $2, 0($3)
+; CHECK-NEXT:    paddw $5, $4, $5
+; CHECK-NEXT:    sq $5, 16($3)
+; CHECK-NEXT:    sq $4, 48($3)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 32($3)
+  %a0 = load <8 x i16>, ptr %p, align 16
+  %b0 = load <8 x i16>, ptr %q, align 16
+  %ea0 = sext <8 x i16> %a0 to <8 x i32>
+  %eb0 = sext <8 x i16> %b0 to <8 x i32>
+  %m0 = mul <8 x i32> %ea0, %eb0
+  %m1 = mul <8 x i32> %ea0, %ea0
+  %s0 = add <8 x i32> %m0, %m1
+  store <8 x i32> %s0, ptr %r, align 32
+  %r1 = getelementptr i8, ptr %r, i32 32
+  store <8 x i32> %m0, ptr %r1, align 32
+  ret void
+}

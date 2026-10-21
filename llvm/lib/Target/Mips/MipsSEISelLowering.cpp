@@ -1327,39 +1327,31 @@ static SDValue performSETCCCombine(SDNode *N, SelectionDAG &DAG) {
                      N->getOperand(1), N->getOperand(2));
 }
 
-/// R5900: (v8i32 (mul A, B)) of values that fit in 16 bits to PMULTH, which
-/// multiplies 8 pairs of halfwords. It writes the products 0, 1, 4 and 5 to
-/// LO and 2, 3, 6 and 7 to HI, so PCPYLD and PCPYUD of LO and HI give them in
-/// order.
-static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
-                                      const MipsSubtarget &Subtarget) {
-  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+/// R5900: the v8i16 operand of PMULTH or PMADDH for the v8i32 multiply
+/// operand \p X: the halfwords it is sign extended from, a splat of a
+/// halfword, or its truncation when it fits in 16 bits. Null otherwise.
+static SDValue narrowR5900PMULTHOperand(SDValue X, const SDLoc &DL,
+                                        SelectionDAG &DAG) {
+  if (X.getOpcode() == ISD::SIGN_EXTEND &&
+      X.getOperand(0).getValueType() == MVT::v8i16)
+    return X.getOperand(0);
+  // A splat of a halfword.
+  if (SDValue S = DAG.getSplatValue(X))
+    return DAG.ComputeNumSignBits(S) > 16
+               ? DAG.getSplatBuildVector(MVT::v8i16, DL,
+                                         DAG.getSExtOrTrunc(S, DL, MVT::i16))
+               : SDValue();
+  if (DAG.ComputeNumSignBits(X) <= 16)
     return SDValue();
-  SDLoc DL(N);
-  auto Narrow = [&](SDValue X) -> SDValue {
-    if (X.getOpcode() == ISD::SIGN_EXTEND &&
-        X.getOperand(0).getValueType() == MVT::v8i16)
-      return X.getOperand(0);
-    // A splat of a halfword.
-    if (SDValue S = DAG.getSplatValue(X))
-      return DAG.ComputeNumSignBits(S) > 16
-                 ? DAG.getSplatBuildVector(MVT::v8i16, DL,
-                                           DAG.getSExtOrTrunc(S, DL, MVT::i16))
-                 : SDValue();
-    if (DAG.ComputeNumSignBits(X) <= 16)
-      return SDValue();
-    return DAG.getNode(ISD::TRUNCATE, DL, MVT::v8i16, X);
-  };
-  SDValue A = Narrow(N->getOperand(0));
-  SDValue B = A ? Narrow(N->getOperand(1)) : SDValue();
-  if (!B)
-    return SDValue();
+  return DAG.getNode(ISD::TRUNCATE, DL, MVT::v8i16, X);
+}
 
-  // PMFLO and PMFHI are glued to PMULTH, so nothing else writes HI and LO in
-  // between.
-  SDValue MulOps[] = {A, B};
-  SDNode *Mul = DAG.getMachineNode(
-      Mips::PMULTH, DL, DAG.getVTList(MVT::v8i16, MVT::Glue), MulOps);
+/// R5900: the v8i32 products or sums that PMULTH or PMADDH \p Mul leaves in
+/// HI and LO: 0, 1, 4 and 5 in LO and 2, 3, 6 and 7 in HI, so PCPYLD and
+/// PCPYUD of LO and HI give them in order. PMFLO and PMFHI are glued to
+/// \p Mul, so nothing else writes HI and LO in between.
+static SDValue readR5900PMULTHResult(SDNode *Mul, const SDLoc &DL,
+                                     SelectionDAG &DAG) {
   SDNode *Lo = DAG.getMachineNode(
       Mips::PMFLO, DL, DAG.getVTList(MVT::v4i32, MVT::Glue), SDValue(Mul, 1));
   SDNode *Hi = DAG.getMachineNode(Mips::PMFHI, DL, MVT::v4i32, SDValue(Lo, 1));
@@ -1370,6 +1362,69 @@ static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
   };
   return DAG.getNode(ISD::CONCAT_VECTORS, DL, MVT::v8i32,
                      Copy(Mips::PCPYLD, Hi, Lo), Copy(Mips::PCPYUD, Lo, Hi));
+}
+
+/// R5900: (v8i32 (mul A, B)) of values that fit in 16 bits to PMULTH, which
+/// multiplies 8 pairs of halfwords.
+static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+    return SDValue();
+  SDLoc DL(N);
+  SDValue A = narrowR5900PMULTHOperand(N->getOperand(0), DL, DAG);
+  SDValue B =
+      A ? narrowR5900PMULTHOperand(N->getOperand(1), DL, DAG) : SDValue();
+  if (!B)
+    return SDValue();
+  SDValue MulOps[] = {A, B};
+  SDNode *Mul = DAG.getMachineNode(
+      Mips::PMULTH, DL, DAG.getVTList(MVT::v8i16, MVT::Glue), MulOps);
+  return readR5900PMULTHResult(Mul, DL, DAG);
+}
+
+/// R5900: a tree of v8i32 adds with two or more multiplies of values that fit
+/// in 16 bits among its terms to PMULTH of the first and PMADDH of the
+/// others, which accumulate in HI and LO, and adds of the other terms. The
+/// combiner visits the root of the tree before its operands.
+static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+    return SDValue();
+  SDLoc DL(N);
+  SmallVector<std::pair<SDValue, SDValue>, 32> Products;
+  SmallVector<SDValue, 4> Others;
+  SmallVector<SDValue, 32> Worklist = {N->getOperand(0), N->getOperand(1)};
+  while (!Worklist.empty()) {
+    SDValue V = Worklist.pop_back_val();
+    if (V.getOpcode() == ISD::ADD && V.hasOneUse()) {
+      Worklist.append({V.getOperand(0), V.getOperand(1)});
+      continue;
+    }
+    if (V.getOpcode() == ISD::MUL && V.hasOneUse())
+      if (SDValue A = narrowR5900PMULTHOperand(V.getOperand(0), DL, DAG))
+        if (SDValue B = narrowR5900PMULTHOperand(V.getOperand(1), DL, DAG)) {
+          Products.push_back({A, B});
+          continue;
+        }
+    Others.push_back(V);
+  }
+  if (Products.size() < 2)
+    return SDValue();
+
+  // The worklist visits the terms of a chain of adds last to first.
+  std::reverse(Products.begin(), Products.end());
+  SDNode *Acc = nullptr;
+  for (auto [A, B] : Products) {
+    SmallVector<SDValue, 3> Ops = {A, B};
+    if (Acc)
+      Ops.push_back(SDValue(Acc, 1));
+    Acc = DAG.getMachineNode(Acc ? Mips::PMADDH : Mips::PMULTH, DL,
+                             DAG.getVTList(MVT::v8i16, MVT::Glue), Ops);
+  }
+  SDValue Sum = readR5900PMULTHResult(Acc, DL, DAG);
+  for (SDValue Other : Others)
+    Sum = DAG.getNode(ISD::ADD, DL, MVT::v8i32, Sum, Other);
+  return Sum;
 }
 
 /// Extend the 128-bit vector \p Src to elements twice as wide with R5900 MMI
@@ -1690,6 +1745,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::FMUL:
     Val = performVU0FMULCombine(N, DAG, Subtarget);
+    break;
+  case ISD::ADD:
+    Val = performR5900ADDCombine(N, DAG, Subtarget);
     break;
   case ISD::MUL:
     if (SDValue V = performR5900MULCombine(N, DAG, Subtarget))
