@@ -1843,11 +1843,42 @@ SDValue MipsSETargetLowering::lowerLOAD(SDValue Op, SelectionDAG &DAG) const {
       return SDValue();
     }
 
-    // Unaligned: scalarize to multiple 32-bit loads
     SDLoc DL(Op);
     SDValue Ptr = Nd.getBasePtr();
     SDValue Chain = Nd.getChain();
     EVT PtrVT = Ptr.getValueType();
+
+    // Unaligned with 64-bit GPRs: load the two doublewords (LDL/LDR, or LD
+    // when 8-byte aligned) and join them with PCPYLD.
+    if (Subtarget.isGP64bit()) {
+      MachineMemOperand::Flags Flags = Nd.getMemOperand()->getFlags();
+      SDValue Lo = DAG.getLoad(MVT::i64, DL, Chain, Ptr, Nd.getPointerInfo(),
+                               Nd.getAlign(), Flags, Nd.getAAInfo());
+      SDValue Hi =
+          DAG.getLoad(MVT::i64, DL, Chain,
+                      DAG.getObjectPtrOffset(DL, Ptr, TypeSize::getFixed(8)),
+                      Nd.getPointerInfo().getWithOffset(8),
+                      commonAlignment(Nd.getAlign(), 8), Flags, Nd.getAAInfo());
+      Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Lo.getValue(1),
+                          Hi.getValue(1));
+      if (!Subtarget.isLittle())
+        std::swap(Lo, Hi);
+      auto ToQuad = [&](SDValue V) {
+        return DAG.getTargetInsertSubreg(
+            Mips::sub_64, DL, MVT::v4i32,
+            SDValue(
+                DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32),
+                0),
+            V);
+      };
+      SDValue Vec = SDValue(DAG.getMachineNode(Mips::PCPYLD, DL, MVT::v4i32,
+                                               ToQuad(Hi), ToQuad(Lo)),
+                            0);
+      SDValue Ops[2] = {DAG.getBitcast(MemVT, Vec), Chain};
+      return DAG.getMergeValues(Ops, DL);
+    }
+
+    // Unaligned: scalarize to multiple 32-bit loads
 
     // Load 4x i32 and build vector
     SmallVector<SDValue, 4> Loads;
@@ -1916,7 +1947,6 @@ SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
       return SDValue();
     }
 
-    // Unaligned: scalarize to multiple 32-bit stores
     SDLoc DL(Op);
     SDValue Val = Nd.getValue();
     SDValue Ptr = Nd.getBasePtr();
@@ -1926,6 +1956,28 @@ SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
     // Bitcast to v4i32 if needed
     if (MemVT != MVT::v4i32)
       Val = DAG.getBitcast(MVT::v4i32, Val);
+
+    // Unaligned with 64-bit GPRs: split the doublewords with PCPYUD and store
+    // them with SDL/SDR, or SD when 8-byte aligned.
+    if (Subtarget.isGP64bit()) {
+      SDValue Lo = DAG.getTargetExtractSubreg(Mips::sub_64, DL, MVT::i64, Val);
+      SDValue Hi = DAG.getTargetExtractSubreg(
+          Mips::sub_64, DL, MVT::i64,
+          SDValue(DAG.getMachineNode(Mips::PCPYUD, DL, MVT::v4i32, Val, Val),
+                  0));
+      if (!Subtarget.isLittle())
+        std::swap(Lo, Hi);
+      MachineMemOperand::Flags Flags = Nd.getMemOperand()->getFlags();
+      SDValue StLo = DAG.getStore(Chain, DL, Lo, Ptr, Nd.getPointerInfo(),
+                                  Nd.getAlign(), Flags, Nd.getAAInfo());
+      SDValue StHi = DAG.getStore(
+          Chain, DL, Hi, DAG.getObjectPtrOffset(DL, Ptr, TypeSize::getFixed(8)),
+          Nd.getPointerInfo().getWithOffset(8),
+          commonAlignment(Nd.getAlign(), 8), Flags, Nd.getAAInfo());
+      return DAG.getNode(ISD::TokenFactor, DL, MVT::Other, StLo, StHi);
+    }
+
+    // Unaligned: scalarize to multiple 32-bit stores
 
     // Store 4x i32 elements
     for (unsigned i = 0; i < 4; ++i) {

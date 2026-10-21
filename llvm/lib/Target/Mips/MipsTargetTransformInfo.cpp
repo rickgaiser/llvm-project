@@ -152,6 +152,20 @@ bool MipsTTIImpl::isProfitableToSinkOperands(
 // temporary, so their cost is twice the number of loads and stores.
 static constexpr unsigned MMICycle = 2;
 
+/// Whether \p Ty is the v8i32 that PMULTH multiplies.
+static bool isPMULTHType(Type *Ty) {
+  return Ty == FixedVectorType::get(Type::getInt32Ty(Ty->getContext()), 8);
+}
+
+/// Whether \p V is an operand of a v8i32 multiply that PMULTH takes as a
+/// v8i16: a value sign extended from i16 or smaller, or a 16-bit constant.
+static bool isPMULTHOperand(const Value *V) {
+  if (auto *C = dyn_cast<ConstantInt>(V))
+    return C->getValue().isSignedIntN(16);
+  auto *SExt = dyn_cast<SExtInst>(V);
+  return SExt && SExt->getSrcTy()->getScalarSizeInBits() <= 16;
+}
+
 std::optional<std::pair<InstructionCost, MVT>>
 MipsTTIImpl::getMMIType(Type *Ty) const {
   // Smaller vectors, such as v8i8, are promoted to a 128-bit MMI type.
@@ -274,14 +288,7 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
     case Instruction::Mul:
       // A v8i32 multiply of values sign extended from i16 is PMULTH, then
       // PMFLO, PMFHI, PCPYLD and PCPYUD for the products in order.
-      if (ST->isR5900() &&
-          Ty == FixedVectorType::get(Type::getInt32Ty(Ty->getContext()), 8) &&
-          Args.size() == 2 && all_of(Args, [](const Value *V) {
-            if (auto *C = dyn_cast<ConstantInt>(V))
-              return C->getValue().isSignedIntN(16);
-            auto *SExt = dyn_cast<SExtInst>(V);
-            return SExt && SExt->getSrcTy()->getScalarSizeInBits() <= 16;
-          }))
+      if (isPMULTHType(Ty) && Args.size() == 2 && all_of(Args, isPMULTHOperand))
         return 5 * MMICycle;
       break;
     default:
@@ -403,12 +410,12 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
   }
 
   // R5900 MMI integer vector load/store, per 128-bit part: an aligned lq/sq
-  // takes 1 slot. An unaligned one goes through a stack temporary: ldl/ldr x2,
-  // sd x2, lq takes 10 cycles and sq, ld x2, sdl/sdr x2 takes 6.
+  // takes 1 slot. An unaligned load is ldl/ldr x2 and pcpyld, 5 cycles to the
+  // use; an unaligned store pcpyud and sdl/sdr x2, 4 cycles.
   if (auto LT = getMMIType(Src)) {
     if (Alignment >= Align(16) || isAlignedWhenWidened(I, Src, DL))
       return LT->first;
-    return LT->first * (Opcode == Instruction::Load ? 10 : 6) * MMICycle;
+    return LT->first * (Opcode == Instruction::Load ? 5 : 4) * MMICycle;
   }
 
   return BaseT::getMemoryOpCost(Opcode, Src, Alignment, AddressSpace, CostKind,
@@ -700,6 +707,16 @@ InstructionCost MipsTTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
     [[fallthrough]];
   case Instruction::ZExt:
   case Instruction::SExt:
+    // PMULTH takes the v8i16 itself, so a sign extension that only feeds
+    // such multiplies is free.
+    if (ST->isR5900() && Opcode == Instruction::SExt && I &&
+        isPMULTHType(DstVTy) && isPMULTHOperand(I) && !I->use_empty() &&
+        all_of(I->users(), [](const User *U) {
+          auto *Mul = dyn_cast<BinaryOperator>(U);
+          return Mul && Mul->getOpcode() == Instruction::Mul &&
+                 all_of(Mul->operands(), isPMULTHOperand);
+        }))
+      return 0;
     // PEXTLH/PEXTUH and PEXTLB/PEXTUB extend a v8i16 or v16i8 to two
     // registers of elements twice as wide, a sign extension with an
     // arithmetic shift of each; bytes to words in two steps.

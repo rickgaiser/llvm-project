@@ -57,11 +57,11 @@ define void @intrinsics(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w) {
 define void @memory(ptr %p) {
 ; CHECK-LABEL: 'memory'
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %l.a16 = load <4 x i32>, ptr %p, align 16
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %l.a4 = load <4 x i32>, ptr %p, align 4
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 40 for instruction: %l8.a4 = load <8 x i32>, ptr %p, align 4
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 10 for instruction: %l.a4 = load <4 x i32>, ptr %p, align 4
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %l8.a4 = load <8 x i32>, ptr %p, align 4
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: store <4 x i32> %l.a16, ptr %p, align 16
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: store <4 x i32> %l.a16, ptr %p, align 4
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: store <8 x i32> %l8.a4, ptr %p, align 4
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: store <4 x i32> %l.a16, ptr %p, align 4
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 16 for instruction: store <8 x i32> %l8.a4, ptr %p, align 4
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
   %l.a16 = load <4 x i32>, ptr %p, align 16
@@ -164,20 +164,24 @@ define void @mmi_shuffles(<16 x i8> %a, <16 x i8> %b, <4 x i32> %c, <4 x i32> %d
 define void @widen_ops(<8 x i16> %h, <8 x i16> %h2, <16 x i8> %b) {
 ; CHECK-LABEL: 'widen_ops'
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %zh = zext <8 x i16> %h to <8 x i32>
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sh = sext <8 x i16> %h to <8 x i32>
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sh2 = sext <8 x i16> %h2 to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %sh = sext <8 x i16> %h to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %sh2 = sext <8 x i16> %h2 to <8 x i32>
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sha = sext <8 x i16> %h to <8 x i32>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %zb = zext <16 x i8> %b to <16 x i16>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %sb = sext <16 x i8> %b to <16 x i32>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 10 for instruction: %m = mul nsw <8 x i32> %sh, %sh2
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 68 for instruction: %mz = mul nsw <8 x i32> %zh, %zh
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %a = add <8 x i32> %sha, %m
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
   %zh = zext <8 x i16> %h to <8 x i32>
   %sh = sext <8 x i16> %h to <8 x i32>
   %sh2 = sext <8 x i16> %h2 to <8 x i32>
+  %sha = sext <8 x i16> %h to <8 x i32>
   %zb = zext <16 x i8> %b to <16 x i16>
   %sb = sext <16 x i8> %b to <16 x i32>
   %m = mul nsw <8 x i32> %sh, %sh2
   %mz = mul nsw <8 x i32> %zh, %zh
+  %a = add <8 x i32> %sha, %m
   ret void
 }
