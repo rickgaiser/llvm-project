@@ -8,7 +8,6 @@
 
 #include "VUSubtarget.h"
 #include "MCTargetDesc/VUMCTargetDesc.h"
-#include "VU.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/ScheduleDAGMutation.h"
@@ -38,6 +37,10 @@ VUSubtarget::VUSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
 void VUSubtarget::overridePipelinerPolicy(
     MachinePipelinerPolicy &Policy) const {
   Policy.ShouldLimitRegPressure = true;
+  // Iterative modulo scheduling unschedules instructions to make room, which
+  // places the values of ACC and Q, with a single register each, much better
+  // than swing modulo scheduling.
+  Policy.UseIterativeScheduler = true;
 }
 
 namespace {
@@ -136,42 +139,7 @@ public:
 };
 } // namespace
 
-namespace {
-/// There is only one ACC and one Q. Two values of one of them that are live
-/// at the same time cost a copy to a VF register and back, so the values
-/// keep their order: an instruction that starts a value without reading one
-/// follows the readers of the previous value.
-class SingleRegOrder : public ScheduleDAGMutation {
-public:
-  void apply(ScheduleDAGInstrs *DAG) override {
-    for (const TargetRegisterClass *RC : {&VU::ACCRRegClass, &VU::QRRegClass}) {
-      auto IsValue = [&](const MachineOperand &MO) {
-        return MO.getReg().isVirtual() &&
-               DAG->MRI.getRegClass(MO.getReg()) == RC;
-      };
-      SmallVector<SUnit *, 8> Readers;
-      for (SUnit &SU : DAG->SUnits) {
-        const MachineInstr &MI = *SU.getInstr();
-        bool Reads = any_of(MI.all_uses(), IsValue);
-        if (!Reads && any_of(MI.all_defs(), IsValue)) {
-          for (SUnit *Reader : Readers)
-            DAG->addEdge(&SU, SDep(Reader, SDep::Artificial));
-          Readers.clear();
-        }
-        if (Reads)
-          Readers.push_back(&SU);
-      }
-    }
-  }
-};
-} // namespace
-
-std::unique_ptr<ScheduleDAGMutation> llvm::createVUSingleRegOrderMutation() {
-  return std::make_unique<SingleRegOrder>();
-}
-
 void VUSubtarget::getSMSMutations(
     std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
   Mutations.push_back(std::make_unique<ResultRegChains>());
-  Mutations.push_back(createVUSingleRegOrderMutation());
 }

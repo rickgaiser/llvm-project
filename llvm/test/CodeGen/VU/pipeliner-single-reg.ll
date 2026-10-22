@@ -1,7 +1,7 @@
 ; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner < %s -o /dev/null 2>&1 \
-; RUN:   | FileCheck %s --check-prefixes=MII,SMS
-; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner -pipeliner-iterative \
-; RUN:   < %s -o /dev/null 2>&1 | FileCheck %s --check-prefixes=MII,IMS
+; RUN:   | FileCheck %s --check-prefixes=MII,IMS
+; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner -pipeliner-iterative=false \
+; RUN:   < %s -o /dev/null 2>&1 | FileCheck %s --check-prefixes=MII,SMS
 ; RUN: llc -mtriple=vu -verify-machineinstrs -debug-only=pipeliner < %s \
 ; RUN:   -o /dev/null 2>&1 | FileCheck %s --check-prefix=OVERLAP
 ; REQUIRES: asserts

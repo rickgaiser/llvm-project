@@ -10,12 +10,10 @@
 #define LLVM_LIB_TARGET_VU_VU_H
 
 #include "llvm/Support/CodeGen.h"
-#include <memory>
 
 namespace llvm {
 class FunctionPass;
 class PassRegistry;
-class ScheduleDAGMutation;
 class VUTargetMachine;
 
 FunctionPass *createVUISelDag(VUTargetMachine &TM, CodeGenOptLevel OptLevel);
@@ -24,7 +22,6 @@ FunctionPass *createVUPacketizerPass();
 FunctionPass *createVUFoldQPass();
 FunctionPass *createVUHazardsPass();
 FunctionPass *createVULoopCopiesPass();
-std::unique_ptr<ScheduleDAGMutation> createVUSingleRegOrderMutation();
 
 void initializeVUAsmPrinterPass(PassRegistry &);
 void initializeVUDAGToDAGISelLegacyPass(PassRegistry &);
