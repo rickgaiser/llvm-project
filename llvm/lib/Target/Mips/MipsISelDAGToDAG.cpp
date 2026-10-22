@@ -293,7 +293,8 @@ void MipsDAGToDAGISel::Select(SDNode *Node) {
   default: break;
 
   case ISD::ADD:
-    if (Node->getSimpleValueType(0).isVector() &&
+    // Only MSA has the vector add and subtract immediates.
+    if (Subtarget->hasMSA() && Node->getSimpleValueType(0).isVector() &&
         selectVecAddAsVecSubIfProfitable(Node))
       return;
     break;

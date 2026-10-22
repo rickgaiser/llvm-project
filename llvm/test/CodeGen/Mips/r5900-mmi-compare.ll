@@ -962,3 +962,65 @@ define void @const_v4i32(ptr %p) {
   store <4 x i32> %m, ptr %p, align 16
   ret void
 }
+
+; An add of all ones stays an add: MMI has no immediates, so a subtract of a
+; splat of 1 needs a constant that all ones does not.
+define void @add_ones_v4i32(ptr %p, ptr %q) {
+; CHECK-LABEL: add_ones_v4i32:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pnor $3, $zero, $zero
+; CHECK-NEXT:    lq $4, 0($2)
+; CHECK-NEXT:    paddw $1, $1, $3
+; CHECK-NEXT:    pand $1, $1, $4
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <4 x i32>, ptr %p
+  %b = load <4 x i32>, ptr %q
+  %s = add <4 x i32> %b, splat (i32 -1)
+  %r = and <4 x i32> %s, %a
+  store <4 x i32> %r, ptr %p
+  ret void
+}
+
+define void @add_ones_v8i16(ptr %p, ptr %q) {
+; CHECK-LABEL: add_ones_v8i16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pnor $3, $zero, $zero
+; CHECK-NEXT:    lq $4, 0($2)
+; CHECK-NEXT:    paddh $1, $1, $3
+; CHECK-NEXT:    pand $1, $1, $4
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <8 x i16>, ptr %p
+  %b = load <8 x i16>, ptr %q
+  %s = add <8 x i16> %b, splat (i16 -1)
+  %r = and <8 x i16> %s, %a
+  store <8 x i16> %r, ptr %p
+  ret void
+}
+
+define void @add_ones_v16i8(ptr %p, ptr %q) {
+; CHECK-LABEL: add_ones_v16i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pnor $3, $zero, $zero
+; CHECK-NEXT:    lq $4, 0($2)
+; CHECK-NEXT:    paddb $1, $1, $3
+; CHECK-NEXT:    pand $1, $1, $4
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <16 x i8>, ptr %p
+  %b = load <16 x i8>, ptr %q
+  %s = add <16 x i8> %b, splat (i8 -1)
+  %r = and <16 x i8> %s, %a
+  store <16 x i8> %r, ptr %p
+  ret void
+}
