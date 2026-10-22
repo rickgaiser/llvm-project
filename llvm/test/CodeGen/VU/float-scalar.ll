@@ -39,3 +39,29 @@ define void @scalar_ops() {
   call void @llvm.vu.sq(<4 x float> %v2, i16 1)
   ret void
 }
+
+; MAX and MINI on the x field.
+define void @min_max() {
+; CHECK-LABEL: min_max:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    sub.xyzw vf2, vf0, vf0 lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    addy.x vf3, vf0, vf1y nop
+; CHECK-NEXT:    max.xyzw vf1, vf1, vf2 nop
+; CHECK-NEXT:    mini.xyzw vf1, vf1, vf3 nop
+; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
+; CHECK-NEXT:    mulx.w vf1, vf0, vf1x nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %a = extractelement <4 x float> %v, i32 0
+  %b = extractelement <4 x float> %v, i32 1
+  %mx = call float @llvm.maxnum.f32(float %a, float 0.0)
+  %mn = call float @llvm.minnum.f32(float %mx, float %b)
+  %r = insertelement <4 x float> poison, float %mn, i32 0
+  call void @llvm.vu.sq(<4 x float> %r, i16 1)
+  ret void
+}
+
+declare float @llvm.maxnum.f32(float, float)
+declare float @llvm.minnum.f32(float, float)

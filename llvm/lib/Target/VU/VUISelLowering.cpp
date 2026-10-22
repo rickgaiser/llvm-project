@@ -55,6 +55,9 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   for (unsigned Op : {ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMA, ISD::FABS,
                       ISD::FNEG, ISD::FMAXNUM, ISD::FMINNUM})
     setOperationAction(Op, MVT::v4f32, Legal);
+  // MAX and MINI on the x field. The VU has no NaNs.
+  for (unsigned Op : {ISD::FMAXNUM, ISD::FMINNUM})
+    setOperationAction(Op, MVT::f32, Legal);
   for (unsigned Op : {ISD::BUILD_VECTOR, ISD::SCALAR_TO_VECTOR,
                       ISD::INSERT_VECTOR_ELT, ISD::EXTRACT_VECTOR_ELT})
     setOperationAction(Op, MVT::v4f32, Custom);
