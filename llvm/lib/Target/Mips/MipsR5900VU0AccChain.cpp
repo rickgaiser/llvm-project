@@ -27,6 +27,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -154,16 +155,14 @@ private:
   /// This handles the pattern: v4f32 result = {0,0,0,0}; which loads from CP
   /// since VF0 is {0,0,0,1} and cannot be used for all-zeros.
   bool isZeroVectorLoad(const MachineInstr &MI) const {
-    // LQC2 from constant pool is the common pattern for zero vector init
-    if (MI.getOpcode() != Mips::LQC2)
+    // LQC2 of a zero constant is the common pattern for zero vector init.
+    if (MI.getOpcode() != Mips::LQC2 || !MI.getOperand(2).isCPI())
       return false;
-    // Check if loading from constant pool (the MachineMemOperand will indicate)
-    for (const MachineMemOperand *MMO : MI.memoperands()) {
-      if (MMO->getPseudoValue() &&
-          MMO->getPseudoValue()->kind() == PseudoSourceValue::ConstantPool)
-        return true;
-    }
-    return false;
+    const MachineConstantPoolEntry &CPE =
+        MI.getMF()
+            ->getConstantPool()
+            ->getConstants()[MI.getOperand(2).getIndex()];
+    return !CPE.isMachineConstantPoolEntry() && CPE.Val.ConstVal->isNullValue();
   }
 
   /// Represents a broadcast multiply leaf in the reduction tree
@@ -349,10 +348,10 @@ void MipsR5900VU0AccChain::transformChain(
   // def)
   BuildMI(MBB, InsertPt, DL,
           TII->get(getVMULAbcOpcode(Leaves[0].BroadcastComp)))
-      .addImm(DestMask)       // dest mask (xyzw)
-      .addReg(Mips::VU0ACC)   // ACC operand (explicit)
-      .addReg(Leaves[0].LHS)  // fs
-      .addReg(Leaves[0].RHS); // ft
+      .addImm(DestMask)                      // dest mask (xyzw)
+      .addReg(Mips::VU0ACC, RegState::Undef) // ACC operand (not read)
+      .addReg(Leaves[0].LHS)                 // fs
+      .addReg(Leaves[0].RHS);                // ft
 
   // Middle multiplies -> VMADDAbc (ACC += fs * ft[bc])
   // Operands: destmask, $ACC, $fs, $ft (ACC is explicit, VU0ACC is implicit

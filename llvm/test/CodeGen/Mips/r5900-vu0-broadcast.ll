@@ -1,4 +1,4 @@
-; RUN: llc -mtriple=mips64el -mcpu=r5900 -mattr=+vu0 < %s | FileCheck %s
+; RUN: llc -mtriple=mips64el -mcpu=r5900 -mattr=+vu0 -verify-machineinstrs < %s | FileCheck %s
 
 ; Test that VU0 broadcast multiply instructions are generated from
 ; shufflevector + fmul patterns. This enables efficient matrix-vector
