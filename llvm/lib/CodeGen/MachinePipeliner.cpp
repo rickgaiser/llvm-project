@@ -3333,6 +3333,22 @@ bool SwingSchedulerDAG::mayOverlapInLaterIter(
       return false;
     }
   }
+
+  // The schedule is rejected if it has more than SwpMaxStages stages after the
+  // first, so iterations that are further apart never overlap in time. Find
+  // the first later iteration in which OtherMI can access the region of
+  // BaseMI.
+  if (SwpMaxStages > -1 && Delta != 0) {
+    int64_t Gap =
+        Delta > 0 ? OffsetB - (OffsetO + (int64_t)AccessSizeO.getValue() - 1)
+                  : OffsetO - (OffsetB + (int64_t)AccessSizeB.getValue() - 1);
+    int64_t Distance = Gap > 0 ? divideCeil(Gap, std::abs(Delta)) : 1;
+    if (Distance > SwpMaxStages) {
+      LLVM_DEBUG(dbgs() << "  Result: No overlap within " << SwpMaxStages
+                        << " iterations\n");
+      return false;
+    }
+  }
   LLVM_DEBUG(dbgs() << "  Result: Overlap\n");
   return true;
 }
