@@ -45,6 +45,8 @@ public:
 
   bool expandPostRAPseudo(MachineInstr &MI) const override;
 
+  bool isReMaterializableImpl(const MachineInstr &MI) const override;
+
   // Scheduling. All latencies are in micro instruction words.
   DFAPacketizer *
   CreateTargetScheduleState(const TargetSubtargetInfo &STI) const override;

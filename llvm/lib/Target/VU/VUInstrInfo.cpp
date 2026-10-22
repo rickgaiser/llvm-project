@@ -63,6 +63,15 @@ void VUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
   report_fatal_error("VU: register spilling is not supported");
 }
 
+bool VUInstrInfo::isReMaterializableImpl(const MachineInstr &MI) const {
+  // LOADF32 clobbers I, but I is only live between the instructions of an
+  // expanded pseudo, so the constant can be materialized anywhere. This lets
+  // MachineLICM hoist constants out of loops.
+  if (MI.getOpcode() == VU::LOADF32)
+    return true;
+  return TargetInstrInfo::isReMaterializableImpl(MI);
+}
+
 bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   MachineBasicBlock &MBB = *MI.getParent();
   const DebugLoc &DL = MI.getDebugLoc();
