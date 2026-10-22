@@ -124,10 +124,16 @@ defvar Fields = [FieldX, FieldY, FieldZ, FieldW];
 // Upper instructions: FMAC operations
 //===----------------------------------------------------------------------===//
 
+// ACC and Q are operands that are not encoded and do not always appear in
+// the assembly syntax: "madd.xyzw vf1, vf2, vf3" reads ACC. \p accin is
+// (ins ACCR:$accin) for the instructions that read ACC, and (ins) for the
+// others.
+
 // fd = fs op ft
-class U3<bits<6> op, string mn>
-    : VUUpperOp<op, (outs VF:$fd), (ins dest:$dest, VF:$fs, VF:$ft),
+class U3<bits<6> op, string mn, dag accin = (ins)>
+    : VUUpperOp<op, (outs VF:$fd), !con(accin, (ins dest:$dest, VF:$fs, VF:$ft)),
                 mn # "$dest\t$fd, $fs, $ft"> {
+  bits<0> accin;
   bits<4> dest;
   bits<5> fd;
   bits<5> fs;
@@ -139,9 +145,11 @@ class U3<bits<6> op, string mn>
 }
 
 // fd = fs op ft.bc
-class U3BC<bits<4> op, bits<2> bc, string mn, string f>
-    : VUUpperOp<{op, bc}, (outs VF:$fd), (ins dest:$dest, VF:$fs, VF:$ft),
+class U3BC<bits<4> op, bits<2> bc, string mn, string f, dag accin = (ins)>
+    : VUUpperOp<{op, bc}, (outs VF:$fd),
+                !con(accin, (ins dest:$dest, VF:$fs, VF:$ft)),
                 mn # "$dest\t$fd, $fs, ${ft}" # f> {
+  bits<0> accin;
   bits<4> dest;
   bits<5> fd;
   bits<5> fs;
@@ -152,10 +160,13 @@ class U3BC<bits<4> op, bits<2> bc, string mn, string f>
   let Inst{10-6} = fd;
 }
 
-// fd = fs op q/i
-class U3S<bits<6> op, string mn, string sreg>
-    : VUUpperOp<op, (outs VF:$fd), (ins dest:$dest, VF:$fs),
+// fd = fs op q/i. \p sin is (ins QR:$q) for the q forms.
+class U3S<bits<6> op, string mn, string sreg, dag accin = (ins),
+          dag sin = (ins)>
+    : VUUpperOp<op, (outs VF:$fd), !con(accin, (ins dest:$dest, VF:$fs), sin),
                 mn # "$dest\t$fd, $fs, " # sreg> {
+  bits<0> accin;
+  bits<0> q;
   bits<4> dest;
   bits<5> fd;
   bits<5> fs;
@@ -166,41 +177,49 @@ class U3S<bits<6> op, string mn, string sreg>
 }
 
 // acc = fs op ft
-class UA<bits<7> idx, string mn>
-    : VUUpperExt<idx, (outs), (ins dest:$dest, VF:$fs, VF:$ft),
+class UA<bits<7> idx, string mn, dag accin = (ins)>
+    : VUUpperExt<idx, (outs ACCR:$acc),
+                 !con(accin, (ins dest:$dest, VF:$fs, VF:$ft)),
                  mn # "$dest\tacc, $fs, $ft"> {
+  bits<0> acc;
+  bits<0> accin;
   bits<4> dest;
   bits<5> fs;
   bits<5> ft;
   let Inst{24-21} = dest;
   let Inst{20-16} = ft;
   let Inst{15-11} = fs;
-  let Defs = [ACC];
 }
 
 // acc = fs op ft.bc
-class UABC<bits<5> idx, bits<2> bc, string mn, string f>
-    : VUUpperExt<{idx, bc}, (outs), (ins dest:$dest, VF:$fs, VF:$ft),
+class UABC<bits<5> idx, bits<2> bc, string mn, string f, dag accin = (ins)>
+    : VUUpperExt<{idx, bc}, (outs ACCR:$acc),
+                 !con(accin, (ins dest:$dest, VF:$fs, VF:$ft)),
                  mn # "$dest\tacc, $fs, ${ft}" # f> {
+  bits<0> acc;
+  bits<0> accin;
   bits<4> dest;
   bits<5> fs;
   bits<5> ft;
   let Inst{24-21} = dest;
   let Inst{20-16} = ft;
   let Inst{15-11} = fs;
-  let Defs = [ACC];
 }
 
 // acc = fs op q/i
-class UAS<bits<7> idx, string mn, string sreg>
-    : VUUpperExt<idx, (outs), (ins dest:$dest, VF:$fs),
+class UAS<bits<7> idx, string mn, string sreg, dag accin = (ins),
+          dag sin = (ins)>
+    : VUUpperExt<idx, (outs ACCR:$acc),
+                 !con(accin, (ins dest:$dest, VF:$fs), sin),
                  mn # "$dest\tacc, $fs, " # sreg> {
+  bits<0> acc;
+  bits<0> accin;
+  bits<0> q;
   bits<4> dest;
   bits<5> fs;
   let Inst{24-21} = dest;
   let Inst{20-16} = 0;
   let Inst{15-11} = fs;
-  let Defs = [ACC];
 }
 
 // ft = op fs
@@ -215,35 +234,32 @@ class U2<bits<7> idx, string mn>
   let Inst{15-11} = fs;
 }
 
-multiclass U3BCs<bits<4> op, string mn> {
+multiclass U3BCs<bits<4> op, string mn, dag accin = (ins)> {
   foreach F = Fields in
-    def NAME # F.Name : U3BC<op, F.Value, mn # F.Name, F.Name>;
+    def NAME # F.Name : U3BC<op, F.Value, mn # F.Name, F.Name, accin>;
 }
 
-multiclass UABCs<bits<5> idx, string mn> {
+multiclass UABCs<bits<5> idx, string mn, dag accin = (ins)> {
   foreach F = Fields in
-    def NAME # F.Name : UABC<idx, F.Value, mn # F.Name, F.Name>;
+    def NAME # F.Name : UABC<idx, F.Value, mn # F.Name, F.Name, accin>;
 }
 
-// Operations that support every operand form. \p uses are the registers
-// that every form reads (ACC for MADD and MSUB); the q and i forms also read
-// Q and I.
+// Operations that support every operand form. Every form reads ACC if
+// \p readsAcc is set (MADD and MSUB); the q and i forms also read Q and I.
+// Q is the last operand, in the place of ft.
 multiclass FmacOp<string mn, bits<6> op, bits<4> opbc, bits<6> opq,
                   bits<6> opi, bits<7> idxa, bits<5> idxabc, bits<7> idxaq,
-                  bits<7> idxai, list<Register> uses = []> {
-  let Uses = uses in {
-    def "" : U3<op, mn>;
-    defm "" : U3BCs<opbc, mn>;
-    def A : UA<idxa, mn # "a">;
-    defm A : UABCs<idxabc, mn # "a">;
-  }
-  let Uses = !listconcat(uses, [Q]) in {
-    def q : U3S<opq, mn # "q", "q">;
-    def Aq : UAS<idxaq, mn # "aq", "q">;
-  }
-  let Uses = !listconcat(uses, [I]) in {
-    def i : U3S<opi, mn # "i", "i">;
-    def Ai : UAS<idxai, mn # "ai", "i">;
+                  bits<7> idxai, bit readsAcc = false> {
+  defvar accin = !if(readsAcc, (ins ACCR:$accin), (ins));
+  def "" : U3<op, mn, accin>;
+  defm "" : U3BCs<opbc, mn, accin>;
+  def A : UA<idxa, mn # "a", accin>;
+  defm A : UABCs<idxabc, mn # "a", accin>;
+  def q : U3S<opq, mn # "q", "q", accin, (ins QR:$q)>;
+  def Aq : UAS<idxaq, mn # "aq", "q", accin, (ins QR:$q)>;
+  let Uses = [I] in {
+    def i : U3S<opi, mn # "i", "i", accin>;
+    def Ai : UAS<idxai, mn # "ai", "i", accin>;
   }
 }
 
@@ -251,9 +267,9 @@ defm ADD  : FmacOp<"add",  0x28, 0b0000, 0x20, 0x22, 0x28, 0b00000, 0x20, 0x22>;
 defm SUB  : FmacOp<"sub",  0x2c, 0b0001, 0x24, 0x26, 0x2c, 0b00001, 0x24, 0x26>;
 defm MUL  : FmacOp<"mul",  0x2a, 0b0110, 0x1c, 0x1e, 0x2a, 0b00110, 0x1c, 0x1e>;
 defm MADD : FmacOp<"madd", 0x29, 0b0010, 0x21, 0x23, 0x29, 0b00010, 0x21, 0x23,
-                   [ACC]>;
+                   true>;
 defm MSUB : FmacOp<"msub", 0x2d, 0b0011, 0x25, 0x27, 0x2d, 0b00011, 0x25, 0x27,
-                   [ACC]>;
+                   true>;
 
 // MAX and MINI have no q and no ACC forms.
 multiclass MinMaxOp<string mn, bits<6> op, bits<4> opbc, bits<6> opi> {
@@ -267,9 +283,9 @@ defm MAX  : MinMaxOp<"max",  0x2b, 0b0100, 0x1d>;
 defm MINI : MinMaxOp<"mini", 0x2f, 0b0101, 0x1f>;
 
 // Outer product: OPMULA.xyz ACC, fs, ft and OPMSUB.xyz fd, fs, ft.
-let Defs = [ACC] in
-def OPMULA : VUUpperExt<0x2e, (outs), (ins VF:$fs, VF:$ft),
+def OPMULA : VUUpperExt<0x2e, (outs ACCR:$acc), (ins VF:$fs, VF:$ft),
                         "opmula.xyz\tacc, $fs, $ft"> {
+  bits<0> acc;
   bits<5> fs;
   bits<5> ft;
   let Inst{24-21} = 0b1110;
@@ -277,9 +293,9 @@ def OPMULA : VUUpperExt<0x2e, (outs), (ins VF:$fs, VF:$ft),
   let Inst{15-11} = fs;
 }
 
-let Uses = [ACC] in
-def OPMSUB : VUUpperOp<0x2e, (outs VF:$fd), (ins VF:$fs, VF:$ft),
+def OPMSUB : VUUpperOp<0x2e, (outs VF:$fd), (ins ACCR:$accin, VF:$fs, VF:$ft),
                        "opmsub.xyz\t$fd, $fs, $ft"> {
+  bits<0> accin;
   bits<5> fd;
   bits<5> fs;
   bits<5> ft;
@@ -523,10 +539,11 @@ def MTIR : VULowerExt<0x3c, (outs VI:$it), (ins VF:$fs, vufield:$fsf),
 
 //--- FDIV -------------------------------------------------------------------//
 
-let Defs = [Q] in {
 let Itinerary = IIC_VUFdiv7 in
-def DIV : VULowerExt<0x38, (outs), (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$ftf),
+def DIV : VULowerExt<0x38, (outs QR:$q),
+                     (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$ftf),
                      "div\tq, $fs$fsf, $ft$ftf"> {
+  bits<0> q;
   bits<5> fs;
   bits<2> fsf;
   bits<5> ft;
@@ -538,9 +555,10 @@ def DIV : VULowerExt<0x38, (outs), (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$f
 }
 
 let Itinerary = IIC_VUFdiv13 in
-def RSQRT : VULowerExt<0x3a, (outs),
+def RSQRT : VULowerExt<0x3a, (outs QR:$q),
                        (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$ftf),
                        "rsqrt\tq, $fs$fsf, $ft$ftf"> {
+  bits<0> q;
   bits<5> fs;
   bits<2> fsf;
   bits<5> ft;
@@ -552,8 +570,9 @@ def RSQRT : VULowerExt<0x3a, (outs),
 }
 
 let Itinerary = IIC_VUFdiv7 in
-def SQRT : VULowerExt<0x39, (outs), (ins VF:$ft, vufield:$ftf),
+def SQRT : VULowerExt<0x39, (outs QR:$q), (ins VF:$ft, vufield:$ftf),
                       "sqrt\tq, $ft$ftf"> {
+  bits<0> q;
   bits<5> ft;
   bits<2> ftf;
   let Inst{24-23} = ftf;
@@ -561,7 +580,6 @@ def SQRT : VULowerExt<0x39, (outs), (ins VF:$ft, vufield:$ftf),
   let Inst{20-16} = ft;
   let Inst{15-11} = 0;
 }
-} // Defs = [Q]
 
 // WAITQ and WAITP also define Q and P: reads of the result are ordered after
 // the wait, and may share its micro instruction word.

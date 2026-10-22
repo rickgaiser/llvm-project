@@ -32,6 +32,14 @@ def VF : RegisterClass<"VU", [v4f32, v4i32, f32], 128,
                        (sequence "VF%u", 0, 31)>;
 def VI : RegisterClass<"VU", [i16], 16, (sequence "VI%u", 0, 15)>;
 def ACCR : RegisterClass<"VU", [v4f32], 128, (add ACC)>;
+// An ACC value that is not read or written by an FMAC instruction for a while
+// can be kept in a VF register; see getLargestLegalSuperClass.
+def ACCVF : RegisterClass<"VU", [v4f32], 128, (add VF, ACC)>;
+// Q holds a scalar, like the x field of a VF register.
+def QR : RegisterClass<"VU", [f32], 32, (add Q)> {
+  let Size = 128;
+}
+def QVF : RegisterClass<"VU", [f32], 128, (add VF, Q)>;
 // i32 is listed so that TableGen can type generic patterns; it is not a legal
 // type for instruction selection.
 def SPR : RegisterClass<"VU", [f32, i32], 32, (add I, Q, P, R)>;

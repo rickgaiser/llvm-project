@@ -168,15 +168,15 @@ body: |
     ; CHECK-LABEL: name: waitq
     ; CHECK: liveins: $vf1, $vf2
     ; CHECK-NEXT: {{  $}}
-    ; CHECK-NEXT: DIV $vf1, 0, $vf2, 0, implicit-def $q
+    ; CHECK-NEXT: $q = DIV $vf1, 0, $vf2, 0
     ; CHECK-NEXT: BUNDLE implicit-def $q, implicit-def $vf3, implicit $q, implicit $vf0 {
     ; CHECK-NEXT:   WAITQ implicit-def $q, implicit $q
-    ; CHECK-NEXT:   $vf3 = ADDq 8, $vf0, implicit internal $q
+    ; CHECK-NEXT:   $vf3 = ADDq 8, $vf0, internal $q
     ; CHECK-NEXT: }
     ; CHECK-NEXT: PROGRAM_END
-    DIV $vf1, 0, $vf2, 0, implicit-def $q
+    $q = DIV $vf1, 0, $vf2, 0
     WAITQ implicit-def $q, implicit $q
-    $vf3 = ADDq 8, $vf0, implicit $q
+    $vf3 = ADDq 8, $vf0, $q
     PROGRAM_END
 ...
 ---

@@ -34,7 +34,7 @@ BitVector VURegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   // VF0 is (0, 0, 0, 1) and VI0 is 0.
   Reserved.set(VU::VF0);
   Reserved.set(VU::VI0);
-  for (MCRegister R : {VU::ACC, VU::I, VU::Q, VU::P, VU::R})
+  for (MCRegister R : {VU::I, VU::P, VU::R})
     Reserved.set(R);
   return Reserved;
 }
@@ -43,6 +43,19 @@ bool VURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
                                          int SPAdj, unsigned FIOperandNum,
                                          RegScavenger *RS) const {
   report_fatal_error("VU: stack frames are not supported");
+}
+
+const TargetRegisterClass *
+VURegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
+                                          const MachineFunction &MF) const {
+  // There is only one ACC and one Q. When the register allocator splits a
+  // value that overlaps another one, the part between its uses can move to a
+  // VF register.
+  if (RC == &VU::ACCRRegClass)
+    return &VU::ACCVFRegClass;
+  if (RC == &VU::QRRegClass)
+    return &VU::QVFRegClass;
+  return RC;
 }
 
 Register VURegisterInfo::getFrameRegister(const MachineFunction &MF) const {

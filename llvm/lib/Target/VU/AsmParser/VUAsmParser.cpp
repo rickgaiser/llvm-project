@@ -599,9 +599,22 @@ bool VUAsmParser::matchHalf(OperandVector &Ops, SMLoc Loc, MCInst &Inst) {
   };
 
   switch (Result) {
-  case Match_Success:
+  case Match_Success: {
+    // ACC and Q operands are not matched from the assembly syntax; the
+    // matcher leaves a placeholder for them.
+    const MCInstrDesc &Desc = MII.get(Inst.getOpcode());
+    for (unsigned I = 0, E = Inst.getNumOperands(); I != E; ++I) {
+      if (I >= Desc.getNumOperands())
+        break;
+      int16_t RC = Desc.operands()[I].RegClass;
+      if (RC == VU::ACCRRegClassID)
+        Inst.getOperand(I) = MCOperand::createReg(VU::ACC);
+      else if (RC == VU::QRRegClassID)
+        Inst.getOperand(I) = MCOperand::createReg(VU::Q);
+    }
     Inst.setLoc(Loc);
     return false;
+  }
   case Match_MissingFeature: {
     std::string Msg = "instruction requires:";
     for (unsigned I = 0, E = MissingFeatures.size(); I != E; ++I)

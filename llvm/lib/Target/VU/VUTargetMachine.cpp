@@ -113,6 +113,13 @@ public:
 } // namespace
 
 ScheduleDAGInstrs *
+VUTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
+  ScheduleDAGMILive *DAG = createSchedLive(C);
+  DAG->addMutation(createVUSingleRegOrderMutation());
+  return DAG;
+}
+
+ScheduleDAGInstrs *
 VUTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
   ScheduleDAGMI *DAG = createSchedPostRA(C);
   DAG->addMutation(std::make_unique<LoopCarriedLatency>());

@@ -14,31 +14,31 @@ body: |
   ; CHECK-LABEL: name: loop_carried
   ; CHECK: bb.0:
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
-  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1
+  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1, $q
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
-  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1
+  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1, $q
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   BUNDLE implicit-def $q, implicit-def $vf3, implicit $q, implicit $vf2 {
   ; CHECK-NEXT:     WAITQ implicit-def $q, implicit $q
-  ; CHECK-NEXT:     $vf3 = MULq 15, $vf2, implicit internal $q
+  ; CHECK-NEXT:     $vf3 = MULq 15, $vf2, internal $q
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   $vi1 = IADDI $vi1, -1
-  ; CHECK-NEXT:   DIV $vf1, 3, $vf1, 3, implicit-def $q
+  ; CHECK-NEXT:   $q = DIV $vf1, 3, $vf1, 3
   ; CHECK-NEXT:   IBNE $vi1, $vi0, %bb.1
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.2:
   ; CHECK-NEXT:   PROGRAM_END
   bb.0:
     successors: %bb.1
-    liveins: $vf1, $vf2, $vi1
+    liveins: $vf1, $vf2, $vi1, $q
   bb.1:
     successors: %bb.1, %bb.2
-    liveins: $vf1, $vf2, $vi1
-    $vf3 = MULq 15, $vf2, implicit $q
+    liveins: $vf1, $vf2, $vi1, $q
+    $vf3 = MULq 15, $vf2, $q
     $vi1 = IADDI $vi1, -1
-    DIV $vf1, 3, $vf1, 3, implicit-def $q
+    $q = DIV $vf1, 3, $vf1, 3
     IBNE $vi1, $vi0, %bb.1
   bb.2:
     PROGRAM_END
@@ -53,23 +53,23 @@ body: |
     ; CHECK-LABEL: name: far_enough
     ; CHECK: liveins: $vf1, $vf2
     ; CHECK-NEXT: {{  $}}
-    ; CHECK-NEXT: DIV $vf1, 3, $vf1, 3, implicit-def $q
+    ; CHECK-NEXT: $q = DIV $vf1, 3, $vf1, 3
     ; CHECK-NEXT: $vf4 = ADD 15, $vf2, $vf2
     ; CHECK-NEXT: $vf5 = ADD 15, $vf2, $vf2
     ; CHECK-NEXT: $vf6 = ADD 15, $vf2, $vf2
     ; CHECK-NEXT: $vf7 = ADD 15, $vf2, $vf2
     ; CHECK-NEXT: $vf8 = ADD 15, $vf2, $vf2
     ; CHECK-NEXT: $vf9 = ADD 15, $vf2, $vf2
-    ; CHECK-NEXT: $vf3 = MULq 15, $vf2, implicit $q
+    ; CHECK-NEXT: $vf3 = MULq 15, $vf2, $q
     ; CHECK-NEXT: PROGRAM_END
-    DIV $vf1, 3, $vf1, 3, implicit-def $q
+    $q = DIV $vf1, 3, $vf1, 3
     $vf4 = ADD 15, $vf2, $vf2
     $vf5 = ADD 15, $vf2, $vf2
     $vf6 = ADD 15, $vf2, $vf2
     $vf7 = ADD 15, $vf2, $vf2
     $vf8 = ADD 15, $vf2, $vf2
     $vf9 = ADD 15, $vf2, $vf2
-    $vf3 = MULq 15, $vf2, implicit $q
+    $vf3 = MULq 15, $vf2, $q
     PROGRAM_END
 ...
 ---
@@ -82,16 +82,16 @@ body: |
     ; CHECK-LABEL: name: own_word
     ; CHECK: liveins: $vf1, $vf2
     ; CHECK-NEXT: {{  $}}
-    ; CHECK-NEXT: SQRT $vf1, 0, implicit-def $q
+    ; CHECK-NEXT: $q = SQRT $vf1, 0
     ; CHECK-NEXT: WAITQ implicit-def $q, implicit $q
     ; CHECK-NEXT: BUNDLE {
-    ; CHECK-NEXT:   $vf3 = ADDq 8, $vf0, implicit $q
+    ; CHECK-NEXT:   $vf3 = ADDq 8, $vf0, $q
     ; CHECK-NEXT:   $vf4 = LQ 15, 0, $vi0
     ; CHECK-NEXT: }
     ; CHECK-NEXT: PROGRAM_END
-    SQRT $vf1, 0, implicit-def $q
+    $q = SQRT $vf1, 0
     BUNDLE {
-      $vf3 = ADDq 8, $vf0, implicit $q
+      $vf3 = ADDq 8, $vf0, $q
       $vf4 = LQ 15, 0, $vi0
     }
     PROGRAM_END

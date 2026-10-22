@@ -10,8 +10,9 @@
 // into a VF register. Instructions that broadcast the x field of t are
 // rewritten to read Q instead:
 //   ADDq.x t, vf0, q; MULx.xyzw d, a, t   ->   MULq.xyzw d, a, q
-// The ADDq is removed when it has no uses left. Q must not be written between
-// the ADDq and the rewritten instruction, which must be in the same block.
+// The ADDq is removed when it has no uses left. The rewritten instruction
+// must be in the same block, without another write of Q in between: the two
+// Q values would then be live at the same time.
 //
 //===----------------------------------------------------------------------===//
 
@@ -92,6 +93,7 @@ bool VUFoldQ::runOnMachineFunction(MachineFunction &MF) {
     for (MachineInstr *MovePtr : Moves) {
       MachineInstr &Move = *MovePtr;
       Register T = Move.getOperand(0).getReg();
+      const MachineOperand &Q = Move.getOperand(3);
 
       for (MachineBasicBlock::iterator I = std::next(Move.getIterator()),
                                        E = MBB.end();
@@ -105,11 +107,17 @@ bool VUFoldQ::runOnMachineFunction(MachineFunction &MF) {
               BuildMI(MBB, MI, MI.getDebugLoc(), TII.get(QOpc));
           for (unsigned Op = 0; Op != FtIdx; ++Op)
             MIB.add(MI.getOperand(Op));
+          MIB.addReg(Q.getReg());
+          MRI.clearKillFlags(Q.getReg());
           MI.eraseFromParent();
           Changed = true;
           continue;
         }
-        if (MI.modifiesRegister(VU::Q, /*TRI=*/nullptr))
+        if (any_of(MI.all_defs(), [&](const MachineOperand &MO) {
+              Register R = MO.getReg();
+              return R == VU::Q ||
+                     (R.isVirtual() && MRI.getRegClass(R) == &VU::QRRegClass);
+            }))
           break;
       }
 

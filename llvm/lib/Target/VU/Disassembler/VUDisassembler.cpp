@@ -72,6 +72,19 @@ static DecodeStatus DecodeVIRegisterClass(MCInst &Inst, uint64_t RegNo,
   return MCDisassembler::Success;
 }
 
+// ACC and Q are not encoded.
+static DecodeStatus DecodeACCRRegisterClass(MCInst &Inst,
+                                            const MCDisassembler *Decoder) {
+  Inst.addOperand(MCOperand::createReg(VU::ACC));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus DecodeQRRegisterClass(MCInst &Inst,
+                                          const MCDisassembler *Decoder) {
+  Inst.addOperand(MCOperand::createReg(VU::Q));
+  return MCDisassembler::Success;
+}
+
 template <unsigned N>
 static DecodeStatus decodeSImmOperand(MCInst &Inst, uint64_t Imm,
                                       uint64_t Address,

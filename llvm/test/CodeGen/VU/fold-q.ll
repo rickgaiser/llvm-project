@@ -13,9 +13,9 @@ define void @madd_q() {
   ; CHECK-NEXT:   [[LQ:%[0-9]+]]:vf = LQ 15, 0, $vi0 :: (load (s128))
   ; CHECK-NEXT:   [[LQ1:%[0-9]+]]:vf = LQ 15, 1, $vi0 :: (load (s128))
   ; CHECK-NEXT:   [[LQ2:%[0-9]+]]:vf = LQ 15, 2, $vi0 :: (load (s128))
-  ; CHECK-NEXT:   DIV $vf0, 3, [[LQ1]], 3, implicit-def $q
-  ; CHECK-NEXT:   MULA 15, [[LQ]], [[LQ1]], implicit-def $acc
-  ; CHECK-NEXT:   [[MADDq:%[0-9]+]]:vf = MADDq 15, [[LQ2]], implicit $acc, implicit $q
+  ; CHECK-NEXT:   [[DIV:%[0-9]+]]:qr = DIV $vf0, 3, [[LQ1]], 3
+  ; CHECK-NEXT:   [[MULA:%[0-9]+]]:accr = MULA 15, [[LQ]], [[LQ1]]
+  ; CHECK-NEXT:   [[MADDq:%[0-9]+]]:vf = MADDq [[MULA]], 15, [[LQ2]], [[DIV]]
   ; CHECK-NEXT:   SQ 15, [[MADDq]], 3, $vi0 :: (store (s128))
   ; CHECK-NEXT:   PROGRAM_END
   %a = call <4 x float> @llvm.vu.lq(i16 0)

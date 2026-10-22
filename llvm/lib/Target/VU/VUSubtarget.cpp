@@ -8,6 +8,7 @@
 
 #include "VUSubtarget.h"
 #include "MCTargetDesc/VUMCTargetDesc.h"
+#include "VU.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/ScheduleDAGMutation.h"
@@ -44,28 +45,27 @@ namespace {
 /// pipeliner, like the instructions of an ACC chain:
 ///   MULA, MADDA..., MADD  ->  MULA, ...
 ///   DIV, ADDq             ->  DIV, ...
-/// - The output dependence from a definition to the next one also follows
-///   from a read in between. It is removed, so that the read is on the path
-///   from one definition to the next, and the pipeliner orders it with them
-///   instead of after both.
-/// - The next write of ACC is an upper instruction after the read, so it is
-///   at least one word later.
+/// - The output dependence from a definition of P or I to the next one
+///   also follows from a read in between. It is removed, so that the read is
+///   on the path from one definition to the next, and the pipeliner orders it
+///   with them instead of after both.
 /// - A group starts only when all its instructions can follow without
 ///   waiting for other operands. Otherwise the start would be scheduled as
 ///   early as possible and the rest later, which makes ACC or Q busy for
 ///   longer, or puts the group in two stages.
 class ResultRegChains : public ScheduleDAGMutation {
-  /// Delays the group of \p Reg that \p Start defines until the operands of
-  /// all its instructions are ready.
+  /// Delays the group that \p Start begins until the operands of all its
+  /// instructions are ready. \p InGroup tells which registers the group
+  /// passes on.
   static void delayGroupStart(ScheduleDAGInstrs *DAG, SUnit *Start,
-                              Register Reg) {
+                              function_ref<bool(Register)> InGroup) {
     // The earliest cycle of each instruction of the group, relative to Start.
     DenseMap<SUnit *, unsigned> Offset = {{Start, 0}};
     SmallVector<SUnit *, 8> Worklist = {Start};
     while (!Worklist.empty()) {
       SUnit *SU = Worklist.pop_back_val();
       for (const SDep &D : SU->Succs) {
-        if (D.getKind() != SDep::Data || D.getReg() != Reg)
+        if (D.getKind() != SDep::Data || !InGroup(D.getReg()))
           continue;
         unsigned &O = Offset[D.getSUnit()];
         unsigned New = Offset[SU] + D.getLatency();
@@ -78,7 +78,7 @@ class ResultRegChains : public ScheduleDAGMutation {
     SmallVector<std::pair<SUnit *, unsigned>, 8> Edges;
     for (auto [SU, O] : Offset)
       for (const SDep &D : SU->Preds)
-        if (D.getKind() == SDep::Data && D.getReg() != Reg &&
+        if (D.getKind() == SDep::Data && !InGroup(D.getReg()) &&
             !Offset.count(D.getSUnit()) && D.getLatency() > O)
           Edges.push_back({D.getSUnit(), D.getLatency() - O});
     for (auto [Pred, Latency] : Edges) {
@@ -94,14 +94,11 @@ public:
       return D.getKind() == K && D.getReg() == Reg;
     };
     SmallVector<std::pair<SUnit *, SDep>, 8> Remove;
-    SmallVector<std::pair<SUnit *, SUnit *>, 8> Add;
     for (SUnit &SU : DAG->SUnits)
       for (const SDep &Succ : SU.Succs) {
-        if (isReg(Succ, SDep::Anti, VU::ACC))
-          Add.push_back({&SU, Succ.getSUnit()});
         Register Reg =
             Succ.getKind() == SDep::Output ? Succ.getReg() : Register();
-        if (Reg != VU::ACC && Reg != VU::Q && Reg != VU::P && Reg != VU::I)
+        if (Reg != VU::P && Reg != VU::I)
           continue;
         // A reader of this write that the next write depends on.
         SUnit *Next = Succ.getSUnit();
@@ -119,22 +116,62 @@ public:
       }
     for (auto [SU, Pred] : Remove)
       SU->removePred(Pred);
-    for (auto [Pred, Succ] : Add) {
-      SDep Dep(Pred, SDep::Artificial);
-      Dep.setLatency(1);
-      DAG->addEdge(Succ, Dep);
-    }
+
     // Groups start with a write that does not read the register: MULA, DIV.
-    for (SUnit &SU : DAG->SUnits)
-      for (Register Reg : {VU::ACC, VU::Q})
-        if (SU.getInstr()->modifiesRegister(Reg, /*TRI=*/nullptr) &&
-            !SU.getInstr()->readsRegister(Reg, /*TRI=*/nullptr))
-          delayGroupStart(DAG, &SU, Reg);
+    for (const TargetRegisterClass *RC : {&VU::ACCRRegClass, &VU::QRRegClass}) {
+      auto InGroup = [&](Register Reg) {
+        return Reg.isVirtual() && DAG->MRI.getRegClass(Reg) == RC;
+      };
+      auto IsGroupOp = [&](const MachineOperand &MO) {
+        return InGroup(MO.getReg());
+      };
+      for (SUnit &SU : DAG->SUnits) {
+        const MachineInstr &MI = *SU.getInstr();
+        if (any_of(MI.all_defs(), IsGroupOp) &&
+            none_of(MI.all_uses(), IsGroupOp))
+          delayGroupStart(DAG, &SU, InGroup);
+      }
+    }
   }
 };
 } // namespace
 
+namespace {
+/// There is only one ACC and one Q. Two values of one of them that are live
+/// at the same time cost a copy to a VF register and back, so the values
+/// keep their order: an instruction that starts a value without reading one
+/// follows the readers of the previous value.
+class SingleRegOrder : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override {
+    for (const TargetRegisterClass *RC : {&VU::ACCRRegClass, &VU::QRRegClass}) {
+      auto IsValue = [&](const MachineOperand &MO) {
+        return MO.getReg().isVirtual() &&
+               DAG->MRI.getRegClass(MO.getReg()) == RC;
+      };
+      SmallVector<SUnit *, 8> Readers;
+      for (SUnit &SU : DAG->SUnits) {
+        const MachineInstr &MI = *SU.getInstr();
+        bool Reads = any_of(MI.all_uses(), IsValue);
+        if (!Reads && any_of(MI.all_defs(), IsValue)) {
+          for (SUnit *Reader : Readers)
+            DAG->addEdge(&SU, SDep(Reader, SDep::Artificial));
+          Readers.clear();
+        }
+        if (Reads)
+          Readers.push_back(&SU);
+      }
+    }
+  }
+};
+} // namespace
+
+std::unique_ptr<ScheduleDAGMutation> llvm::createVUSingleRegOrderMutation() {
+  return std::make_unique<SingleRegOrder>();
+}
+
 void VUSubtarget::getSMSMutations(
     std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
   Mutations.push_back(std::make_unique<ResultRegChains>());
+  Mutations.push_back(createVUSingleRegOrderMutation());
 }

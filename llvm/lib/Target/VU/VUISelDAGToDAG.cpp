@@ -82,8 +82,8 @@ void VUDAGToDAGISel::Select(SDNode *N) {
   SelectCode(N);
 }
 
-// MULA, MADDA/MSUBA..., MADD/MSUB, glued together so that nothing else that
-// writes ACC is scheduled between them.
+// MULA, MADDA/MSUBA..., MADD/MSUB. Each instruction reads the ACC value of
+// the one before it.
 void VUDAGToDAGISel::selectAccSum(SDNode *N) {
   // Opcodes for the x, y, z and w broadcasts and for all fields.
   static constexpr unsigned MulA[] = {VU::MULAx, VU::MULAy, VU::MULAz,
@@ -100,21 +100,22 @@ void VUDAGToDAGISel::selectAccSum(SDNode *N) {
   SDLoc DL(N);
   SDValue Mask = CurDAG->getTargetConstant(15, DL, MVT::i32);
   unsigned NumTerms = N->getNumOperands() / 4;
-  SDValue Glue;
+  SDValue Acc;
   for (unsigned I = 0; I != NumTerms; ++I) {
     SDValue A = N->getOperand(4 * I), B = N->getOperand(4 * I + 1);
     unsigned Field = N->getConstantOperandVal(4 * I + 2);
     bool Neg = N->getConstantOperandVal(4 * I + 3);
-    SmallVector<SDValue, 4> Ops = {Mask, A, B};
-    if (Glue)
-      Ops.push_back(Glue);
+    SmallVector<SDValue, 4> Ops;
+    if (Acc)
+      Ops.push_back(Acc);
+    Ops.append({Mask, A, B});
     if (I + 1 == NumTerms) {
       unsigned Opc = Neg ? Msub[Field] : Madd[Field];
       ReplaceNode(N, CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops));
       return;
     }
     unsigned Opc = I == 0 ? MulA[Field] : Neg ? MsubA[Field] : MaddA[Field];
-    Glue = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::Glue, Ops), 0);
+    Acc = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops), 0);
   }
 }
 
@@ -137,8 +138,8 @@ std::pair<SDValue, SDValue> VUDAGToDAGISel::selectField(SDValue V,
   return {V, Field(0)};
 }
 
-// DIV q, a.f, b.f or SQRT q, b.f, glued to ADDq.x d, vf0, q. There is no
-// WAITQ: VUHazards inserts it where Q is read before the result is ready.
+// DIV q, a.f, b.f or SQRT q, b.f, then ADDq.x d, vf0, q. There is no WAITQ:
+// VUHazards inserts it where Q is read before the result is ready.
 void VUDAGToDAGISel::selectDivSqrt(SDNode *N) {
   SDLoc DL(N);
   SmallVector<SDValue, 4> Ops;
@@ -148,8 +149,8 @@ void VUDAGToDAGISel::selectDivSqrt(SDNode *N) {
     Ops.push_back(Field);
   }
   unsigned Opc = N->getOpcode() == ISD::FDIV ? VU::DIV : VU::SQRT;
-  SDValue Glue(CurDAG->getMachineNode(Opc, DL, MVT::Glue, Ops), 0);
+  SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::f32, Ops), 0);
   SDValue MoveOps[] = {CurDAG->getTargetConstant(8, DL, MVT::i32),
-                       CurDAG->getRegister(VU::VF0, MVT::v4f32), Glue};
+                       CurDAG->getRegister(VU::VF0, MVT::v4f32), Q};
   ReplaceNode(N, CurDAG->getMachineNode(VU::ADDq, DL, MVT::f32, MoveOps));
 }

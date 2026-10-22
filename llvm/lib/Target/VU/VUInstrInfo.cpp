@@ -44,6 +44,40 @@ void VUInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
         .addImm(0);
     return;
   }
+  if (VU::VFRegClass.contains(DestReg) && SrcReg == VU::ACC) {
+    // MSUBx.xyzw d, vf0, vf0x: acc - vf0 * 0 keeps the sign of zero.
+    BuildMI(MBB, MBBI, DL, get(VU::MSUBx), DestReg)
+        .addReg(VU::ACC, getKillRegState(KillSrc))
+        .addImm(MaskXYZW)
+        .addReg(VU::VF0)
+        .addReg(VU::VF0);
+    return;
+  }
+  if (DestReg == VU::ACC && VU::VFRegClass.contains(SrcReg)) {
+    // MULAw.xyzw acc, s, vf0w (vf0.w is 1)
+    BuildMI(MBB, MBBI, DL, get(VU::MULAw), DestReg)
+        .addImm(MaskXYZW)
+        .addReg(SrcReg, getKillRegState(KillSrc))
+        .addReg(VU::VF0);
+    return;
+  }
+  if (VU::VFRegClass.contains(DestReg) && SrcReg == VU::Q) {
+    // ADDq.x d, vf0, q
+    BuildMI(MBB, MBBI, DL, get(VU::ADDq), DestReg)
+        .addImm(MaskX)
+        .addReg(VU::VF0)
+        .addReg(VU::Q, getKillRegState(KillSrc));
+    return;
+  }
+  if (DestReg == VU::Q && VU::VFRegClass.contains(SrcReg)) {
+    // DIV q, s.x, vf0.w (vf0.w is 1)
+    BuildMI(MBB, MBBI, DL, get(VU::DIV), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc))
+        .addImm(0)
+        .addReg(VU::VF0)
+        .addImm(3);
+    return;
+  }
   report_fatal_error("VU: unsupported register copy");
 }
 
@@ -150,10 +184,15 @@ VUInstrInfo::CreateTargetScheduleState(const TargetSubtargetInfo &STI) const {
   return static_cast<const VUSubtarget &>(STI).createDFAPacketizer(II);
 }
 
-static bool isVIReg(Register Reg, const MachineRegisterInfo &MRI) {
+static bool isReg(const TargetRegisterClass &RC, Register Reg,
+                  const MachineRegisterInfo &MRI) {
   if (Reg.isVirtual())
-    return MRI.getRegClass(Reg) == &VU::VIRegClass;
-  return VU::VIRegClass.contains(Reg);
+    return MRI.getRegClass(Reg) == &RC;
+  return RC.contains(Reg);
+}
+
+static bool isVIReg(Register Reg, const MachineRegisterInfo &MRI) {
+  return isReg(VU::VIRegClass, Reg, MRI);
 }
 
 /// Returns true if a conditional branch may directly follow \p MI when it
@@ -229,8 +268,9 @@ static unsigned getResultLatency(const MachineInstr &MI, Register Reg) {
     return 0;
   // ACC is forwarded between FMAC instructions; I, R and VI results are
   // available to the next word.
-  if (Reg == VU::ACC || Reg == VU::I || Reg == VU::R ||
-      isVIReg(Reg, MI.getMF()->getRegInfo()))
+  const MachineRegisterInfo &MRI = MI.getMF()->getRegInfo();
+  if (Reg == VU::I || Reg == VU::R || isReg(VU::ACCRRegClass, Reg, MRI) ||
+      isVIReg(Reg, MRI))
     return 1;
   // FMAC pipeline.
   return 4;
