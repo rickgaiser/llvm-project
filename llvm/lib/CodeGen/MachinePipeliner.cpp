@@ -3751,6 +3751,8 @@ bool SMSchedule::normalizeNonPipelinedInstructions(
 // case should be considered invalid.  (The test checks for both
 // earlier and same-cycle use to be more robust.)
 bool SMSchedule::isValidSchedule(SwingSchedulerDAG *SSD) {
+  // The cycles from each definition of a physical register to its last use.
+  DenseMap<Register, SmallVector<std::pair<int, int>, 4>> LiveRanges;
   for (SUnit &SU : SSD->SUnits) {
     if (!SU.hasPhysRegDefs)
       continue;
@@ -3767,7 +3769,37 @@ bool SMSchedule::isValidSchedule(SwingSchedulerDAG *SSD) {
             return false;
         }
     }
+    for (const MachineOperand &MO : SU.getInstr()->all_defs()) {
+      if (!MO.getReg().isPhysical())
+        continue;
+      int LastUse = CycleDef;
+      for (auto &OE : SSD->getDDG()->getOutEdges(&SU))
+        if (OE.isAssignedRegDep() && OE.getReg() == MO.getReg() &&
+            !OE.getDst()->isBoundaryNode())
+          LastUse = std::max(LastUse, InstrToCycle[OE.getDst()]);
+      LiveRanges[MO.getReg()].push_back({CycleDef, LastUse});
+    }
   }
+
+  // A physical register is not renamed between iterations. No definition, of
+  // any iteration, may write it while the value of another definition is
+  // still needed. Definitions are II cycles apart in consecutive iterations,
+  // so it is enough to look at the first write after each definition. A
+  // write in the cycle of the last use is ordered after it.
+  int II = InitiationInterval;
+  for (const auto &[Reg, Ranges] : LiveRanges)
+    for (unsigned I = 0, E = Ranges.size(); I != E; ++I)
+      for (unsigned J = 0; J != E; ++J) {
+        auto [Def, LastUse] = Ranges[I];
+        int Delta = ((Ranges[J].first - Def) % II + II) % II;
+        if ((Delta == 0 && I != J) || Def + (Delta ? Delta : II) < LastUse) {
+          LLVM_DEBUG(dbgs()
+                     << "Invalid schedule: " << printReg(Reg, SSD->TRI)
+                     << " is live from cycle " << Def << " to " << LastUse
+                     << ", but written in cycle " << Ranges[J].first << "\n");
+          return false;
+        }
+      }
   return true;
 }
 
