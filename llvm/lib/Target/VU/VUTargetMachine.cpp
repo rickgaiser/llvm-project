@@ -96,12 +96,12 @@ public:
     for (auto [Reg, Def] : LastDef) {
       auto [SU, OpIdx] = Def;
       const Read &R = FirstRead[Reg];
-      // The read is behind the branch, its delay slot and about two
-      // instructions per word.
+      // The branch usually shares the last word, so the read is behind the
+      // delay slot and about two instructions per word.
       int Latency =
           DAG->getSchedModel()->computeOperandLatency(
               SU->getInstr(), OpIdx, R.MO->getParent(), R.MO->getOperandNo()) -
-          2 - R.Index / 2;
+          1 - R.Index / 2;
       if (Latency <= 0)
         continue;
       SDep Dep(SU, SDep::Artificial);

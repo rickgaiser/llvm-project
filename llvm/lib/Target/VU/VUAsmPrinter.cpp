@@ -108,7 +108,7 @@ void VUAsmPrinter::emitInstruction(const MachineInstr *MI) {
   } else {
     for (auto I = std::next(MI->getIterator());
          I != MI->getParent()->instr_end() && I->isInsideBundle(); ++I)
-      if (!I->isMetaInstruction())
+      if (!I->isMetaInstruction() && I->getOpcode() != VU::DELAY_SLOT)
         Place(*I);
   }
   emitBundle(Upper, Lower, 0);

@@ -76,9 +76,8 @@ define void @recurrence() {
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; in Loop: Header=BB1_2 Depth=1
-; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop b .LBB1_2
-; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:  .LBB1_3:
 ; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop[e] nop

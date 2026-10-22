@@ -61,6 +61,11 @@ def DSNOP : VUUpperExt<0x2f, (outs), (ins), "nop"> {
   let Inst{24-11} = 0;
 }
 
+// Marks a word with instructions in the delay slot of a branch, which makes
+// the word a terminator. It has no encoding.
+let isTerminator = 1 in
+def DELAY_SLOT : VUPseudo<(outs), (ins)>;
+
 // The pseudos below are expanded after register allocation
 // (VUInstrInfo::expandPostRAPseudo).
 
