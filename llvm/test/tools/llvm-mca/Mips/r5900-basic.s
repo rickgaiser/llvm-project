@@ -48,12 +48,12 @@
 # CHECK-NEXT:  1      1     1.00                        mula.s	$f1, $f2
 # CHECK-NEXT:  1      1     1.00                        madda.s	$f3, $f4
 # CHECK-NEXT:  1      4     1.00                        madd.s	$f0, $f5, $f6
-# CHECK-NEXT:  1      2     2.00                        qmtc2	$9, $$vf1
-# CHECK-NEXT:  1      1     1.00                        vmula.xyzw	$$acc, $$vf1, $$vf2
-# CHECK-NEXT:  1      1     1.00                        vmadda.xyzw	$$acc, $$vf3, $$vf4
-# CHECK-NEXT:  1      4     1.00                        vmadd.xyzw	$$vf5, $$vf6, $$vf7
-# CHECK-NEXT:  1      9     9.00                  U     vdiv	$$q, $vf1x, $vf2y
+# CHECK-NEXT:  1      2     2.00                        qmtc2	$9, $vf1
+# CHECK-NEXT:  1      1     1.00                        vmula.xyzw	$acc, $vf1, $vf2
+# CHECK-NEXT:  1      1     1.00                        vmadda.xyzw	$acc, $vf3, $vf4
+# CHECK-NEXT:  1      4     1.00                        vmadd.xyzw	$vf5, $vf6, $vf7
+# CHECK-NEXT:  1      9     9.00                  U     vdiv	$q, $vf1x, $vf2y
 # CHECK-NEXT:  1      1     1.00                  U     vwaitq
 # CHECK-NEXT:  1      1     1.00                        paddw	$10, $11, $12
 # CHECK-NEXT:  1      4     2.00                        pmultw	$13, $14, $15
-# CHECK-NEXT:  1      1     1.00                  U     plzcw	$16, $17
+# CHECK-NEXT:  1      1     1.00                        plzcw	$16, $17

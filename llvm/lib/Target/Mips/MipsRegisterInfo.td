@@ -272,21 +272,21 @@ let Namespace = "Mips" in {
   def FCC#I : MipsReg<I, "fcc"#I>;
 
   // R5900 FPU Accumulator register
-  def FPU_ACC : MipsReg<0, "$acc">;
+  def FPU_ACC : MipsReg<0, "acc">;
 
   // R5900 VU0 (COP2) Vector Float Registers - 128-bit (4x32-bit floats)
   // VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
-  let isConstant = true in def VF0 : MipsReg<0, "$vf0">, DwarfRegNum<[112]>;
-  foreach I = 1 -31 in def VF#I : MipsReg<I, "$vf"#I>,
+  let isConstant = true in def VF0 : MipsReg<0, "vf0">, DwarfRegNum<[112]>;
+  foreach I = 1 -31 in def VF#I : MipsReg<I, "vf"#I>,
           DwarfRegNum<[!add(I, 112)]>;
 
   // R5900 VU0 Accumulator register - 128-bit (4x32-bit floats)
   // Used by VADDA, VSUBA, VMULA, VMADD, VMSUB, etc.
-  def VU0ACC : MipsReg<0, "$acc">, DwarfRegNum<[144]>;
+  def VU0ACC : MipsReg<0, "acc">, DwarfRegNum<[144]>;
 
   // R5900 VU0 Q register - 32-bit float result register for division/sqrt
   // Used by VDIV, VSQRT, VRSQRT, VMULQ, etc.
-  def VU0Q : MipsReg<0, "$Q">, DwarfRegNum<[145]>;
+  def VU0Q : MipsReg<0, "Q">, DwarfRegNum<[145]>;
 
   // COP0 registers.
   foreach I = 0-31 in

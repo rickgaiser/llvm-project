@@ -10,9 +10,9 @@ define <4 x i32> @ogt(<4 x float> %a, <4 x float> %b) { %c = fcmp ogt <4 x float
 ; CHECK-LABEL: ogt:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    pnor $1, $zero, $zero
-; CHECK-NEXT:    qmfc2 $2, $$vf13
+; CHECK-NEXT:    qmfc2 $2, $vf13
 ; CHECK-NEXT:    psrlw $1, $1, 1
-; CHECK-NEXT:    qmfc2 $4, $$vf12
+; CHECK-NEXT:    qmfc2 $4, $vf12
 ; CHECK-NEXT:    pand $3, $2, $1
 ; CHECK-NEXT:    psraw $2, $2, 31
 ; CHECK-NEXT:    pxor $3, $3, $2

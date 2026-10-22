@@ -6,7 +6,7 @@ define <4 x float> @broadcast_add_y(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: broadcast_add_y:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    vaddy.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    vaddy.xyzw $vf1, $vf12, $vf13
   %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
   %r = fadd <4 x float> %splat, %a
   ret <4 x float> %r
@@ -16,7 +16,7 @@ define <4 x float> @broadcast_sub_w(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: broadcast_sub_w:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    vsubw.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    vsubw.xyzw $vf1, $vf12, $vf13
   %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
   %r = fsub <4 x float> %a, %splat
   ret <4 x float> %r
@@ -26,10 +26,10 @@ define <4 x float> @broadcast_sub_w(<4 x float> %a, <4 x float> %b) {
 define <4 x float> @broadcast_rsub_x(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: broadcast_rsub_x:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vsub.xyzw $$vf1, $$vf13, $$vf13
-; CHECK-NEXT:    vaddx.xyzw $$vf1, $$vf1, $$vf13
+; CHECK-NEXT:    vsub.xyzw $vf1, $vf13, $vf13
+; CHECK-NEXT:    vaddx.xyzw $vf1, $vf1, $vf13
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    vsub.xyzw $$vf1, $$vf1, $$vf12
+; CHECK-NEXT:    vsub.xyzw $vf1, $vf1, $vf12
   %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> zeroinitializer
   %r = fsub <4 x float> %splat, %a
   ret <4 x float> %r
@@ -39,10 +39,10 @@ define <4 x float> @broadcast_rsub_x(<4 x float> %a, <4 x float> %b) {
 define float @reduce_fadd(<4 x float> %v) {
 ; CHECK-LABEL: reduce_fadd:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vaddy.xyzw $$vf2, $$vf12, $$vf12
-; CHECK-NEXT:    vaddz.xyzw $$vf1, $$vf2, $$vf1
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vaddw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vaddy.xyzw $vf2, $vf12, $vf12
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -53,13 +53,13 @@ define float @reduce_fadd(<4 x float> %v) {
 define float @dot4(ptr %a, ptr %b) {
 ; CHECK-LABEL: dot4:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    lqc2 $$vf1, 0($4)
-; CHECK-NEXT:    lqc2 $$vf2, 0($5)
-; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf1, $$vf2
-; CHECK-NEXT:    vaddw.xyzw $$vf2, $$vf1, $$vf1
-; CHECK-NEXT:    vaddy.xyzw $$vf1, $$vf1, $$vf1
-; CHECK-NEXT:    vaddz.xyzw $$vf1, $$vf1, $$vf2
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    lqc2 $vf1, 0($4)
+; CHECK-NEXT:    lqc2 $vf2, 0($5)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf2
+; CHECK-NEXT:    vaddw.xyzw $vf2, $vf1, $vf1
+; CHECK-NEXT:    vaddy.xyzw $vf1, $vf1, $vf1
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf1, $vf2
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -74,10 +74,10 @@ define float @dot4(ptr %a, ptr %b) {
 define float @sum_chain(<4 x float> %m) {
 ; CHECK-LABEL: sum_chain:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vaddy.xyzw $$vf2, $$vf12, $$vf12
-; CHECK-NEXT:    vaddz.xyzw $$vf1, $$vf2, $$vf1
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vaddw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vaddy.xyzw $vf2, $vf12, $vf12
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -95,9 +95,9 @@ define float @sum_chain(<4 x float> %m) {
 define float @sum_xyz(<4 x float> %m) {
 ; CHECK-LABEL: sum_xyz:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddy.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vaddz.xyzw $$vf1, $$vf1, $$vf12
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vaddy.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -112,8 +112,8 @@ define float @sum_xyz(<4 x float> %m) {
 define float @sum_xw(<4 x float> %m) {
 ; CHECK-LABEL: sum_xw:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vaddw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -126,10 +126,10 @@ define float @sum_xw(<4 x float> %m) {
 define float @sum_wzyx(<4 x float> %m) {
 ; CHECK-LABEL: sum_wzyx:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vaddy.xyzw $$vf2, $$vf12, $$vf12
-; CHECK-NEXT:    vaddz.xyzw $$vf1, $$vf2, $$vf1
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vaddw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vaddy.xyzw $vf2, $vf12, $vf12
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -147,7 +147,7 @@ define float @sum_wzyx(<4 x float> %m) {
 define float @sum_yz(<4 x float> %m) {
 ; CHECK-LABEL: sum_yz:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    dsrl32 $2, $1, 0
 ; CHECK-NEXT:    pcpyud $1, $1, $1
 ; CHECK-NEXT:    mtc1 $2, $f0
@@ -163,7 +163,7 @@ define float @sum_yz(<4 x float> %m) {
 define float @sum_xxy(<4 x float> %m) {
 ; CHECK-LABEL: sum_xxy:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    dsrl32 $1, $1, 0
 ; CHECK-NEXT:    add.s $f0, $f0, $f0
@@ -180,8 +180,8 @@ define float @sum_xxy(<4 x float> %m) {
 define float @sum_two_vectors(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: sum_two_vectors:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    qmfc2 $1, $$vf12
-; CHECK-NEXT:    qmfc2 $2, $$vf13
+; CHECK-NEXT:    qmfc2 $1, $vf12
+; CHECK-NEXT:    qmfc2 $2, $vf13
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    dsrl32 $1, $2, 0
 ; CHECK-NEXT:    mtc1 $1, $f1
@@ -198,7 +198,7 @@ define <4 x float> @broadcast_max_z(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: broadcast_max_z:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    vmaxz.xyzw $vf1, $vf12, $vf13
   %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
   %r = call <4 x float> @llvm.maxnum.v4f32(<4 x float> %splat, <4 x float> %a)
   ret <4 x float> %r
@@ -208,7 +208,7 @@ define <4 x float> @broadcast_min_x(<4 x float> %a, <4 x float> %b) {
 ; CHECK-LABEL: broadcast_min_x:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    vminix.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    vminix.xyzw $vf1, $vf12, $vf13
   %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> zeroinitializer
   %r = call <4 x float> @llvm.minnum.v4f32(<4 x float> %a, <4 x float> %splat)
   ret <4 x float> %r
@@ -218,10 +218,10 @@ define <4 x float> @broadcast_min_x(<4 x float> %a, <4 x float> %b) {
 define float @reduce_fmax(<4 x float> %v) {
 ; CHECK-LABEL: reduce_fmax:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmaxw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vmaxy.xyzw $$vf2, $$vf12, $$vf12
-; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf2, $$vf1
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vmaxw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vmaxy.xyzw $vf2, $vf12, $vf12
+; CHECK-NEXT:    vmaxz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -232,10 +232,10 @@ define float @reduce_fmax(<4 x float> %v) {
 define float @reduce_fmin(<4 x float> %v) {
 ; CHECK-LABEL: reduce_fmin:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vminiw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vminiy.xyzw $$vf2, $$vf12, $$vf12
-; CHECK-NEXT:    vminiz.xyzw $$vf1, $$vf2, $$vf1
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vminiw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vminiy.xyzw $vf2, $vf12, $vf12
+; CHECK-NEXT:    vminiz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -246,9 +246,9 @@ define float @reduce_fmin(<4 x float> %v) {
 define float @max_xyz(<4 x float> %m) {
 ; CHECK-LABEL: max_xyz:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmaxy.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf1, $$vf12
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vmaxy.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    vmaxz.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -264,8 +264,8 @@ define float @max_xyz(<4 x float> %m) {
 define float @min_xwx(<4 x float> %m) {
 ; CHECK-LABEL: min_xwx:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vminiw.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    vminiw.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    qmfc2 $1, $vf1
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -280,11 +280,11 @@ define float @min_xwx(<4 x float> %m) {
 define float @max_of_sum(<4 x float> %m) {
 ; CHECK-LABEL: max_of_sum:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vaddy.xyzw $$vf1, $$vf12, $$vf12
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    vaddy.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    pcpyud $1, $1, $1
 ; CHECK-NEXT:    mtc1 $1, $f0
-; CHECK-NEXT:    qmfc2 $2, $$vf1
+; CHECK-NEXT:    qmfc2 $2, $vf1
 ; CHECK-NEXT:    mtc1 $2, $f1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    max.s $f0, $f1, $f0
@@ -304,7 +304,7 @@ define float @max_xy_ieee(<4 x float> %m) {
 ; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
 ; CHECK-NEXT:    .cfi_offset 31, -8
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    mtc1 $1, $f12
 ; CHECK-NEXT:    dsrl32 $1, $1, 0
 ; CHECK-NEXT:    mtc1 $1, $f13
@@ -326,7 +326,7 @@ define float @sum_xy_reassoc(<4 x float> %m) {
 ; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
 ; CHECK-NEXT:    .cfi_offset 31, -8
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    mtc1 $1, $f12
 ; CHECK-NEXT:    dsrl32 $1, $1, 0
 ; CHECK-NEXT:    mtc1 $1, $f13

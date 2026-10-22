@@ -39,9 +39,9 @@ define void @copy_vu0(ptr %p) {
 ; VU0-LABEL: copy_vu0:
 ; VU0:       # %bb.0:
 ; VU0-NEXT:    sll $1, $4, 0
-; VU0-NEXT:    lqc2 $$vf1, 32($1)
+; VU0-NEXT:    lqc2 $vf1, 32($1)
 ; VU0-NEXT:    jr $ra
-; VU0-NEXT:    sqc2 $$vf1, 48($1)
+; VU0-NEXT:    sqc2 $vf1, 48($1)
   %src = getelementptr i8, ptr %p, i32 32
   %dst = getelementptr i8, ptr %p, i32 48
   %v = load <4 x float>, ptr %src, align 16

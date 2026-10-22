@@ -10,12 +10,12 @@
 define void @sum3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
 ; CHECK-LABEL: sum3:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf15
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf12, $vf15
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vmadday.xyzw $$acc, $$vf13, $$vf15
-; CHECK-NEXT:    vmaddz.xyzw $$vf1, $$vf14, $$vf15
+; CHECK-NEXT:    vmadday.xyzw $acc, $vf13, $vf15
+; CHECK-NEXT:    vmaddz.xyzw $vf1, $vf14, $vf15
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                   <4 x float> %v) {
   %x = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
   %y = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
@@ -33,13 +33,13 @@ define void @sum2_const(ptr %p, <4 x float> %m0, <4 x float> %m1,
 ; CHECK-LABEL: sum2_const:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    lui $1, %hi(.LCPI1_0)
-; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf14
-; CHECK-NEXT:    lqc2 $$vf1, %lo(.LCPI1_0)($1)
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf12, $vf14
+; CHECK-NEXT:    lqc2 $vf1, %lo(.LCPI1_0)($1)
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vmadday.xyzw $$acc, $$vf13, $$vf14
-; CHECK-NEXT:    vmaddw.xyzw $$vf1, $$vf1, $$vf0
+; CHECK-NEXT:    vmadday.xyzw $acc, $vf13, $vf14
+; CHECK-NEXT:    vmaddw.xyzw $vf1, $vf1, $vf0
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                         <4 x float> %v) {
   %x = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
   %y = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
@@ -54,11 +54,11 @@ define void @sum2_const(ptr %p, <4 x float> %m0, <4 x float> %m1,
 define void @sum2_zero(ptr %p, <4 x float> %m0, <4 x float> %m1,
 ; CHECK-LABEL: sum2_zero:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf14
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf12, $vf14
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vmaddy.xyzw $$vf1, $$vf13, $$vf14
+; CHECK-NEXT:    vmaddy.xyzw $vf1, $vf13, $vf14
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                        <4 x float> %v) {
   %x = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
   %y = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
@@ -74,12 +74,12 @@ define void @sum2_zero(ptr %p, <4 x float> %m0, <4 x float> %m1,
 define void @sub3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
 ; CHECK-LABEL: sub3:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf15
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf12, $vf15
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vmsubay.xyzw $$acc, $$vf13, $$vf15
-; CHECK-NEXT:    vmsubz.xyzw $$vf1, $$vf14, $$vf15
+; CHECK-NEXT:    vmsubay.xyzw $acc, $vf13, $vf15
+; CHECK-NEXT:    vmsubz.xyzw $vf1, $vf14, $vf15
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                   <4 x float> %v) {
   %x = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
   %y = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
@@ -97,12 +97,12 @@ define void @sub3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
 define void @full(ptr %p, <4 x float> %a, <4 x float> %b, <4 x float> %c,
 ; CHECK-LABEL: full:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmula.xyzw $$acc, $$vf12, $$vf13
+; CHECK-NEXT:    vmula.xyzw $acc, $vf12, $vf13
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vmadda.xyzw $$acc, $$vf14, $$vf15
-; CHECK-NEXT:    vmsubw.xyzw $$vf1, $$vf12, $$vf0
+; CHECK-NEXT:    vmadda.xyzw $acc, $vf14, $vf15
+; CHECK-NEXT:    vmsubw.xyzw $vf1, $vf12, $vf0
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                   <4 x float> %d) {
   %x = fmul <4 x float> %a, %b
   %y = fmul <4 x float> %c, %d
@@ -116,11 +116,11 @@ define void @full(ptr %p, <4 x float> %a, <4 x float> %b, <4 x float> %c,
 define void @one_product(ptr %p, <4 x float> %a, <4 x float> %b,
 ; CHECK-LABEL: one_product:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf12, $vf13
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vsub.xyzw $$vf1, $$vf14, $$vf1
+; CHECK-NEXT:    vsub.xyzw $vf1, $vf14, $vf1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
                          <4 x float> %c) {
   %x = fmul <4 x float> %a, %b
   %t = fsub <4 x float> %c, %x
@@ -132,14 +132,14 @@ define void @one_product(ptr %p, <4 x float> %a, <4 x float> %b,
 define void @used_twice(ptr %p, ptr %q, <4 x float> %a, <4 x float> %b,
 ; CHECK-LABEL: used_twice:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmula.xyzw $$acc, $$vf12, $$vf13
+; CHECK-NEXT:    vmula.xyzw $acc, $vf12, $vf13
 ; CHECK-NEXT:    sll $1, $5, 0
-; CHECK-NEXT:    vmadd.xyzw $$vf1, $$vf14, $$vf15
+; CHECK-NEXT:    vmadd.xyzw $vf1, $vf14, $vf15
 ; CHECK-NEXT:    sll $2, $4, 0
-; CHECK-NEXT:    vadd.xyzw $$vf2, $$vf1, $$vf16
-; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    vadd.xyzw $vf2, $vf1, $vf16
+; CHECK-NEXT:    sqc2 $vf1, 0($1)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sqc2 $$vf2, 0($2)
+; CHECK-NEXT:    sqc2 $vf2, 0($2)
                         <4 x float> %c, <4 x float> %d, <4 x float> %e) {
   %x = fmul <4 x float> %a, %b
   %y = fmul <4 x float> %c, %d

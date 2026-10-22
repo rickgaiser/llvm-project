@@ -211,8 +211,8 @@ class VU0_3R<string opstr, bits<6> funct>
 // ACC)
 class VU0_ACC<string opstr, bits<11> funct, list<Register> UseRegs = []>
     : InstSE<(outs),
-             (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, "$dest\t$acc, $fs, $ft"), [], FrmR,
+             (ins vu0destmask:$dest, VU0AccOpnd:$accd, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, "$dest\t$accd, $fs, $ft"), [], FrmR,
              opstr> {
   let DecoderNamespace = "R5900";
   let Defs = [VU0ACC];
@@ -483,8 +483,8 @@ class VU0_3R_BC_ACC<string opstr, string suffix, bits<4> opcode, bits<2> bc>
 class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
                  list<Register> UseRegs = []>
     : InstSE<(outs),
-             (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, suffix, "$dest\t$acc, $fs, $ft"), [], FrmR,
+             (ins vu0destmask:$dest, VU0AccOpnd:$accd, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$dest\t$accd, $fs, $ft"), [], FrmR,
              opstr> {
   let DecoderNamespace = "R5900";
   let Defs = [VU0ACC];
@@ -657,8 +657,8 @@ let Predicates = [HasVU0] in {
   // Encoding: COP2 + dest + ft + fs + special(01011111110)
   def VOPMULA
       : InstSE<(outs),
-               (ins vu0destmask:$dest, VU0AccOpnd:$acc, VFOpnd:$fs, VFOpnd:$ft),
-               "vopmula$dest\t$acc, $fs, $ft", [], FrmR,
+               (ins vu0destmask:$dest, VU0AccOpnd:$accd, VFOpnd:$fs, VFOpnd:$ft),
+               "vopmula$dest\t$accd, $fs, $ft", [], FrmR,
                "vopmula"> {
     bits<5> fs;
     bits<5> ft;

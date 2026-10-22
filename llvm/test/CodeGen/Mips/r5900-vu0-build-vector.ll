@@ -16,7 +16,7 @@ define <4 x float> @build(float %a, float %b, float %c, float %d) {
 ; CHECK-NEXT:    pextlw $1, $1, $4
 ; CHECK-NEXT:    pcpyld $1, $1, $2
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %1 = insertelement <4 x float> poison, float %a, i32 0
   %2 = insertelement <4 x float> %1, float %b, i32 1
   %3 = insertelement <4 x float> %2, float %c, i32 2
@@ -36,7 +36,7 @@ define <4 x float> @build_loads(ptr %p) {
 ; CHECK-NEXT:    pextlw $1, $1, $3
 ; CHECK-NEXT:    pcpyld $1, $1, $2
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %a = load float, ptr %p
   %q1 = getelementptr float, ptr %p, i32 4
   %b = load float, ptr %q1
@@ -58,7 +58,7 @@ define <4 x float> @build_low(float %a, float %b) {
 ; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    swc1 $f13, 4($sp)
 ; CHECK-NEXT:    swc1 $f12, 0($sp)
-; CHECK-NEXT:    lqc2 $$vf1, 0($sp)
+; CHECK-NEXT:    lqc2 $vf1, 0($sp)
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    addiu $sp, $sp, 16
   %1 = insertelement <4 x float> poison, float %a, i32 0
@@ -73,7 +73,7 @@ define <4 x float> @splat(float %a) {
 ; CHECK-NEXT:    pextlw $1, $1, $1
 ; CHECK-NEXT:    pcpyld $1, $1, $1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %1 = insertelement <4 x float> poison, float %a, i32 0
   %2 = shufflevector <4 x float> %1, <4 x float> poison, <4 x i32> zeroinitializer
   ret <4 x float> %2
@@ -87,7 +87,7 @@ define <4 x float> @splat_load(ptr %p) {
 ; CHECK-NEXT:    pextlw $1, $1, $1
 ; CHECK-NEXT:    pcpyld $1, $1, $1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %a = load float, ptr %p
   %1 = insertelement <4 x float> poison, float %a, i32 0
   %2 = shufflevector <4 x float> %1, <4 x float> poison, <4 x i32> zeroinitializer
@@ -99,10 +99,10 @@ define <4 x float> @insert1(<4 x float> %v, float %a) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    addiu $sp, $sp, -16
 ; CHECK-NEXT:    .cfi_def_cfa_offset 16
-; CHECK-NEXT:    vmove.xyzw $$vf1, $$vf12
+; CHECK-NEXT:    vmove.xyzw $vf1, $vf12
 ; CHECK-NEXT:    swc1 $f12, 4($sp)
-; CHECK-NEXT:    lqc2 $$vf2, 0($sp)
-; CHECK-NEXT:    vmove.y $$vf1, $$vf2
+; CHECK-NEXT:    lqc2 $vf2, 0($sp)
+; CHECK-NEXT:    vmove.y $vf1, $vf2
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    addiu $sp, $sp, 16
   %r = insertelement <4 x float> %v, float %a, i32 1
@@ -114,10 +114,10 @@ define <4 x float> @insert3(<4 x float> %v, float %a) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    addiu $sp, $sp, -16
 ; CHECK-NEXT:    .cfi_def_cfa_offset 16
-; CHECK-NEXT:    vmove.xyzw $$vf1, $$vf12
+; CHECK-NEXT:    vmove.xyzw $vf1, $vf12
 ; CHECK-NEXT:    swc1 $f12, 12($sp)
-; CHECK-NEXT:    lqc2 $$vf2, 0($sp)
-; CHECK-NEXT:    vmove.w $$vf1, $$vf2
+; CHECK-NEXT:    lqc2 $vf2, 0($sp)
+; CHECK-NEXT:    vmove.w $vf1, $vf2
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    addiu $sp, $sp, 16
   %r = insertelement <4 x float> %v, float %a, i32 3
@@ -127,7 +127,7 @@ define <4 x float> @insert3(<4 x float> %v, float %a) {
 define <4 x float> @reverse(<4 x float> %v) {
 ; CHECK-LABEL: reverse:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    dsrl32 $2, $1, 0
 ; CHECK-NEXT:    pextlw $2, $1, $2
 ; CHECK-NEXT:    pcpyud $1, $1, $1
@@ -135,7 +135,7 @@ define <4 x float> @reverse(<4 x float> %v) {
 ; CHECK-NEXT:    pextlw $1, $1, $3
 ; CHECK-NEXT:    pcpyld $1, $2, $1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %r = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
   ret <4 x float> %r
 }

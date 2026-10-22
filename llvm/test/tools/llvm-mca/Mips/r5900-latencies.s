@@ -57,9 +57,9 @@
 # CHECK-NEXT: [0,12]    .    .    .    .    .   DE    .    .    ..   bc1f	.Ltmp0
 # CHECK-NEXT: [0,13]    .    .    .    .    .   DE    .    .    ..   nop
 # CHECK-NEXT: [0,14]    .    .    .    .    .    DE   .    .    ..   nop
-# CHECK-NEXT: [0,15]    .    .    .    .    .    DeeeE.    .    ..   vadd.xyzw	$$vf1, $$vf2, $$vf3
-# CHECK-NEXT: [0,16]    .    .    .    .    .    .    DeE  .    ..   qmfc2	$16, $$vf1
-# CHECK-NEXT: [0,17]    .    .    .    .    .    .    .DeeeeeeeeE.   vdiv	$$q, $vf1x, $vf2x
+# CHECK-NEXT: [0,15]    .    .    .    .    .    DeeeE.    .    ..   vadd.xyzw	$vf1, $vf2, $vf3
+# CHECK-NEXT: [0,16]    .    .    .    .    .    .    DeE  .    ..   qmfc2	$16, $vf1
+# CHECK-NEXT: [0,17]    .    .    .    .    .    .    .DeeeeeeeeE.   vdiv	$q, $vf1x, $vf2x
 # CHECK-NEXT: [0,18]    .    .    .    .    .    .    .    .    DE   vwaitq
 
 # CHECK:      Average Wait times (based on the timeline view):
@@ -84,8 +84,8 @@
 # CHECK-NEXT: 12.    1     0.0    0.0    0.0       bc1f	.Ltmp0
 # CHECK-NEXT: 13.    1     0.0    0.0    0.0       nop
 # CHECK-NEXT: 14.    1     0.0    0.0    0.0       nop
-# CHECK-NEXT: 15.    1     0.0    0.0    0.0       vadd.xyzw	$$vf1, $$vf2, $$vf3
-# CHECK-NEXT: 16.    1     0.0    0.0    0.0       qmfc2	$16, $$vf1
-# CHECK-NEXT: 17.    1     0.0    0.0    0.0       vdiv	$$q, $vf1x, $vf2x
+# CHECK-NEXT: 15.    1     0.0    0.0    0.0       vadd.xyzw	$vf1, $vf2, $vf3
+# CHECK-NEXT: 16.    1     0.0    0.0    0.0       qmfc2	$16, $vf1
+# CHECK-NEXT: 17.    1     0.0    0.0    0.0       vdiv	$q, $vf1x, $vf2x
 # CHECK-NEXT: 18.    1     0.0    0.0    0.0       vwaitq
 # CHECK-NEXT:        19    0.0    0.0    0.0       <total>

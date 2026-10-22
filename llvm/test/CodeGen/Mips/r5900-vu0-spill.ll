@@ -17,17 +17,17 @@ define void @spill(ptr %p, ptr %q) {
 ; CHECK-NEXT:    .cfi_offset 31, -8
 ; CHECK-NEXT:    .cfi_offset 16, -16
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    lqc2 $vf1, 0($1)
 ; CHECK-NEXT:    sll $16, $5, 0
-; CHECK-NEXT:    vmul.xyzw $$vf2, $$vf1, $$vf1
-; CHECK-NEXT:    sqc2 $$vf1, 0($sp) # 16-byte Folded Spill
+; CHECK-NEXT:    vmul.xyzw $vf2, $vf1, $vf1
+; CHECK-NEXT:    sqc2 $vf1, 0($sp) # 16-byte Folded Spill
 ; CHECK-NEXT:    jal f
-; CHECK-NEXT:    sqc2 $$vf2, 16($sp)
-; CHECK-NEXT:    lqc2 $$vf2, 0($sp) # 16-byte Folded Reload
+; CHECK-NEXT:    sqc2 $vf2, 16($sp)
+; CHECK-NEXT:    lqc2 $vf2, 0($sp) # 16-byte Folded Reload
 ; CHECK-NEXT:    ld $ra, 40($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    lqc2 $$vf1, 16($sp) # 16-byte Folded Reload
-; CHECK-NEXT:    vadd.xyzw $$vf1, $$vf1, $$vf2
-; CHECK-NEXT:    sqc2 $$vf1, 0($16)
+; CHECK-NEXT:    lqc2 $vf1, 16($sp) # 16-byte Folded Reload
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
+; CHECK-NEXT:    sqc2 $vf1, 0($16)
 ; CHECK-NEXT:    ld $16, 32($sp) # 8-byte Folded Reload
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    addiu $sp, $sp, 48
