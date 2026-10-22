@@ -36,6 +36,9 @@ private:
 
   void selectAddE(SDNode *Node, const SDLoc &DL) const;
 
+  /// Select an R5900 VU0 sum of products through ACC (VU0_ACCSUM).
+  void selectVU0AccSum(SDNode *Node);
+
   bool selectAddrFrameIndex(SDValue Addr, SDValue &Base, SDValue &Offset) const;
   bool selectAddrFrameIndexOffset(SDValue Addr, SDValue &Base, SDValue &Offset,
                                   unsigned OffsetBits,

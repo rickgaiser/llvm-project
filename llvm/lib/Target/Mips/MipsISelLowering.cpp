@@ -3732,6 +3732,14 @@ void MipsTargetLowering::getOpndList(
 
 void MipsTargetLowering::AdjustInstrPostInstrSelection(MachineInstr &MI,
                                                        SDNode *Node) const {
+  // An R5900 VU0 instruction that starts an ACC chain names ACC as an
+  // operand, but does not read it.
+  if (MI.getNumOperands() > 1 && MI.getOperand(1).isReg() &&
+      MI.getOperand(1).getReg() == Mips::VU0ACC) {
+    MI.getOperand(1).setIsUndef();
+    return;
+  }
+
   switch (MI.getOpcode()) {
     default:
       return;

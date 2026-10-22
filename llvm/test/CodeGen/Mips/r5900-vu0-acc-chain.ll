@@ -2,9 +2,10 @@
 ; RUN: llc -mtriple=mips64el -mcpu=r5900 -mattr=+vu0 -target-abi n32 \
 ; RUN:   -verify-machineinstrs < %s | FileCheck %s
 
-; A sum of broadcast products is computed through ACC: VMULAbc, VMADDAbc...,
-; VMADDbc. An addend that is a zero constant is left out; any other constant
-; is still added.
+; A sum of two or more products is computed through ACC: VMULA,
+; VMADDA/VMSUBA..., VMADD/VMSUB, with the broadcast forms for a broadcast
+; factor. An addend that is a +0.0 constant is left out, any other addend c
+; is added as c * vf0.w.
 
 define void @sum3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
 ; CHECK-LABEL: sum3:
@@ -31,12 +32,12 @@ define void @sum3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
 define void @sum2_const(ptr %p, <4 x float> %m0, <4 x float> %m1,
 ; CHECK-LABEL: sum2_const:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf14
 ; CHECK-NEXT:    lui $1, %hi(.LCPI1_0)
-; CHECK-NEXT:    vmaddy.xyzw $$vf1, $$vf13, $$vf14
-; CHECK-NEXT:    lqc2 $$vf2, %lo(.LCPI1_0)($1)
+; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf14
+; CHECK-NEXT:    lqc2 $$vf1, %lo(.LCPI1_0)($1)
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    vadd.xyzw $$vf1, $$vf1, $$vf2
+; CHECK-NEXT:    vmadday.xyzw $$acc, $$vf13, $$vf14
+; CHECK-NEXT:    vmaddw.xyzw $$vf1, $$vf1, $$vf0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sqc2 $$vf1, 0($1)
                         <4 x float> %v) {
@@ -54,10 +55,8 @@ define void @sum2_zero(ptr %p, <4 x float> %m0, <4 x float> %m1,
 ; CHECK-LABEL: sum2_zero:
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf14
-; CHECK-NEXT:    lui $1, %hi(.LCPI2_0)
-; CHECK-NEXT:    vmaddy.xyzw $$vf1, $$vf13, $$vf14
-; CHECK-NEXT:    lqc2 $$vf2, %lo(.LCPI2_0)($1)
 ; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vmaddy.xyzw $$vf1, $$vf13, $$vf14
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sqc2 $$vf1, 0($1)
                        <4 x float> %v) {
@@ -67,6 +66,86 @@ define void @sum2_zero(ptr %p, <4 x float> %m0, <4 x float> %m1,
   %b = fmul <4 x float> %m1, %y
   %s = fadd <4 x float> zeroinitializer, %a
   %t = fadd <4 x float> %s, %b
+  store <4 x float> %t, ptr %p, align 16
+  ret void
+}
+
+; Subtraction: VMSUBA and VMSUB.
+define void @sub3(ptr %p, <4 x float> %m0, <4 x float> %m1, <4 x float> %m2,
+; CHECK-LABEL: sub3:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmulax.xyzw $$acc, $$vf12, $$vf15
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vmsubay.xyzw $$acc, $$vf13, $$vf15
+; CHECK-NEXT:    vmsubz.xyzw $$vf1, $$vf14, $$vf15
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+                  <4 x float> %v) {
+  %x = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
+  %y = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
+  %z = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+  %a = fmul <4 x float> %m0, %x
+  %b = fmul <4 x float> %m1, %y
+  %c = fmul <4 x float> %m2, %z
+  %s = fsub <4 x float> %a, %b
+  %t = fsub <4 x float> %s, %c
+  store <4 x float> %t, ptr %p, align 16
+  ret void
+}
+
+; Products of all fields: VMULA and VMADD, and a plain term c * vf0.w.
+define void @full(ptr %p, <4 x float> %a, <4 x float> %b, <4 x float> %c,
+; CHECK-LABEL: full:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmula.xyzw $$acc, $$vf12, $$vf13
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vmadda.xyzw $$acc, $$vf14, $$vf15
+; CHECK-NEXT:    vmsubw.xyzw $$vf1, $$vf12, $$vf0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+                  <4 x float> %d) {
+  %x = fmul <4 x float> %a, %b
+  %y = fmul <4 x float> %c, %d
+  %s = fadd <4 x float> %x, %y
+  %t = fsub <4 x float> %s, %a
+  store <4 x float> %t, ptr %p, align 16
+  ret void
+}
+
+; One product stays a VMUL and VSUB, which do not wait for other ACC chains.
+define void @one_product(ptr %p, <4 x float> %a, <4 x float> %b,
+; CHECK-LABEL: one_product:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf12, $$vf13
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vsub.xyzw $$vf1, $$vf14, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+                         <4 x float> %c) {
+  %x = fmul <4 x float> %a, %b
+  %t = fsub <4 x float> %c, %x
+  store <4 x float> %t, ptr %p, align 16
+  ret void
+}
+
+; A sum that is also used on its own ends a chain.
+define void @used_twice(ptr %p, ptr %q, <4 x float> %a, <4 x float> %b,
+; CHECK-LABEL: used_twice:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmula.xyzw $$acc, $$vf12, $$vf13
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    vmadd.xyzw $$vf1, $$vf14, $$vf15
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    vadd.xyzw $$vf2, $$vf1, $$vf16
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf2, 0($2)
+                        <4 x float> %c, <4 x float> %d, <4 x float> %e) {
+  %x = fmul <4 x float> %a, %b
+  %y = fmul <4 x float> %c, %d
+  %s = fadd <4 x float> %x, %y
+  %t = fadd <4 x float> %s, %e
+  store <4 x float> %s, ptr %q, align 16
   store <4 x float> %t, ptr %p, align 16
   ret void
 }

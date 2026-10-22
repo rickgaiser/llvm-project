@@ -711,6 +711,50 @@ bool MipsSEDAGToDAGISel::selectVSplatImmEq1(SDValue N) const {
          ImmValue.getBitWidth() == EltTy.getSizeInBits() && ImmValue == 1;
 }
 
+// VMULA, VMADDA/VMSUBA..., VMADD/VMSUB. Each instruction reads the ACC value
+// of the one before it; glue keeps them together, so no other ACC chain is
+// placed in between.
+void MipsSEDAGToDAGISel::selectVU0AccSum(SDNode *Node) {
+  // Opcodes for the x, y, z and w broadcasts and for all fields.
+  static constexpr unsigned MulA[] = {Mips::VMULAbcx, Mips::VMULAbcy,
+                                      Mips::VMULAbcz, Mips::VMULAbcw,
+                                      Mips::VMULA};
+  static constexpr unsigned MaddA[] = {Mips::VMADDAbcx, Mips::VMADDAbcy,
+                                       Mips::VMADDAbcz, Mips::VMADDAbcw,
+                                       Mips::VMADDA};
+  static constexpr unsigned MsubA[] = {Mips::VMSUBAbcx, Mips::VMSUBAbcy,
+                                       Mips::VMSUBAbcz, Mips::VMSUBAbcw,
+                                       Mips::VMSUBA};
+  static constexpr unsigned Madd[] = {Mips::VMADDbcx, Mips::VMADDbcy,
+                                      Mips::VMADDbcz, Mips::VMADDbcw,
+                                      Mips::VMADD};
+  static constexpr unsigned Msub[] = {Mips::VMSUBbcx, Mips::VMSUBbcy,
+                                      Mips::VMSUBbcz, Mips::VMSUBbcw,
+                                      Mips::VMSUB};
+
+  SDLoc DL(Node);
+  SDValue Mask = CurDAG->getTargetConstant(15, DL, MVT::i32);
+  SDValue Acc = CurDAG->getRegister(Mips::VU0ACC, MVT::v4f32);
+  unsigned NumTerms = Node->getNumOperands() / 4;
+  SDValue Glue;
+  for (unsigned I = 0; I != NumTerms; ++I) {
+    SDValue A = Node->getOperand(4 * I), B = Node->getOperand(4 * I + 1);
+    unsigned Field = Node->getConstantOperandVal(4 * I + 2);
+    bool Neg = Node->getConstantOperandVal(4 * I + 3);
+    if (I + 1 == NumTerms) {
+      unsigned Opc = Neg ? Msub[Field] : Madd[Field];
+      SDValue Ops[] = {Mask, A, B, Glue};
+      ReplaceNode(Node, CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops));
+      return;
+    }
+    unsigned Opc = I == 0 ? MulA[Field] : Neg ? MsubA[Field] : MaddA[Field];
+    SmallVector<SDValue, 5> Ops = {Mask, Acc, A, B};
+    if (Glue)
+      Ops.push_back(Glue);
+    Glue = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::Glue, Ops), 0);
+  }
+}
+
 bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc DL(Node);
@@ -721,6 +765,10 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   ///
   switch(Opcode) {
   default: break;
+
+  case MipsISD::VU0_ACCSUM:
+    selectVU0AccSum(Node);
+    return true;
 
   case MipsISD::DOUBLE_SELECT_I:
   case MipsISD::DOUBLE_SELECT_I64: {

@@ -154,6 +154,13 @@ def MipsVU0ITOF : SDNode<"MipsISD::VU0_ITOF",
                                               SDTCisVT<1, v4i32>,
                                               SDTCisVT<2, i32>]>>;
 
+// A sum of products computed through ACC: VMULA, VMADDA/VMSUBA...,
+// VMADD/VMSUB. The operands are (a, b, field, negate) for each term, with
+// field 0-3 for a broadcast of b and 4 for all fields; see
+// performVU0AccSumCombine. Selected in MipsSEDAGToDAGISel.
+def MipsVU0ACCSUM : SDNode<"MipsISD::VU0_ACCSUM",
+                           SDTypeProfile<1, -1, [SDTCisVT<0, v4f32>]>>;
+
 // Broadcast field $f (x = 0 ... w = 3) of a vector to all four fields. It is
 // selected as the ft operand of a broadcast instruction (fs op ft.<field>).
 def MipsVU0BCAST : SDNode<"MipsISD::VU0_BCAST",
@@ -207,6 +214,9 @@ class VU0_ACC<string opstr, bits<11> funct, list<Register> UseRegs = []>
   let Defs = [VU0ACC];
   let Uses = UseRegs;
   let hasSideEffects = 0;
+  // The ACC operand of the first instruction of a chain is not read
+  // (MipsTargetLowering::AdjustInstrPostInstrSelection).
+  let hasPostISelHook = !empty(UseRegs);
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;
@@ -476,6 +486,9 @@ class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
   let Defs = [VU0ACC];
   let Uses = UseRegs;
   let hasSideEffects = 0;
+  // The ACC operand of the first instruction of a chain is not read
+  // (MipsTargetLowering::AdjustInstrPostInstrSelection).
+  let hasPostISelHook = !empty(UseRegs);
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;

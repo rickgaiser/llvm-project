@@ -55,7 +55,6 @@ FunctionPass *createMipsFoldAddressOffsetPass();
 FunctionPass *createMipsR5900Mult1Pass();
 FunctionPass *createMipsR5900FPUAccChainPass();
 FunctionPass *createMipsR5900IssuePass(bool KeepSCEVAA = false);
-FunctionPass *createMipsR5900VU0AccChainPass();
 
 InstructionSelector *
 createMipsInstructionSelector(const MipsTargetMachine &, const MipsSubtarget &,
@@ -74,7 +73,6 @@ void initializeMipsFoldAddressOffsetPass(PassRegistry &);
 void initializeMipsR5900Mult1Pass(PassRegistry &);
 void initializeMipsR5900FPUAccChainPass(PassRegistry &);
 void initializeMipsR5900IssuePass(PassRegistry &);
-void initializeMipsR5900VU0AccChainPass(PassRegistry &);
 } // namespace llvm
 
 #endif

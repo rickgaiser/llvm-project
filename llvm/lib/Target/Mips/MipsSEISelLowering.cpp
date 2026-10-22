@@ -1827,6 +1827,113 @@ static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+namespace {
+/// A term a * b of a sum computed through the VU0 ACC. Field selects a
+/// broadcast field of b (0-3), or all fields (VU0AccFull).
+struct VU0AccTerm {
+  SDValue A, B;
+  unsigned Field;
+  bool Neg;
+};
+constexpr unsigned VU0AccFull = 4;
+} // namespace
+
+static bool isVU0AccChain(SDValue V) {
+  return (V.getOpcode() == ISD::FADD || V.getOpcode() == ISD::FSUB) &&
+         V.getValueType() == MVT::v4f32 && V.hasOneUse();
+}
+
+static void addVU0AccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
+                          SmallVectorImpl<VU0AccTerm> &Terms) {
+  if (V.getOpcode() == ISD::FMUL && V.hasOneUse()) {
+    SDValue X = V.getOperand(0), Y = V.getOperand(1);
+    if (isVU0Broadcast(Y))
+      Terms.push_back(
+          {X, Y.getOperand(0), unsigned(Y.getConstantOperandVal(1)), Neg});
+    else if (isVU0Broadcast(X))
+      Terms.push_back(
+          {Y, X.getOperand(0), unsigned(X.getConstantOperandVal(1)), Neg});
+    else
+      Terms.push_back({X, Y, VU0AccFull, Neg});
+    return;
+  }
+  // c = c * vf0.w
+  Terms.push_back({V, DAG.getRegister(Mips::VF0, MVT::v4f32), 3, Neg});
+}
+
+/// Collects the terms of a left-linear chain of FADD and FSUB nodes, in
+/// evaluation order.
+static void collectVU0AccTerms(SDValue V, SelectionDAG &DAG,
+                               SmallVectorImpl<VU0AccTerm> &Terms) {
+  SDValue L = V.getOperand(0), R = V.getOperand(1);
+  if (V.getOpcode() == ISD::FADD && !isVU0AccChain(L) && isVU0AccChain(R))
+    std::swap(L, R);
+  if (isVU0AccChain(L))
+    collectVU0AccTerms(L, DAG, Terms);
+  else
+    addVU0AccLeaf(L, /*Neg=*/false, DAG, Terms);
+  addVU0AccLeaf(R, V.getOpcode() == ISD::FSUB, DAG, Terms);
+}
+
+/// Whether \p V is a +0.0 vector, which an ACC chain leaves out.
+static bool isVU0PositiveZero(const VU0AccTerm &T) {
+  if (T.Field != 3 || T.Neg || T.B.getOpcode() != ISD::Register)
+    return false;
+  if (ConstantFPSDNode *C = isConstOrConstSplatFP(T.A))
+    return C->isZero() && !C->isNegative();
+  // A constant vector is loaded from the constant pool after legalization.
+  auto *Ld = dyn_cast<LoadSDNode>(T.A);
+  if (!Ld)
+    return false;
+  // The address is the low part of the constant pool entry, maybe added to
+  // its high part.
+  SDValue Ptr = Ld->getBasePtr();
+  while (Ptr.getOpcode() == ISD::ADD || Ptr.getOpcode() == MipsISD::Lo ||
+         Ptr.getOpcode() == MipsISD::Wrapper)
+    Ptr = Ptr.getOperand(Ptr.getNumOperands() - 1);
+  auto *CP = dyn_cast<ConstantPoolSDNode>(Ptr);
+  return CP && !CP->isMachineConstantPoolEntry() &&
+         CP->getConstVal()->isNullValue();
+}
+
+// VU0 ACC Sum Combine
+// Computes a sum of products as VMULA, VMADDA..., VMADD, which forwards the
+// accumulator between the steps, like the VU target:
+//   (m0 * v.x + m1 * v.y) + m2 * v.z + m3
+//   -> VMULAx acc, m0, v; VMADDAy acc, m1, v; VMADDAz acc, m2, v;
+//      VMADDw d, m3, vf0
+// The terms are accumulated in the original order, so the result is the
+// same. An addend of +0.0 is left out. A chain needs two products.
+static SDValue performVU0AccSumCombine(SDNode *N, SelectionDAG &DAG,
+                                       const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
+    return SDValue();
+  // Only the root of a chain.
+  if (N->hasOneUse() && isVU0AccChain(SDValue(*N->user_begin(), 0)))
+    return SDValue();
+
+  SmallVector<VU0AccTerm, 8> Terms;
+  collectVU0AccTerms(SDValue(N, 0), DAG, Terms);
+  erase_if(Terms, isVU0PositiveZero);
+  // VMULA can not negate. ACC is a single register, so chains wait for each
+  // other: with one product, a VMUL and VADD that run in parallel with other
+  // chains are faster (PS2: Transform 3.95 -> 3.58 Mvert/s as ACC chains).
+  if (Terms[0].Neg || count_if(Terms, [](const VU0AccTerm &T) {
+                        return T.B.getOpcode() != ISD::Register;
+                      }) < 2)
+    return SDValue();
+
+  SDLoc DL(N);
+  SmallVector<SDValue, 16> Ops;
+  for (const VU0AccTerm &T : Terms) {
+    Ops.push_back(T.A);
+    Ops.push_back(T.B);
+    Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
+    Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
+  }
+  return DAG.getNode(MipsISD::VU0_ACCSUM, DL, MVT::v4f32, Ops);
+}
+
 /// Collect the lanes of a single vector Base whose sum (Opc is fadd), maximum
 /// or minimum is lane Lane of V, through the vector or scalar operation Opc,
 /// broadcasts, shuffles and extracts. Sums must be reassociable and
@@ -2035,11 +2142,15 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performVU0HorizontalCombine(N, DAG, Subtarget);
     if (!Val)
       Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val && N->getOpcode() == ISD::FADD && DCI.isAfterLegalizeDAG())
+      Val = performVU0AccSumCombine(N, DAG, Subtarget);
     if (!Val)
       revisitVU0HorizontalUsers(N, DCI);
     break;
   case ISD::FSUB:
     Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val && DCI.isAfterLegalizeDAG())
+      Val = performVU0AccSumCombine(N, DAG, Subtarget);
     break;
   case ISD::FMUL:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
