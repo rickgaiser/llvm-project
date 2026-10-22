@@ -197,6 +197,10 @@ Value *MatVec::addLanewiseOps(IRBuilderBase &B, IRBuilderBase &PB, Value *Acc,
     if (U0->getOpcode() == Instruction::FPToSI) {
       Acc = B.CreateFPToSI(Acc, FixedVectorType::get(U0->getType(), 4));
     } else {
+      // The lanes without a row are not used: repeat lane 0 there, so that a
+      // common value stays a splat, such as the scale of a fixed-point
+      // conversion.
+      Others.resize(4, Others[0]);
       Value *K = buildVector(PB, Others, U0->getType());
       FastMathFlags FMF = U0->getFastMathFlags();
       for (Instruction *E : Ends)

@@ -200,7 +200,7 @@ define void @mxv3_affine(float %m00, float %m02, float %m03, float %m10,
 ; CHECK-NEXT:    [[TMP17:%.*]] = fmul fast <4 x float> [[TMP7]], [[TMP16]]
 ; CHECK-NEXT:    [[TMP18:%.*]] = fadd fast <4 x float> [[TMP15]], [[TMP17]]
 ; CHECK-NEXT:    [[TMP19:%.*]] = fadd fast <4 x float> [[TMP18]], [[TMP10]]
-; CHECK-NEXT:    [[TMP20:%.*]] = fmul fast <4 x float> [[TMP19]], <float 1.600000e+01, float 1.600000e+01, float 1.600000e+01, float 0.000000e+00>
+; CHECK-NEXT:    [[TMP20:%.*]] = fmul fast <4 x float> [[TMP19]], splat (float 1.600000e+01)
 ; CHECK-NEXT:    [[TMP21:%.*]] = fptosi <4 x float> [[TMP20]] to <4 x i32>
 ; CHECK-NEXT:    [[XI:%.*]] = extractelement <4 x i32> [[TMP21]], i64 0
 ; CHECK-NEXT:    [[YI:%.*]] = extractelement <4 x i32> [[TMP21]], i64 1
