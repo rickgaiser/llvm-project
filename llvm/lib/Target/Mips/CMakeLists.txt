@@ -45,6 +45,7 @@ add_llvm_target(MipsCodeGen
   MipsDAGMutations.cpp
   MipsDelaySlotFiller.cpp
   MipsExpandPseudo.cpp
+  MipsFoldAddressOffset.cpp
   MipsFastISel.cpp
   MipsInstrInfo.cpp
   MipsInstructionSelector.cpp

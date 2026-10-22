@@ -72,6 +72,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsPostLegalizerCombinerPass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
   initializeMipsR5900Div1Pass(*PR);
+  initializeMipsFoldAddressOffsetPass(*PR);
   initializeMipsR5900Mult1Pass(*PR);
   initializeMipsR5900FPUAccChainPass(*PR);
   initializeMipsR5900IssuePass(*PR);
@@ -280,10 +281,14 @@ void MipsPassConfig::addPreRegAlloc() {
 }
 
 void MipsPassConfig::addPreSched2() {
-  // The post-RA MachineScheduler only runs for subtargets that enable it
-  // (the R5900); the others keep using the PostRAScheduler.
-  if (getOptLevel() != CodeGenOptLevel::None)
+  if (getOptLevel() != CodeGenOptLevel::None) {
+    // R5900: fold the address adds that the register allocator
+    // rematerialized into the offsets of their loads and stores.
+    addPass(createMipsFoldAddressOffsetPass());
+    // The post-RA MachineScheduler only runs for subtargets that enable it
+    // (the R5900); the others keep using the PostRAScheduler.
     addPass(&PostMachineSchedulerID);
+  }
 }
 
 ScheduleDAGInstrs *
