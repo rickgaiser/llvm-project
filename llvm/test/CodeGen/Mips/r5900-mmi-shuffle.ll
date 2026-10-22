@@ -2,8 +2,9 @@
 ; RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi n32 < %s | FileCheck %s
 
 ; Shuffles of 128-bit integer vectors that are MMI instructions: the even and
-; odd elements (unzip), the interleaved low and high halves (zip) and the
-; low and high halves of two vectors.
+; odd elements (unzip), the interleaved low and high halves (zip), the low
+; and high halves of two vectors, and the word permutations of PEXEW, PEXCW,
+; PROT3W and a swap of the halves.
 
 define void @even_b(ptr %pa, ptr %pb, ptr %pr) {
 ; CHECK-LABEL: even_b:
@@ -196,4 +197,65 @@ define <4 x i32> @reverse_v4i32(<4 x i32> %a) {
 ; CHECK-NEXT:    addiu $sp, $sp, 32
   %s = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
   ret <4 x i32> %s
+}
+
+define void @exch_even_w(ptr %pa, ptr %pr) {
+; CHECK-LABEL: exch_even_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pexew $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <4 x i32>, ptr %pa, align 16
+  %r = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 2, i32 1, i32 0, i32 3>
+  store <4 x i32> %r, ptr %pr, align 16
+  ret void
+}
+
+define void @exch_center_w(ptr %pa, ptr %pr) {
+; CHECK-LABEL: exch_center_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pexcw $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <4 x i32>, ptr %pa, align 16
+  %r = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 0, i32 2, i32 1, i32 3>
+  store <4 x i32> %r, ptr %pr, align 16
+  ret void
+}
+
+define void @rot3_w(ptr %pa, ptr %pr) {
+; CHECK-LABEL: rot3_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    prot3w $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <4 x i32>, ptr %pa, align 16
+  %r = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 1, i32 2, i32 0, i32 3>
+  store <4 x i32> %r, ptr %pr, align 16
+  ret void
+}
+
+define void @swap_halves_w(ptr %pa, ptr %pr) {
+; CHECK-LABEL: swap_halves_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $3, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pcpyud $2, $1, $1
+; CHECK-NEXT:    pcpyld $1, $1, $2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($3)
+  %a = load <4 x i32>, ptr %pa, align 16
+  %r = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 2, i32 3, i32 0, i32 1>
+  store <4 x i32> %r, ptr %pr, align 16
+  ret void
 }

@@ -117,7 +117,7 @@ define void @elements(<4 x float> %a, <4 x float> %b, float %s, i32 %i) {
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %splat = shufflevector <4 x float> %a, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %blend = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 5, i32 2, i32 7>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %rev = shufflevector <4 x float> %a, <4 x float> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %zip = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 4, i32 1, i32 5>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %zip = shufflevector <4 x float> %a, <4 x float> %b, <4 x i32> <i32 0, i32 4, i32 1, i32 5>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
 ; NOVU0-LABEL: 'elements'

@@ -4483,6 +4483,11 @@ enum class R5900Shuffle {
   ZipHi,     // PEXTUW/H/B B, A
   CatLo,     // PCPYLD B, A: the low halves of A and B
   CatHi,     // PCPYUD A, B: the high halves of A and B
+  // Permutations of the words of a single source:
+  ExchEven,   // PEXEW A: <2, 1, 0, 3>
+  ExchCenter, // PEXCW A: <0, 2, 1, 3>
+  Rotate3,    // PROT3W A: <1, 2, 0, 3>
+  SwapHalves, // PCPYLD A, (PCPYUD A, A): <2, 3, 0, 1>
 };
 
 /// Classify a shuffle mask of \p NumElts elements. With \p SingleSrc both
@@ -4513,6 +4518,19 @@ static R5900Shuffle classifyR5900Shuffle(ArrayRef<int> Mask, unsigned NumElts,
     return R5900Shuffle::CatLo;
   if (Matches([&](unsigned I) { return I < Half ? Half + I : NumElts + I; }))
     return R5900Shuffle::CatHi;
+  if (NumElts != 4 || !SingleSrc)
+    return R5900Shuffle::None;
+  auto MatchesWords = [&](std::array<unsigned, 4> Words) {
+    return Matches([&](unsigned I) { return Words[I]; });
+  };
+  if (MatchesWords({2, 1, 0, 3}))
+    return R5900Shuffle::ExchEven;
+  if (MatchesWords({0, 2, 1, 3}))
+    return R5900Shuffle::ExchCenter;
+  if (MatchesWords({1, 2, 0, 3}))
+    return R5900Shuffle::Rotate3;
+  if (MatchesWords({2, 3, 0, 1}))
+    return R5900Shuffle::SwapHalves;
   return R5900Shuffle::None;
 }
 
@@ -4525,6 +4543,8 @@ unsigned llvm::getR5900ShuffleOps(ArrayRef<int> Mask, unsigned NumElts,
   case R5900Shuffle::UnzipOdd:
     // Two shifts or exchanges and a pack, one less from a single source.
     return SingleSrc ? 2 : 3;
+  case R5900Shuffle::SwapHalves:
+    return 2;
   default:
     return 1;
   }
@@ -4580,6 +4600,14 @@ static SDValue lowerR5900VECTOR_SHUFFLE(ShuffleVectorSDNode *Node,
     return MMI(Mips::PCPYLD, B, A);
   case R5900Shuffle::CatHi:
     return MMI(Mips::PCPYUD, A, B);
+  case R5900Shuffle::ExchEven:
+    return SDValue(DAG.getMachineNode(Mips::PEXEW, DL, VT, A), 0);
+  case R5900Shuffle::ExchCenter:
+    return SDValue(DAG.getMachineNode(Mips::PEXCW, DL, VT, A), 0);
+  case R5900Shuffle::Rotate3:
+    return SDValue(DAG.getMachineNode(Mips::PROT3W, DL, VT, A), 0);
+  case R5900Shuffle::SwapHalves:
+    return MMI(Mips::PCPYLD, A, MMI(Mips::PCPYUD, A, A));
   }
   llvm_unreachable("unknown R5900 shuffle");
 }
@@ -4746,8 +4774,15 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
       }
     }
 
-    // If not a handled pattern, fall through to scalar expansion
-    // (broadcast patterns are handled by DAG combine on FMUL)
+    // Otherwise an MMI shuffle of the bits in a 128-bit GPR, if there is one.
+    // The others are expanded.
+    if (getR5900ShuffleOps(Mask, 4,
+                           IsSingleSource || V2.isUndef() || V1 == V2)) {
+      SDValue Shuffle =
+          DAG.getVectorShuffle(MVT::v4i32, DL, DAG.getBitcast(MVT::v4i32, V1),
+                               DAG.getBitcast(MVT::v4i32, V2), Mask);
+      return DAG.getBitcast(MVT::v4f32, Shuffle);
+    }
     return SDValue();
   }
 

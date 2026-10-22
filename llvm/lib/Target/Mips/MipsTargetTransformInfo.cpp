@@ -502,9 +502,10 @@ InstructionCost MipsTTIImpl::getShuffleCost(
     TTI::TargetCostKind CostKind, ArrayRef<int> Mask, int Index,
     VectorType *SubTp, ArrayRef<const Value *> Args, const Instruction *CxtI,
     TTI::VectorInstrContext VIC) const {
-  // VU0 v4f32 shuffles: vmove with a field mask blends two vectors, and vsub
-  // and vadd with a broadcast field splat an element. The others are a
-  // qmfc2 of each source, about four MMI or shift operations and a qmtc2.
+  // VU0 v4f32 shuffles: vmove with a field mask blends two vectors, vsub
+  // and vadd with a broadcast field splat an element and vmr32 rotates it.
+  // The others are a qmfc2 of each source, the MMI shuffle or about four MMI
+  // or shift operations, and a qmtc2.
   if (getVU0Parts(DstTy) == 1u && (!SrcTy || getVU0Parts(SrcTy) == 1u)) {
     unsigned NumElts = cast<FixedVectorType>(DstTy)->getNumElements();
     int First = -1;
@@ -521,12 +522,18 @@ InstructionCost MipsTTIImpl::getShuffleCost(
       return 1;
     if (Kind == TTI::SK_Broadcast || (First >= 0 && Splat))
       return 2;
-    unsigned NumSrcs = Kind == TTI::SK_PermuteTwoSrc ||
-                               Kind == TTI::SK_Transpose ||
-                               Kind == TTI::SK_Splice
-                           ? 2
-                           : 1;
-    return (NumSrcs + 5) * MMICycle;
+    bool SingleSrc =
+        Mask.empty() ? Kind != TTI::SK_PermuteTwoSrc &&
+                           Kind != TTI::SK_Transpose && Kind != TTI::SK_Splice
+                     : all_of(Mask, [&](int M) { return M < (int)NumElts; });
+    bool Words = NumElts == 4 && Mask.size() == 4;
+    if (Words && SingleSrc && all_of(enumerate(Mask), [](auto M) {
+          return M.value() < 0 || unsigned(M.value()) == (M.index() + 1) % 4;
+        }))
+      return 1;
+    unsigned NumSrcs = SingleSrc ? 1 : 2;
+    unsigned Ops = Words ? getR5900ShuffleOps(Mask, 4, SingleSrc) : 0;
+    return (NumSrcs + (Ops ? Ops : 4) + 1) * MMICycle;
   }
 
   // R5900 MMI integer vector shuffles: the zips, unzips and half copies of
