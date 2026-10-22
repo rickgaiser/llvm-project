@@ -169,7 +169,8 @@ exit:
 }
 
 ; 3 rows with a translation and a missing term, of 3 lanes of an array the
-; loop walks: the 16-byte load is dereferenceable.
+; loop walks: the 16-byte load is dereferenceable. The scale and conversion
+; to int of all rows are lane-wise vector operations.
 define void @mxv3_affine(float %m00, float %m02, float %m03, float %m10,
 ; CHECK-LABEL: define void @mxv3_affine(
 ; CHECK-SAME: float [[M00:%.*]], float [[M02:%.*]], float [[M03:%.*]], float [[M10:%.*]], float [[M11:%.*]], float [[M12:%.*]], float [[M13:%.*]], float [[M20:%.*]], float [[M21:%.*]], float [[M22:%.*]], float [[M23:%.*]]) #[[ATTR0]] {
@@ -199,12 +200,11 @@ define void @mxv3_affine(float %m00, float %m02, float %m03, float %m10,
 ; CHECK-NEXT:    [[TMP17:%.*]] = fmul fast <4 x float> [[TMP7]], [[TMP16]]
 ; CHECK-NEXT:    [[TMP18:%.*]] = fadd fast <4 x float> [[TMP15]], [[TMP17]]
 ; CHECK-NEXT:    [[TMP19:%.*]] = fadd fast <4 x float> [[TMP18]], [[TMP10]]
-; CHECK-NEXT:    [[TMP20:%.*]] = extractelement <4 x float> [[TMP19]], i64 0
-; CHECK-NEXT:    [[TMP21:%.*]] = extractelement <4 x float> [[TMP19]], i64 1
-; CHECK-NEXT:    [[TMP22:%.*]] = extractelement <4 x float> [[TMP19]], i64 2
-; CHECK-NEXT:    [[XI:%.*]] = fptosi float [[TMP20]] to i32
-; CHECK-NEXT:    [[YI:%.*]] = fptosi float [[TMP21]] to i32
-; CHECK-NEXT:    [[ZI:%.*]] = fptosi float [[TMP22]] to i32
+; CHECK-NEXT:    [[TMP20:%.*]] = fmul fast <4 x float> [[TMP19]], <float 1.600000e+01, float 1.600000e+01, float 1.600000e+01, float 0.000000e+00>
+; CHECK-NEXT:    [[TMP21:%.*]] = fptosi <4 x float> [[TMP20]] to <4 x i32>
+; CHECK-NEXT:    [[XI:%.*]] = extractelement <4 x i32> [[TMP21]], i64 0
+; CHECK-NEXT:    [[YI:%.*]] = extractelement <4 x i32> [[TMP21]], i64 1
+; CHECK-NEXT:    [[ZI:%.*]] = extractelement <4 x i32> [[TMP21]], i64 2
 ; CHECK-NEXT:    [[OP:%.*]] = getelementptr inbounds [16 x i8], ptr @out, i32 [[I]]
 ; CHECK-NEXT:    store i32 [[XI]], ptr [[OP]], align 16
 ; CHECK-NEXT:    [[OYP:%.*]] = getelementptr inbounds i8, ptr [[OP]], i32 4
@@ -245,9 +245,12 @@ define void @mxv3_affine(float %m00, float %m02, float %m03, float %m10,
 ; NOVU0-NEXT:    [[C3:%.*]] = fmul fast float [[M22]], [[VZ]]
 ; NOVU0-NEXT:    [[C4:%.*]] = fadd fast float [[C2]], [[C3]]
 ; NOVU0-NEXT:    [[Z:%.*]] = fadd fast float [[C4]], [[M23]]
-; NOVU0-NEXT:    [[XI:%.*]] = fptosi float [[X]] to i32
-; NOVU0-NEXT:    [[YI:%.*]] = fptosi float [[Y]] to i32
-; NOVU0-NEXT:    [[ZI:%.*]] = fptosi float [[Z]] to i32
+; NOVU0-NEXT:    [[XS:%.*]] = fmul fast float [[X]], 1.600000e+01
+; NOVU0-NEXT:    [[YS:%.*]] = fmul fast float [[Y]], 1.600000e+01
+; NOVU0-NEXT:    [[ZS:%.*]] = fmul fast float [[Z]], 1.600000e+01
+; NOVU0-NEXT:    [[XI:%.*]] = fptosi float [[XS]] to i32
+; NOVU0-NEXT:    [[YI:%.*]] = fptosi float [[YS]] to i32
+; NOVU0-NEXT:    [[ZI:%.*]] = fptosi float [[ZS]] to i32
 ; NOVU0-NEXT:    [[OP:%.*]] = getelementptr inbounds [16 x i8], ptr @out, i32 [[I]]
 ; NOVU0-NEXT:    store i32 [[XI]], ptr [[OP]], align 16
 ; NOVU0-NEXT:    [[OYP:%.*]] = getelementptr inbounds i8, ptr [[OP]], i32 4
@@ -289,9 +292,12 @@ loop:
   %c3 = fmul fast float %m22, %vz
   %c4 = fadd fast float %c2, %c3
   %z = fadd fast float %c4, %m23
-  %xi = fptosi float %x to i32
-  %yi = fptosi float %y to i32
-  %zi = fptosi float %z to i32
+  %xs = fmul fast float %x, 1.600000e+01
+  %ys = fmul fast float %y, 1.600000e+01
+  %zs = fmul fast float %z, 1.600000e+01
+  %xi = fptosi float %xs to i32
+  %yi = fptosi float %ys to i32
+  %zi = fptosi float %zs to i32
   %op = getelementptr inbounds [16 x i8], ptr @out, i32 %i
   store i32 %xi, ptr %op, align 16
   %oyp = getelementptr inbounds i8, ptr %op, i32 4

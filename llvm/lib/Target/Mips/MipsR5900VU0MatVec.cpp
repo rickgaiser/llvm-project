@@ -136,14 +136,17 @@ class MatVec {
     return addTerm(R, ConstantFP::get(V->getType(), 1.0), V, Base);
   }
 
-  static Value *buildVector(IRBuilderBase &B, ArrayRef<Value *> Lanes) {
-    Value *Vec = ConstantFP::get(FixedVectorType::get(B.getFloatTy(), 4), 0.0);
+  static Value *buildVector(IRBuilderBase &B, ArrayRef<Value *> Lanes,
+                            Type *Ty) {
+    Value *Vec = Constant::getNullValue(FixedVectorType::get(Ty, 4));
     for (auto [I, V] : enumerate(Lanes))
       if (V)
         Vec = B.CreateInsertElement(Vec, V, I);
     return Vec;
   }
 
+  Value *addLanewiseOps(IRBuilderBase &B, IRBuilderBase &PB, Value *Acc,
+                        MutableArrayRef<Instruction *> Ends);
   bool rewrite(Value *Base, MutableArrayRef<Row> Rows);
 
 public:
@@ -154,6 +157,58 @@ public:
 };
 
 } // namespace
+
+/// Continue Acc with the operations that every row goes through in the same
+/// way, such as a scale by a loop-invariant value or a conversion to int, as
+/// VU0 lane-wise operations. Ends are the rows and become the scalar results
+/// these replace.
+Value *MatVec::addLanewiseOps(IRBuilderBase &B, IRBuilderBase &PB, Value *Acc,
+                              MutableArrayRef<Instruction *> Ends) {
+  while (true) {
+    SmallVector<Value *, 4> Others;
+    Instruction *U0 = nullptr;
+    unsigned OpIdx = 0;
+    for (Instruction *E : Ends) {
+      if (!E->hasOneUse())
+        return Acc;
+      auto *U = cast<Instruction>(*E->user_begin());
+      if (U->getParent() != BB || (U0 && (U->getOpcode() != U0->getOpcode() ||
+                                          U->getType() != U0->getType())))
+        return Acc;
+      if (!U0)
+        U0 = U;
+      if (U->getOpcode() == Instruction::FPToSI)
+        continue;
+      if (U->getOpcode() != Instruction::FMul &&
+          U->getOpcode() != Instruction::FAdd &&
+          U->getOpcode() != Instruction::FSub)
+        return Acc;
+      // The scalar operation with a loop-invariant value, in the same
+      // operand for all rows, and in hardware on the R5900 FPU.
+      unsigned Idx = U->getOperand(0) == E ? 1 : 0;
+      FastMathFlags F = U->getFastMathFlags();
+      if ((U != U0 && Idx != OpIdx) ||
+          !L->isLoopInvariant(U->getOperand(Idx)) || !F.noNaNs() || !F.noInfs())
+        return Acc;
+      OpIdx = Idx;
+      Others.push_back(U->getOperand(Idx));
+    }
+
+    if (U0->getOpcode() == Instruction::FPToSI) {
+      Acc = B.CreateFPToSI(Acc, FixedVectorType::get(U0->getType(), 4));
+    } else {
+      Value *K = buildVector(PB, Others, U0->getType());
+      FastMathFlags FMF = U0->getFastMathFlags();
+      for (Instruction *E : Ends)
+        FMF &= cast<Instruction>(*E->user_begin())->getFastMathFlags();
+      Value *LHS = OpIdx ? Acc : K, *RHS = OpIdx ? K : Acc;
+      Acc = B.CreateBinOpFMF(Instruction::BinaryOps(U0->getOpcode()), LHS, RHS,
+                             FMF);
+    }
+    for (Instruction *&E : Ends)
+      E = cast<Instruction>(*E->user_begin());
+  }
+}
 
 bool MatVec::rewrite(Value *Base, MutableArrayRef<Row> Rows) {
   // The lanes the rows use, the loads of them and the range they span.
@@ -223,14 +278,14 @@ bool MatVec::rewrite(Value *Base, MutableArrayRef<Row> Rows) {
     SmallVector<Value *, 4> Lanes(4);
     for (auto [I, R] : enumerate(Rows))
       Lanes[I] = R.Coef[J];
-    Cols[J] = buildVector(PB, Lanes);
+    Cols[J] = buildVector(PB, Lanes, PB.getFloatTy());
   }
   Value *Trans = nullptr;
   if (HasTrans) {
     SmallVector<Value *, 4> Lanes(4);
     for (auto [I, R] : enumerate(Rows))
       Lanes[I] = R.Trans;
-    Trans = buildVector(PB, Lanes);
+    Trans = buildVector(PB, Lanes, PB.getFloatTy());
   }
 
   // The rows, after the last lane load.
@@ -248,14 +303,19 @@ bool MatVec::rewrite(Value *Base, MutableArrayRef<Row> Rows) {
   }
   if (Trans)
     Acc = B.CreateFAdd(Acc, Trans);
+  SmallVector<Instruction *, 4> Ends;
+  for (Row &R : Rows)
+    Ends.push_back(R.Root);
+  Acc = addLanewiseOps(B, PB, Acc, Ends);
+
   // Extract all rows before deleting the scalar code, which includes the
   // insertion point.
   SmallVector<Value *, 4> Results;
-  for (unsigned I = 0; I < Rows.size(); ++I)
+  for (unsigned I = 0; I < Ends.size(); ++I)
     Results.push_back(B.CreateExtractElement(Acc, I));
-  for (auto [R, Res] : zip(Rows, Results)) {
-    R.Root->replaceAllUsesWith(Res);
-    RecursivelyDeleteTriviallyDeadInstructions(R.Root);
+  for (auto [E, Res] : zip(Ends, Results)) {
+    E->replaceAllUsesWith(Res);
+    RecursivelyDeleteTriviallyDeadInstructions(E);
   }
   ++NumMatVec;
   return true;
