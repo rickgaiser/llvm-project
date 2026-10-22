@@ -33,6 +33,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUDelaySlotFillerPass(PR);
   initializeVUPacketizerPass(PR);
   initializeVUFoldQPass(PR);
+  initializeVUFoldQCopiesPass(PR);
   initializeVUHazardsPass(PR);
   initializeVULoopCopiesPass(PR);
   initializeVULoopSchedulerPass(PR);
@@ -197,6 +198,11 @@ public:
       addPass(&MachinePipelinerID);
       addPass(createVULoopCopiesPass());
     }
+  }
+
+  void addPreSched2() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createVUFoldQCopiesPass());
   }
 
   void addPreEmitPass() override {
