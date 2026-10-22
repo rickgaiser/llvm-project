@@ -323,9 +323,10 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // pass)
     setOperationAction(ISD::FMA, MVT::v4f32, Custom);
 
-    // Enable DAG combine for broadcast multiply patterns and load optimization
+    // Enable DAG combine for broadcast patterns and load optimization
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
-    setTargetDAGCombine({ISD::FMUL, ISD::BITCAST, ISD::SETCC});
+    setTargetDAGCombine(
+        {ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::BITCAST, ISD::SETCC});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -1710,18 +1711,42 @@ static SDValue performBITCASTCombine(SDNode *N, SelectionDAG &DAG,
   return NewLoad;
 }
 
-// VU0 Broadcast Multiply Combine
-// Recognize: fmul(A, shuffle(B, <N,N,N,N>)) -> VU0_MULx/y/z/w(A, B)
-// This enables efficient matrix-vector operations using VMULbc instructions.
-static SDValue performVU0FMULCombine(SDNode *N, SelectionDAG &DAG,
-                                     const MipsSubtarget &Subtarget) {
+// VU0 Broadcast Combine
+// Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> VU0_<op>x/y/z/w(A, B) for fadd,
+// fsub and fmul. This enables efficient matrix-vector operations using VMULbc
+// instructions, and horizontal sums using VADDbc instructions.
+static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
+                                          const MipsSubtarget &Subtarget) {
   if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
     return SDValue();
 
+  static const unsigned AddOpcs[] = {MipsISD::VU0_ADDx, MipsISD::VU0_ADDy,
+                                     MipsISD::VU0_ADDz, MipsISD::VU0_ADDw};
+  static const unsigned SubOpcs[] = {MipsISD::VU0_SUBx, MipsISD::VU0_SUBy,
+                                     MipsISD::VU0_SUBz, MipsISD::VU0_SUBw};
+  static const unsigned MulOpcs[] = {MipsISD::VU0_MULx, MipsISD::VU0_MULy,
+                                     MipsISD::VU0_MULz, MipsISD::VU0_MULw};
+  const unsigned *Opcs;
+  switch (N->getOpcode()) {
+  case ISD::FADD:
+    Opcs = AddOpcs;
+    break;
+  case ISD::FSUB:
+    Opcs = SubOpcs;
+    break;
+  case ISD::FMUL:
+    Opcs = MulOpcs;
+    break;
+  default:
+    llvm_unreachable("Unexpected opcode");
+  }
+
   SDLoc DL(N);
 
-  // Check both operands for shuffle pattern (fmul is commutative)
-  for (int i = 0; i < 2; i++) {
+  // Check both operands for shuffle pattern (fadd and fmul are commutative,
+  // fsub only takes the broadcast as its second operand)
+  bool Commutative = N->getOpcode() != ISD::FSUB;
+  for (int i = 0; i < (Commutative ? 2 : 1); i++) {
     SDValue Vec = N->getOperand(i);
     SDValue Shuf = N->getOperand(1 - i);
 
@@ -1748,29 +1773,130 @@ static SDValue performVU0FMULCombine(SDNode *N, SelectionDAG &DAG,
     if (IsBroadcast && BroadcastIdx >= 0 && BroadcastIdx < 4) {
       // We found a broadcast shuffle. Get the source vector.
       SDValue BroadcastSrc = SVN->getOperand(0);
-
-      unsigned Opc;
-      switch (BroadcastIdx) {
-      case 0:
-        Opc = MipsISD::VU0_MULx;
-        break;
-      case 1:
-        Opc = MipsISD::VU0_MULy;
-        break;
-      case 2:
-        Opc = MipsISD::VU0_MULz;
-        break;
-      case 3:
-        Opc = MipsISD::VU0_MULw;
-        break;
-      default:
-        llvm_unreachable("Invalid broadcast index");
-      }
-      return DAG.getNode(Opc, DL, MVT::v4f32, Vec, BroadcastSrc);
+      return DAG.getNode(Opcs[BroadcastIdx], DL, MVT::v4f32, Vec, BroadcastSrc,
+                         N->getFlags());
     }
   }
 
   return SDValue();
+}
+
+/// Collect the lanes of a single vector Base whose sum is lane Lane of V,
+/// through reassociable fadds, broadcast adds, shuffles and extracts. Each
+/// lane may appear once.
+static bool collectVU0LaneSum(SDValue V, unsigned Lane, SDValue &Base,
+                              unsigned &Lanes, unsigned Depth) {
+  if (Depth > 8)
+    return false;
+  auto AddLeaf = [&](SDValue Leaf, unsigned L) {
+    if (!Base)
+      Base = Leaf;
+    if (Leaf != Base || (Lanes & (1u << L)))
+      return false;
+    Lanes |= 1u << L;
+    return true;
+  };
+
+  switch (V.getOpcode()) {
+  case ISD::FADD:
+    if (!V->getFlags().hasAllowReassociation())
+      break;
+    return collectVU0LaneSum(V.getOperand(0), Lane, Base, Lanes, Depth + 1) &&
+           collectVU0LaneSum(V.getOperand(1), Lane, Base, Lanes, Depth + 1);
+  case MipsISD::VU0_ADDx:
+  case MipsISD::VU0_ADDy:
+  case MipsISD::VU0_ADDz:
+  case MipsISD::VU0_ADDw: {
+    if (!V->getFlags().hasAllowReassociation())
+      break;
+    unsigned BC = V.getOpcode() == MipsISD::VU0_ADDx   ? 0
+                  : V.getOpcode() == MipsISD::VU0_ADDy ? 1
+                  : V.getOpcode() == MipsISD::VU0_ADDz ? 2
+                                                       : 3;
+    return collectVU0LaneSum(V.getOperand(0), Lane, Base, Lanes, Depth + 1) &&
+           collectVU0LaneSum(V.getOperand(1), BC, Base, Lanes, Depth + 1);
+  }
+  case ISD::VECTOR_SHUFFLE: {
+    int M = cast<ShuffleVectorSDNode>(V)->getMaskElt(Lane);
+    if (M < 0)
+      return false;
+    return collectVU0LaneSum(V.getOperand(M / 4), M % 4, Base, Lanes,
+                             Depth + 1);
+  }
+  case ISD::EXTRACT_VECTOR_ELT: {
+    auto *Idx = dyn_cast<ConstantSDNode>(V.getOperand(1));
+    if (!Idx || V.getOperand(0).getValueType() != MVT::v4f32 ||
+        Idx->getZExtValue() > 3)
+      return false;
+    return collectVU0LaneSum(V.getOperand(0), Idx->getZExtValue(), Base, Lanes,
+                             Depth + 1);
+  }
+  default:
+    break;
+  }
+  return V.getValueType() == MVT::v4f32 && AddLeaf(V, Lane);
+}
+
+// VU0 Horizontal Sum Combine
+// Rebuild a sum of lanes of one vector that ends up in lane x, such as a dot
+// product, as the shortest tree of broadcast adds: x+y is VADDy, x+y+z is
+// VADDz(VADDy) and x+y+z+w is VADDz(VADDy, VADDw), which takes 2 VU0 adds of
+// latency instead of 3 or going through the GPRs.
+static SDValue performVU0HorizontalSumCombine(SDNode *N, SelectionDAG &DAG,
+                                              const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::f32)
+    return SDValue();
+  if (N->getOpcode() == ISD::FADD && !N->getFlags().hasAllowReassociation())
+    return SDValue();
+
+  SDValue Base;
+  unsigned Lanes = 0;
+  if (!collectVU0LaneSum(SDValue(N, 0), 0, Base, Lanes, 0) || !(Lanes & 1) ||
+      Lanes == 1)
+    return SDValue();
+
+  SDLoc DL(N);
+  SDNodeFlags Flags;
+  Flags.setAllowReassociation(true);
+  auto Add = [&](unsigned Opc, SDValue A) {
+    return DAG.getNode(Opc, DL, MVT::v4f32, A, Base, Flags);
+  };
+  SDValue Sum;
+  switch (Lanes) {
+  case 0b0011:
+    Sum = Add(MipsISD::VU0_ADDy, Base);
+    break;
+  case 0b0101:
+    Sum = Add(MipsISD::VU0_ADDz, Base);
+    break;
+  case 0b1001:
+    Sum = Add(MipsISD::VU0_ADDw, Base);
+    break;
+  case 0b0111:
+    Sum = Add(MipsISD::VU0_ADDz, Add(MipsISD::VU0_ADDy, Base));
+    break;
+  case 0b1011:
+    Sum = Add(MipsISD::VU0_ADDw, Add(MipsISD::VU0_ADDy, Base));
+    break;
+  case 0b1101:
+    Sum = Add(MipsISD::VU0_ADDw, Add(MipsISD::VU0_ADDz, Base));
+    break;
+  case 0b1111:
+    // Lane z of VADDw(Base, Base) is z+w.
+    Sum = DAG.getNode(MipsISD::VU0_ADDz, DL, MVT::v4f32,
+                      Add(MipsISD::VU0_ADDy, Base),
+                      Add(MipsISD::VU0_ADDw, Base), Flags);
+    break;
+  default:
+    llvm_unreachable("Unexpected lanes");
+  }
+
+  SDValue Res = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Sum,
+                            DAG.getVectorIdxConstant(0, DL));
+  // Already in this form.
+  if (Res.getNode() == N)
+    return SDValue();
+  return Res;
 }
 
 // VU0 Blend Combine
@@ -1848,8 +1974,14 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
   case ISD::OR:
     Val = performORCombine(N, DAG, DCI, Subtarget);
     break;
+  case ISD::FADD:
+    Val = performVU0HorizontalSumCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    break;
+  case ISD::FSUB:
   case ISD::FMUL:
-    Val = performVU0FMULCombine(N, DAG, Subtarget);
+    Val = performVU0BroadcastCombine(N, DAG, Subtarget);
     break;
   case ISD::ADD:
     Val = performR5900ADDCombine(N, DAG, Subtarget);
@@ -1897,6 +2029,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::EXTRACT_VECTOR_ELT:
     Val = performR5900EXTRACT_VECTOR_ELTCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0HorizontalSumCombine(N, DAG, Subtarget);
     break;
   }
 

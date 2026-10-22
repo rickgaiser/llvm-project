@@ -307,7 +307,7 @@ def : InstRW<[R5900WriteVU0], (instrs VADD, VSUB, VMUL, VMADD, VMSUB, VADDm,
                                VFTOI4, VFTOI12, VFTOI15, VITOF0, VITOF4,
                                VITOF12, VITOF15, VFTOI0_ISel, VITOF0_ISel)>;
 def : InstRW<[R5900WriteVU0], (instregex "^V(ADD|SUB|MUL|MADD|MSUB)bc[xyzw]$",
-                                         "^VMULbc_ISel[xyzw]$")>;
+                                         "^V(ADD|SUB|MUL)bc_ISel[xyzw]$")>;
 def : InstRW<[R5900WriteVU0Acc], (instrs VADDA, VSUBA, VMULA, VMADDA, VMSUBA,
                                   VOPMULA, VNOP, VWAITQ)>;
 def : InstRW<[R5900WriteVU0Div], (instrs VDIV, VSQRT)>;
