@@ -67,12 +67,16 @@ AliasResult SCEVAAResult::alias(const MemoryLocation &LocA,
     // Compute the bit width after the conversion above, as ptrtoaddr may
     // produce a narrower (address-sized) type than the pointer representation.
     unsigned BitWidth = SE.getTypeSizeInBits(AS->getType());
-    APInt ASizeInt(BitWidth, LocA.Size.hasValue()
-                                 ? static_cast<uint64_t>(LocA.Size.getValue())
-                                 : MemoryLocation::UnknownSize);
-    APInt BSizeInt(BitWidth, LocB.Size.hasValue()
-                                 ? static_cast<uint64_t>(LocB.Size.getValue())
-                                 : MemoryLocation::UnknownSize);
+    // An unknown size, or one that does not fit the address width, is the
+    // largest size.
+    auto SizeInt = [&](LocationSize Size) {
+      uint64_t Value = Size.hasValue() ? static_cast<uint64_t>(Size.getValue())
+                                       : MemoryLocation::UnknownSize;
+      return isUIntN(BitWidth, Value) ? APInt(BitWidth, Value)
+                                      : APInt::getMaxValue(BitWidth);
+    };
+    APInt ASizeInt = SizeInt(LocA.Size);
+    APInt BSizeInt = SizeInt(LocB.Size);
 
     // Compute the difference between the two pointers.
     const SCEV *BA = SE.getMinusSCEV(BS, AS);
