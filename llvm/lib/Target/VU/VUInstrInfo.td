@@ -225,32 +225,35 @@ multiclass UABCs<bits<5> idx, string mn> {
     def NAME # F.Name : UABC<idx, F.Value, mn # F.Name, F.Name>;
 }
 
-// Operations that support every operand form.
+// Operations that support every operand form. \p uses are the registers
+// that every form reads (ACC for MADD and MSUB); the q and i forms also read
+// Q and I.
 multiclass FmacOp<string mn, bits<6> op, bits<4> opbc, bits<6> opq,
                   bits<6> opi, bits<7> idxa, bits<5> idxabc, bits<7> idxaq,
-                  bits<7> idxai> {
-  def "" : U3<op, mn>;
-  defm "" : U3BCs<opbc, mn>;
-  let Uses = [Q] in
-  def q : U3S<opq, mn # "q", "q">;
-  let Uses = [I] in
-  def i : U3S<opi, mn # "i", "i">;
-  def A : UA<idxa, mn # "a">;
-  defm A : UABCs<idxabc, mn # "a">;
-  let Uses = [Q] in
-  def Aq : UAS<idxaq, mn # "aq", "q">;
-  let Uses = [I] in
-  def Ai : UAS<idxai, mn # "ai", "i">;
+                  bits<7> idxai, list<Register> uses = []> {
+  let Uses = uses in {
+    def "" : U3<op, mn>;
+    defm "" : U3BCs<opbc, mn>;
+    def A : UA<idxa, mn # "a">;
+    defm A : UABCs<idxabc, mn # "a">;
+  }
+  let Uses = !listconcat(uses, [Q]) in {
+    def q : U3S<opq, mn # "q", "q">;
+    def Aq : UAS<idxaq, mn # "aq", "q">;
+  }
+  let Uses = !listconcat(uses, [I]) in {
+    def i : U3S<opi, mn # "i", "i">;
+    def Ai : UAS<idxai, mn # "ai", "i">;
+  }
 }
 
 defm ADD  : FmacOp<"add",  0x28, 0b0000, 0x20, 0x22, 0x28, 0b00000, 0x20, 0x22>;
 defm SUB  : FmacOp<"sub",  0x2c, 0b0001, 0x24, 0x26, 0x2c, 0b00001, 0x24, 0x26>;
 defm MUL  : FmacOp<"mul",  0x2a, 0b0110, 0x1c, 0x1e, 0x2a, 0b00110, 0x1c, 0x1e>;
-
-let Uses = [ACC] in {
-defm MADD : FmacOp<"madd", 0x29, 0b0010, 0x21, 0x23, 0x29, 0b00010, 0x21, 0x23>;
-defm MSUB : FmacOp<"msub", 0x2d, 0b0011, 0x25, 0x27, 0x2d, 0b00011, 0x25, 0x27>;
-}
+defm MADD : FmacOp<"madd", 0x29, 0b0010, 0x21, 0x23, 0x29, 0b00010, 0x21, 0x23,
+                   [ACC]>;
+defm MSUB : FmacOp<"msub", 0x2d, 0b0011, 0x25, 0x27, 0x2d, 0b00011, 0x25, 0x27,
+                   [ACC]>;
 
 // MAX and MINI have no q and no ACC forms.
 multiclass MinMaxOp<string mn, bits<6> op, bits<4> opbc, bits<6> opi> {
