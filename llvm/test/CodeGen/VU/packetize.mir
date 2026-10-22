@@ -190,9 +190,9 @@ body: |
   ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
   ; CHECK-NEXT:   liveins: $vi1, $vf1, $vf2
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   BUNDLE implicit-def $vi1, implicit-def $vf1, implicit $vi1, implicit $vf1, implicit $vf2 {
-  ; CHECK-NEXT:     $vi1 = IADDI $vi1, -1
+  ; CHECK-NEXT:   BUNDLE implicit-def $vf1, implicit-def $vi1, implicit $vf1, implicit $vf2, implicit $vi1 {
   ; CHECK-NEXT:     $vf1 = ADD 15, $vf1, $vf2
+  ; CHECK-NEXT:     $vi1 = IADDI $vi1, -1
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   $vf3 = ADD 15, $vf2, $vf2
   ; CHECK-NEXT:   BUNDLE implicit-def $vf4, implicit $vf2, implicit $vi1, implicit $vi0 {

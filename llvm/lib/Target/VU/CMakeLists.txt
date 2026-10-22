@@ -31,6 +31,7 @@ add_llvm_target(VUCodeGen
   VUSubtarget.cpp
   VUTargetMachine.cpp
   VUTargetObjectFile.cpp
+  VUWords.cpp
 
   LINK_COMPONENTS
   AsmPrinter

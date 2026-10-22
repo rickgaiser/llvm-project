@@ -21,9 +21,9 @@ define void @scale_loop() {
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, 0(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 1
-; CHECK-NEXT:    nop sq.xyzw vf3, -2(vi1)
-; CHECK-NEXT:    nop ibne vi1, vi2, .LBB0_1
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibne vi1, vi2, .LBB0_1
+; CHECK-NEXT:    nop sq.xyzw vf3, -2(vi1)
 ; CHECK-NEXT:  .LBB0_2:
 ; CHECK-NEXT:    mulx.xyzw vf1, vf2, vf1x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, -1(vi1)

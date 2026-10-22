@@ -10,13 +10,13 @@ name: swap_lower
 body: |
   ; CHECK-LABEL: name: swap_lower
   ; CHECK: bb.0:
-  ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
+  ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   $vi3 = IADDI $vi3, 1
   ; CHECK-NEXT:   $vi4 = IADDI $vi4, 1
   ; CHECK-NEXT:   BUNDLE implicit-def $vf2, implicit $vf1, implicit $vi3, implicit $vi6 {
   ; CHECK-NEXT:     $vf2 = MUL 15, $vf1, $vf1
-  ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.0
+  ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.2
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   BUNDLE implicit-def $vi5, implicit $vi5 {
   ; CHECK-NEXT:     $vi5 = IADDIU $vi5, 7
@@ -25,8 +25,11 @@ body: |
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   PROGRAM_END
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   PROGRAM_END
   bb.0:
-    successors: %bb.0, %bb.1
+    successors: %bb.1, %bb.2
 
     $vi3 = IADDI $vi3, 1
     $vi4 = IADDI $vi4, 1
@@ -34,9 +37,12 @@ body: |
       $vf2 = MUL 15, $vf1, $vf1
       $vi5 = IADDIU $vi5, 7
     }
-    IBNE $vi3, $vi6, %bb.0
+    IBNE $vi3, $vi6, %bb.2
 
   bb.1:
+    PROGRAM_END
+
+  bb.2:
     PROGRAM_END
 ...
 
@@ -46,13 +52,13 @@ name: free_lower
 body: |
   ; CHECK-LABEL: name: free_lower
   ; CHECK: bb.0:
-  ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
+  ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   $vi3 = IADDI $vi3, 1
   ; CHECK-NEXT:   $vi4 = IADDI $vi4, 1
   ; CHECK-NEXT:   BUNDLE implicit-def $vf2, implicit $vf1, implicit $vi3, implicit $vi6 {
   ; CHECK-NEXT:     $vf2 = MUL 15, $vf1, $vf1
-  ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.0
+  ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.2
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   BUNDLE implicit-def $vf3, implicit $vf1 {
   ; CHECK-NEXT:     $vf3 = ADD 15, $vf1, $vf1
@@ -61,18 +67,24 @@ body: |
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   PROGRAM_END
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   PROGRAM_END
   bb.0:
-    successors: %bb.0, %bb.1
+    successors: %bb.1, %bb.2
 
     $vi3 = IADDI $vi3, 1
     $vi4 = IADDI $vi4, 1
     $vf2 = MUL 15, $vf1, $vf1
     BUNDLE {
       $vf3 = ADD 15, $vf1, $vf1
-      IBNE $vi3, $vi6, %bb.0
+      IBNE $vi3, $vi6, %bb.2
     }
 
   bb.1:
+    PROGRAM_END
+
+  bb.2:
     PROGRAM_END
 ...
 
@@ -82,28 +94,35 @@ name: condition_hazard
 body: |
   ; CHECK-LABEL: name: condition_hazard
   ; CHECK: bb.0:
-  ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
+  ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   $vi3 = IADDI $vi3, 1
   ; CHECK-NEXT:   $vf2 = MUL 15, $vf1, $vf1
-  ; CHECK-NEXT:   IBNE $vi3, $vi6, %bb.0
+  ; CHECK-NEXT:   IBNE $vi3, $vi6, %bb.2
   ; CHECK-NEXT:   DSNOP
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   PROGRAM_END
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   PROGRAM_END
   bb.0:
-    successors: %bb.0, %bb.1
+    successors: %bb.1, %bb.2
 
     $vi3 = IADDI $vi3, 1
     $vf2 = MUL 15, $vf1, $vf1
-    IBNE $vi3, $vi6, %bb.0
+    IBNE $vi3, $vi6, %bb.2
 
   bb.1:
     PROGRAM_END
+
+  bb.2:
+    PROGRAM_END
 ...
 
-# The load would be two words closer to its use at the top of the loop and
-# stall two more cycles.
+# In a loop, any lower instruction that may run after the branch can fill the
+# delay slot. The load would be closer to its use at the top of the loop and
+# stall, but the increment of vi4 can go, and its word with it.
 ---
 name: late_load
 body: |
@@ -113,10 +132,12 @@ body: |
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   $vf2 = MUL 15, $vf1, $vf1
   ; CHECK-NEXT:   $vi3 = IADDI $vi3, 1
-  ; CHECK-NEXT:   $vi4 = IADDI $vi4, 1
   ; CHECK-NEXT:   $vf1 = LQ 15, 0, $vi3
   ; CHECK-NEXT:   IBNE $vi3, $vi6, %bb.0
-  ; CHECK-NEXT:   DSNOP
+  ; CHECK-NEXT:   BUNDLE implicit-def $vi4, implicit $vi4 {
+  ; CHECK-NEXT:     $vi4 = IADDI $vi4, 1
+  ; CHECK-NEXT:     DELAY_SLOT
+  ; CHECK-NEXT:   }
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.1:
   ; CHECK-NEXT:   PROGRAM_END
@@ -127,6 +148,38 @@ body: |
     $vi3 = IADDI $vi3, 1
     $vi4 = IADDI $vi4, 1
     $vf1 = LQ 15, 0, $vi3
+    IBNE $vi3, $vi6, %bb.0
+
+  bb.1:
+    PROGRAM_END
+...
+
+# The store waits for the product. In the delay slot it no longer stalls; the
+# branch needs a word after the increment of vi3 anyway.
+---
+name: late_store
+body: |
+  ; CHECK-LABEL: name: late_store
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $vf2 = MUL 15, $vf1, $vf1
+  ; CHECK-NEXT:   $vi3 = IADDI $vi3, 1
+  ; CHECK-NEXT:   NOP
+  ; CHECK-NEXT:   IBNE $vi3, $vi6, %bb.0
+  ; CHECK-NEXT:   BUNDLE implicit $vf2, implicit $vi4 {
+  ; CHECK-NEXT:     SQ 15, $vf2, 0, $vi4
+  ; CHECK-NEXT:     DELAY_SLOT
+  ; CHECK-NEXT:   }
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   PROGRAM_END
+  bb.0:
+    successors: %bb.0, %bb.1
+
+    $vf2 = MUL 15, $vf1, $vf1
+    $vi3 = IADDI $vi3, 1
+    SQ 15, $vf2, 0, $vi4
     IBNE $vi3, $vi6, %bb.0
 
   bb.1:
