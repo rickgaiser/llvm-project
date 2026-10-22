@@ -2,6 +2,9 @@
 # RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi=n32 -run-pass=mips-r5900-issue %s -o - | FileCheck %s
 # RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi=n32 -run-pass=mips-r5900-issue \
 # RUN:   -pass-remarks-analysis=mips-r5900-issue %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=REMARK
+# RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi=n32 -run-pass=mips-r5900-issue \
+# RUN:   -mips-r5900-issue-nop-limit=8 -pass-remarks-analysis=mips-r5900-issue %s \
+# RUN:   -o /dev/null 2>&1 | FileCheck %s --check-prefix=LIMIT
 
 # The R5900 issues two instructions together only if they are in the same
 # aligned 8-byte block.
@@ -117,8 +120,9 @@ body: |
 # The loop of sum_pf0 in the bench as compiled with partial unrolling: 28.6
 # cycles per 64 bytes in the cache. A nop at the top of the loop that moves the
 # loads to the first slot of each block makes it 19.6 (measured). The pass
-# finds this with one nop.
+# finds this with one nop, but inserts none in a loop above the nop limit.
 # REMARK: sum_pf0 %bb.1, slot 0: 51 -> 34 cycles, 1 nops
+# LIMIT: sum_pf0 %bb.1, slot 0: 51 -> 49 cycles, 0 nops
 ---
 name: sum_pf0
 alignment: 8

@@ -47,6 +47,13 @@ static cl::opt<bool>
                       cl::desc("Do not reorder instructions for the dual "
                                "issue of aligned 8-byte blocks on the R5900"));
 
+// Removing the nops simulates the basic block for each nop, for each nop that
+// is removed.
+static cl::opt<unsigned> R5900IssueNopLimit(
+    "mips-r5900-issue-nop-limit", cl::init(1024), cl::Hidden,
+    cl::desc("Do not insert nops for the R5900 dual issue in basic blocks of "
+             "more instructions"));
+
 namespace {
 
 /// Builds the dependence graph of a region; the pass schedules it.
@@ -106,7 +113,7 @@ private:
   const MachineLoopInfo *MLI = nullptr;
   TargetSchedModel SchedModel;
   bool OptForSize = false;
-  /// Nops are only inserted in loops.
+  /// Nops are only inserted in loops that are not too large.
   bool AllowNops = false;
   std::unique_ptr<R5900IssueDAG> DAG;
   /// The nops inserted in the current basic block.
@@ -251,7 +258,8 @@ bool MipsR5900Issue::scheduleBlock(MachineBasicBlock &MBB, unsigned StartSlot,
   for (MachineInstr &MI : MBB)
     OldOrder.push_back(&MI);
   Nops.clear();
-  AllowNops = !OptForSize && MLI->getLoopFor(&MBB);
+  AllowNops =
+      !OptForSize && MLI->getLoopFor(&MBB) && MBB.size() <= R5900IssueNopLimit;
 
   MipsR5900IssueModel Model(SchedModel, *TRI);
   Model.startBlock(StartSlot);
