@@ -229,28 +229,6 @@ class VU0_3R<string opstr, bits<6> funct>
   let Inst{5 -0} = funct;
 }
 
-// VU0 Type 1 ISel variant: hardcoded xyzw mask for code generation
-class VU0_3R_ISel<string opstr, bits<6> funct, SDPatternOperator OpNode>
-    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, ".xyzw\t$fd, $fs, $ft"),
-             [(set VFOpnd:$fd, (OpNode VFOpnd:$fs, VFOpnd:$ft))], FrmR,
-             opstr> {
-  let isCodeGenOnly = 1;
-  let DecoderNamespace = "R5900";
-  let hasSideEffects = 0;
-  bits<5> fd;
-  bits<5> fs;
-  bits<5> ft;
-  bits<32> Inst;
-  let Inst{31 -26} = 0b010010; // COP2
-  let Inst{25} = 1;            // co bit
-  let Inst{24 -21} = 0b1111;   // dest = xyzw (all lanes)
-  let Inst{20 -16} = ft;
-  let Inst{15 -11} = fs;
-  let Inst{10 -6} = fd;
-  let Inst{5 -0} = funct;
-}
-
 // VU0 Type 3 instruction class: 2 VF registers, ACC destination, 11-bit opcode
 // Used for VADDA, VSUBA, VMULA, VMADDA, VMSUBA - assembly visible with variable
 // mask ACC operand is explicit in assembly but implicit in encoding (always
@@ -366,25 +344,6 @@ class VU0_2R<string opstr, bits<11> funct>
   let Inst{10 -0} = funct;
 }
 
-// VU0 Type 3 ISel variant: hardcoded xyzw mask for code generation
-class VU0_2R_ISel<string opstr, bits<11> funct, SDPatternOperator OpNode>
-    : InstSE<(outs VFOpnd:$ft), (ins VFOpnd:$fs),
-             !strconcat(opstr, ".xyzw\t$ft, $fs"),
-             [(set VFOpnd:$ft, (OpNode VFOpnd:$fs))], FrmR, opstr> {
-  let isCodeGenOnly = 1;
-  let DecoderNamespace = "R5900";
-  let hasSideEffects = 0;
-  bits<5> ft;
-  bits<5> fs;
-  bits<32> Inst;
-  let Inst{31 -26} = 0b010010; // COP2
-  let Inst{25} = 1;            // co bit
-  let Inst{24 -21} = 0b1111;   // dest = xyzw (all lanes)
-  let Inst{20 -16} = ft;
-  let Inst{15 -11} = fs;
-  let Inst{10 -0} = funct;
-}
-
 let Predicates = [HasVU0] in {
   // VU0 Vector Add/Subtract/Multiply (3-register forms, variable dest mask)
   // Assembly-visible instructions with variable mask operand
@@ -394,25 +353,14 @@ let Predicates = [HasVU0] in {
   }
   def VSUB : VU0_3R<"vsub", 0b101100>; // 0x2C
 
-  // ISel-only variants with hardcoded xyzw mask for code generation patterns
-  let isCommutable = 1 in {
-    def VADD_ISel : VU0_3R_ISel<"vadd", 0b101000, fadd>;
-    def VMUL_ISel : VU0_3R_ISel<"vmul", 0b101010, fmul>;
-  }
-  def VSUB_ISel : VU0_3R_ISel<"vsub", 0b101100, fsub>;
-
   // VU0 Vector Min/Max (3-register forms)
   let isCommutable = 1 in {
     def VMAX : VU0_3R<"vmax", 0b101011>;    // 0x2B
     def VMINI : VU0_3R<"vmini", 0b101111>; // 0x2F
-    // ISel variants with fixed xyzw mask for patterns
-    def VMAX_ISel : VU0_3R_ISel<"vmax", 0b101011, null_frag>;
-    def VMINI_ISel : VU0_3R_ISel<"vmini", 0b101111, null_frag>;
   }
 
   // VU0 Absolute value (2-register form: ft = |fs|)
   def VABS : VU0_2R<"vabs", 0b00111111101>; // 0x1FD
-  def VABS_ISel : VU0_2R_ISel<"vabs", 0b00111111101, fabs>;
 
   // VU0 VMOVE (move) - opcode 0x33C
   // VMOVE.dest ft, fs - copies selected lanes from fs to ft
@@ -433,8 +381,6 @@ let Predicates = [HasVU0] in {
   def VITOF4 : VU0_2R<"vitof4", 0b00100111101>;   // 0x13D
   def VITOF12 : VU0_2R<"vitof12", 0b00100111110>; // 0x13E
   def VITOF15 : VU0_2R<"vitof15", 0b00100111111>; // 0x13F
-  def VFTOI0_ISel : VU0_2R_ISel<"vftoi0", 0b00101111100, null_frag>;
-  def VITOF0_ISel : VU0_2R_ISel<"vitof0", 0b00100111100, null_frag>;
 
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001>; // 0x29
@@ -483,11 +429,14 @@ let Predicates = [HasVU0] in {
   def : Pat<(MipsVU0BLEND v4f32:$base, v4f32:$src, (i32 imm:$mask)),
             (VMOVEm VFRegs:$base, VFRegs:$src, (i32 imm:$mask))>;
 
-  // Patterns for VU0 min/max operations
+  // Operations on all four fields: the xyzw destination mask.
   // Note: VU0 min/max don't follow IEEE NaN semantics, use with -ffast-math
-  def : Pat<(fmaxnum v4f32:$fs, v4f32:$ft), (VMAX_ISel VFRegs:$fs, VFRegs:$ft)>;
-  def : Pat<(fminnum v4f32:$fs, v4f32:$ft), (VMINI_ISel VFRegs:$fs,
-                                                VFRegs:$ft)>;
+  def : Pat<(fadd v4f32:$fs, v4f32:$ft), (VADD 15, v4f32:$fs, v4f32:$ft)>;
+  def : Pat<(fsub v4f32:$fs, v4f32:$ft), (VSUB 15, v4f32:$fs, v4f32:$ft)>;
+  def : Pat<(fmul v4f32:$fs, v4f32:$ft), (VMUL 15, v4f32:$fs, v4f32:$ft)>;
+  def : Pat<(fmaxnum v4f32:$fs, v4f32:$ft), (VMAX 15, v4f32:$fs, v4f32:$ft)>;
+  def : Pat<(fminnum v4f32:$fs, v4f32:$ft), (VMINI 15, v4f32:$fs, v4f32:$ft)>;
+  def : Pat<(fabs v4f32:$fs), (VABS 15, v4f32:$fs)>;
 
 } // Predicates = [HasVU0]
 
@@ -575,46 +524,12 @@ class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
   let Inst{1 -0} = bc;
 }
 
-// VU0 Type 0 ISel variant: hardcoded xyzw mask for code generation
-class VU0_3R_BC_ISel<string opstr, string suffix, bits<4> opcode, bits<2> bc,
-                     SDPatternOperator OpNode = null_frag>
-    : InstSE<(outs VFOpnd:$fd), (ins VFOpnd:$fs, VFOpnd:$ft),
-             !strconcat(opstr, suffix, ".xyzw\t$fd, $fs, $ft"),
-             [(set VFOpnd:$fd, (OpNode VFOpnd:$fs, VFOpnd:$ft))], FrmR,
-             opstr> {
-  let isCodeGenOnly = 1;
-  let DecoderNamespace = "R5900";
-  let hasSideEffects = 0;
-  bits<5> fd;
-  bits<5> fs;
-  bits<5> ft;
-  bits<32> Inst;
-  let Inst{31 -26} = 0b010010; // COP2
-  let Inst{25} = 1;            // co bit
-  let Inst{24 -21} = 0b1111;   // dest = xyzw (all lanes)
-  let Inst{20 -16} = ft;
-  let Inst{15 -11} = fs;
-  let Inst{10 -6} = fd;
-  let Inst{5 -2} = opcode;
-  let Inst{1 -0} = bc;
-}
-
 // Multiclass to define all 4 broadcast variants (x, y, z, w) for 3-register ops
 multiclass VU0_3R_BC_ALL<string opstr, bits<4> opcode> {
   def x : VU0_3R_BC<opstr, "x", opcode, 0b00>;
   def y : VU0_3R_BC<opstr, "y", opcode, 0b01>;
   def z : VU0_3R_BC<opstr, "z", opcode, 0b10>;
   def w : VU0_3R_BC<opstr, "w", opcode, 0b11>;
-}
-
-// Multiclass for ISel variants of broadcast ops (with patterns)
-multiclass VU0_3R_BC_ALL_ISel<string opstr, bits<4> opcode,
-                              SDPatternOperator OpX, SDPatternOperator OpY,
-                              SDPatternOperator OpZ, SDPatternOperator OpW> {
-  def x : VU0_3R_BC_ISel<opstr, "x", opcode, 0b00, OpX>;
-  def y : VU0_3R_BC_ISel<opstr, "y", opcode, 0b01, OpY>;
-  def z : VU0_3R_BC_ISel<opstr, "z", opcode, 0b10, OpZ>;
-  def w : VU0_3R_BC_ISel<opstr, "w", opcode, 0b11, OpW>;
 }
 
 // Multiclass for 3-register ops that read ACC
@@ -638,34 +553,18 @@ let Predicates = [HasVU0] in {
   // VU0 3-register broadcast instructions (Type 0)
   // VADDbc: fd = fs + ft[bc] (opcode = 0000)
   defm VADDbc : VU0_3R_BC_ALL<"vadd", 0b0000>;
-  defm VADDbc_ISel
-      : VU0_3R_BC_ALL_ISel<"vadd", 0b0000, MipsVU0ADDx,
-                           MipsVU0ADDy, MipsVU0ADDz, MipsVU0ADDw>;
 
   // VSUBbc: fd = fs - ft[bc] (opcode = 0001)
   defm VSUBbc : VU0_3R_BC_ALL<"vsub", 0b0001>;
-  defm VSUBbc_ISel
-      : VU0_3R_BC_ALL_ISel<"vsub", 0b0001, MipsVU0SUBx,
-                           MipsVU0SUBy, MipsVU0SUBz, MipsVU0SUBw>;
 
   // VMAXbc: fd = max(fs, ft[bc]) (opcode = 0100)
   defm VMAXbc : VU0_3R_BC_ALL<"vmax", 0b0100>;
-  defm VMAXbc_ISel
-      : VU0_3R_BC_ALL_ISel<"vmax", 0b0100, MipsVU0MAXx,
-                           MipsVU0MAXy, MipsVU0MAXz, MipsVU0MAXw>;
 
   // VMINIbc: fd = min(fs, ft[bc]) (opcode = 0101)
   defm VMINIbc : VU0_3R_BC_ALL<"vmini", 0b0101>;
-  defm VMINIbc_ISel
-      : VU0_3R_BC_ALL_ISel<"vmini", 0b0101, MipsVU0MINIx,
-                           MipsVU0MINIy, MipsVU0MINIz, MipsVU0MINIw>;
 
   // VMULbc: fd = fs * ft[bc] (opcode = 0110)
   defm VMULbc : VU0_3R_BC_ALL<"vmul", 0b0110>;
-  // ISel variants with patterns for VU0 broadcast multiply
-  defm VMULbc_ISel
-      : VU0_3R_BC_ALL_ISel<"vmul", 0b0110, MipsVU0MULx,
-                           MipsVU0MULy, MipsVU0MULz, MipsVU0MULw>;
 
   // VMADDbc: fd = ACC + fs * ft[bc] (opcode = 0010)
   defm VMADDbc : VU0_3R_BC_ACC_ALL<"vmadd", 0b0010>;
@@ -692,7 +591,12 @@ let Predicates = [HasVU0] in {
   defm VMSUBAbc
       : VU0_ACC_BC_ALL<"vmsuba", 0b000111111, [VU0ACC]>;
 
-  // Patterns for VMULbc are now defined in VMULbc_ISel via the multiclass
+  // Broadcast operations: fs op ft.<field>
+  foreach F = ["x", "y", "z", "w"] in
+    foreach Op = ["ADD", "SUB", "MAX", "MINI", "MUL"] in
+      def : Pat<(!cast<SDNode>("MipsVU0" # Op # F) v4f32:$fs, v4f32:$ft),
+                (!cast<Instruction>("V" # Op # "bc" # F) 15, v4f32:$fs,
+                                                          v4f32:$ft)>;
 
   //===--------------------------------------------------------------------===//
   // VU0 Q-register operations
@@ -939,8 +843,8 @@ let Predicates = [HasVU0] in {
   def : Pat<(v4f32 (bitconvert v4i32:$src)), (QMTC2 v4i32:$src)>;
 
   // v4i32 lives in a 128-bit GPR, so a conversion moves it to or from VU0.
-  def : Pat<(v4i32 (fp_to_sint v4f32:$src)), (QMFC2 (VFTOI0_ISel v4f32:$src))>;
-  def : Pat<(v4f32 (sint_to_fp v4i32:$src)), (VITOF0_ISel (QMTC2 v4i32:$src))>;
+  def : Pat<(v4i32 (fp_to_sint v4f32:$src)), (QMFC2 (VFTOI0 15, v4f32:$src))>;
+  def : Pat<(v4f32 (sint_to_fp v4i32:$src)), (VITOF0 15, (QMTC2 v4i32:$src))>;
 
   // Fixed-point conversions with n fraction bits, combined from a
   // multiplication by 2^n or 2^-n.

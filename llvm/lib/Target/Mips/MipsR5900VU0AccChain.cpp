@@ -67,37 +67,35 @@ private:
   /// Optimize VU0 broadcast multiply-add chains in a basic block
   bool optimizeBasicBlock(MachineBasicBlock &MBB);
 
+  /// Check if an instruction writes all four fields: operands are (fd, dest,
+  /// fs, ft).
+  static bool isXYZW(const MachineInstr &MI) {
+    return MI.getOperand(1).getImm() == 15;
+  }
+
   /// Check if an instruction is VADD (v4f32 vector add)
-  /// Recognizes both assembly and ISel variants
   bool isVADD(const MachineInstr &MI) const {
-    unsigned Opc = MI.getOpcode();
-    return Opc == Mips::VADD || Opc == Mips::VADD_ISel;
+    return MI.getOpcode() == Mips::VADD && isXYZW(MI);
   }
 
   /// Check if an instruction is a VU0 broadcast multiply (VMULbcx/y/z/w)
-  /// Recognizes both assembly and ISel variants
   bool isVMULbc(const MachineInstr &MI) const {
     unsigned Opc = MI.getOpcode();
-    return Opc == Mips::VMULbcx || Opc == Mips::VMULbcy ||
-           Opc == Mips::VMULbcz || Opc == Mips::VMULbcw ||
-           Opc == Mips::VMULbc_ISelx || Opc == Mips::VMULbc_ISely ||
-           Opc == Mips::VMULbc_ISelz || Opc == Mips::VMULbc_ISelw;
+    return (Opc == Mips::VMULbcx || Opc == Mips::VMULbcy ||
+            Opc == Mips::VMULbcz || Opc == Mips::VMULbcw) &&
+           isXYZW(MI);
   }
 
   /// Get the broadcast component (0=x, 1=y, 2=z, 3=w) from a VMULbc instruction
   unsigned getBroadcastComponent(const MachineInstr &MI) const {
     switch (MI.getOpcode()) {
     case Mips::VMULbcx:
-    case Mips::VMULbc_ISelx:
       return 0;
     case Mips::VMULbcy:
-    case Mips::VMULbc_ISely:
       return 1;
     case Mips::VMULbcz:
-    case Mips::VMULbc_ISelz:
       return 2;
     case Mips::VMULbcw:
-    case Mips::VMULbc_ISelw:
       return 3;
     default:
       llvm_unreachable("Not a VMULbc instruction");
@@ -245,16 +243,16 @@ bool MipsR5900VU0AccChain::buildChain(MachineInstr &Root,
       // Leaf node - this is a broadcast multiply
       BroadcastMulLeaf Leaf;
       Leaf.VMul = MI;
-      Leaf.LHS = MI->getOperand(1).getReg();
-      Leaf.RHS = MI->getOperand(2).getReg();
+      Leaf.LHS = MI->getOperand(2).getReg();
+      Leaf.RHS = MI->getOperand(3).getReg();
       Leaf.BroadcastComp = getBroadcastComponent(*MI);
       Leaves.push_back(Leaf);
     } else if (isVADD(*MI)) {
       VAdds.push_back(MI);
 
       // Get both operands
-      Register Op1 = MI->getOperand(1).getReg();
-      Register Op2 = MI->getOperand(2).getReg();
+      Register Op1 = MI->getOperand(2).getReg();
+      Register Op2 = MI->getOperand(3).getReg();
 
       // Find the defining instructions
       MachineInstr *Def1 = findDef(Op1);

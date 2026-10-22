@@ -4967,8 +4967,11 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
       }
       if (IsSplat && SplatIdx >= 0 && SplatIdx < 4) {
         // Create zero vector: zero = V1 - V1
-        SDValue Zero = SDValue(
-            DAG.getMachineNode(Mips::VSUB_ISel, DL, MVT::v4f32, V1, V1), 0);
+        SDValue Zero =
+            SDValue(DAG.getMachineNode(Mips::VSUB, DL, MVT::v4f32,
+                                       DAG.getTargetConstant(0xF, DL, MVT::i32),
+                                       V1, V1),
+                    0);
         // Broadcast using VADDbc: result = zero + V1[SplatIdx]
         unsigned VADDbcOpc;
         switch (SplatIdx) {

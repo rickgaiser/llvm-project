@@ -302,12 +302,10 @@ def R5900WriteVU0Rsqrt : R5900Write<[R5900Pipe0, R5900C2, R5900VU0FDiv], 15,
 def : InstRW<[R5900WriteVU0], (instrs VADD, VSUB, VMUL, VMADD, VMSUB, VADDm,
                                VSUBm, VMULm, VMOVE, VMOVEm, VMR32, VABS, VMAX,
                                VMINI, VCLIPW, VOPMSUB, VADDQ, VSUBQ, VMULQ,
-                               VMADDQ, VMSUBQ, VADD_ISel, VSUB_ISel, VMUL_ISel,
-                               VMAX_ISel, VMINI_ISel, VABS_ISel, VFTOI0,
-                               VFTOI4, VFTOI12, VFTOI15, VITOF0, VITOF4,
-                               VITOF12, VITOF15, VFTOI0_ISel, VITOF0_ISel)>;
-def : InstRW<[R5900WriteVU0], (instregex "^V(ADD|SUB|MUL|MADD|MSUB|MAX|MINI)bc[xyzw]$",
-                                         "^V(ADD|SUB|MUL|MAX|MINI)bc_ISel[xyzw]$")>;
+                               VMADDQ, VMSUBQ, VFTOI0, VFTOI4, VFTOI12,
+                               VFTOI15, VITOF0, VITOF4, VITOF12, VITOF15)>;
+def : InstRW<[R5900WriteVU0],
+             (instregex "^V(ADD|SUB|MUL|MADD|MSUB|MAX|MINI)bc[xyzw]$")>;
 def : InstRW<[R5900WriteVU0Acc], (instrs VADDA, VSUBA, VMULA, VMADDA, VMSUBA,
                                   VOPMULA, VNOP, VWAITQ)>;
 def : InstRW<[R5900WriteVU0Div], (instrs VDIV, VSQRT)>;

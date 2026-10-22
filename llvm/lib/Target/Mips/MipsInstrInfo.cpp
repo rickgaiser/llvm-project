@@ -862,6 +862,12 @@ bool MipsInstrInfo::findCommutedOpIndices(const MachineInstr &MI,
     if (!MI.getOperand(SrcOpIdx1).isReg() || !MI.getOperand(SrcOpIdx2).isReg())
       return false;
     return true;
+  case Mips::VADD:
+  case Mips::VMUL:
+  case Mips::VMAX:
+  case Mips::VMINI:
+    // The R5900 VU0 operands are (fd, dest, fs, ft).
+    return fixCommutedOpIndices(SrcOpIdx1, SrcOpIdx2, 2, 3);
   }
   return TargetInstrInfo::findCommutedOpIndices(MI, SrcOpIdx1, SrcOpIdx2);
 }
