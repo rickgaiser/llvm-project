@@ -1717,45 +1717,16 @@ static SDValue performBITCASTCombine(SDNode *N, SelectionDAG &DAG,
   return NewLoad;
 }
 
-/// The VU0 broadcast nodes of a v4f32 operation, indexed by the broadcast
-/// lane, or nullptr.
-static const unsigned *getVU0BroadcastOpcodes(unsigned Opc) {
-  static const unsigned AddOpcs[] = {MipsISD::VU0_ADDx, MipsISD::VU0_ADDy,
-                                     MipsISD::VU0_ADDz, MipsISD::VU0_ADDw};
-  static const unsigned SubOpcs[] = {MipsISD::VU0_SUBx, MipsISD::VU0_SUBy,
-                                     MipsISD::VU0_SUBz, MipsISD::VU0_SUBw};
-  static const unsigned MulOpcs[] = {MipsISD::VU0_MULx, MipsISD::VU0_MULy,
-                                     MipsISD::VU0_MULz, MipsISD::VU0_MULw};
-  static const unsigned MaxOpcs[] = {MipsISD::VU0_MAXx, MipsISD::VU0_MAXy,
-                                     MipsISD::VU0_MAXz, MipsISD::VU0_MAXw};
-  static const unsigned MinOpcs[] = {MipsISD::VU0_MINIx, MipsISD::VU0_MINIy,
-                                     MipsISD::VU0_MINIz, MipsISD::VU0_MINIw};
-  switch (Opc) {
-  case ISD::FADD:
-    return AddOpcs;
-  case ISD::FSUB:
-    return SubOpcs;
-  case ISD::FMUL:
-    return MulOpcs;
-  case ISD::FMAXNUM:
-    return MaxOpcs;
-  case ISD::FMINNUM:
-    return MinOpcs;
-  default:
-    return nullptr;
-  }
+/// Broadcast field \p Field of \p V to all four fields.
+static SDValue getVU0Broadcast(SelectionDAG &DAG, const SDLoc &DL, SDValue V,
+                               unsigned Field) {
+  return DAG.getNode(MipsISD::VU0_BCAST, DL, MVT::v4f32, V,
+                     DAG.getTargetConstant(Field, DL, MVT::i32));
 }
 
-/// If Opc is a VU0 broadcast add, max or min node, return its operation and
-/// set BC to its broadcast lane.
-static unsigned getVU0BroadcastOperation(unsigned Opc, unsigned &BC) {
-  for (unsigned Op : {ISD::FADD, ISD::FMAXNUM, ISD::FMINNUM}) {
-    const unsigned *Opcs = getVU0BroadcastOpcodes(Op);
-    for (BC = 0; BC < 4; ++BC)
-      if (Opcs[BC] == Opc)
-        return Op;
-  }
-  return 0;
+/// Whether \p V is a VU0_BCAST operand of a VU0 operation.
+static bool isVU0Broadcast(SDValue V) {
+  return V.getOpcode() == MipsISD::VU0_BCAST;
 }
 
 /// Returns n if \p C is a splat of 2^n, or of 2^-n if \p Inverse, for the
@@ -1806,16 +1777,15 @@ static SDValue performVU0FixedPointCombine(SDNode *N, SelectionDAG &DAG,
 }
 
 // VU0 Broadcast Combine
-// Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> VU0_<op>x/y/z/w(A, B) for fadd,
-// fsub, fmul, fmaxnum and fminnum. This enables efficient matrix-vector
-// operations using VMULbc instructions, and horizontal sums using VADDbc
-// instructions.
+// Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> fop(A, VU0_BCAST(B, N)) for fadd,
+// fsub, fmul, fmaxnum and fminnum, which is selected as the broadcast form
+// (VMULx ...). This enables efficient matrix-vector operations using VMULbc
+// instructions, and horizontal sums using VADDbc instructions.
 static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
                                           const MipsSubtarget &Subtarget) {
   if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
     return SDValue();
 
-  const unsigned *Opcs = getVU0BroadcastOpcodes(N->getOpcode());
   SDLoc DL(N);
 
   // Check both operands for shuffle pattern (all but fsub are commutative,
@@ -1848,8 +1818,9 @@ static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
     if (IsBroadcast && BroadcastIdx >= 0 && BroadcastIdx < 4) {
       // We found a broadcast shuffle. Get the source vector.
       SDValue BroadcastSrc = SVN->getOperand(0);
-      return DAG.getNode(Opcs[BroadcastIdx], DL, MVT::v4f32, Vec, BroadcastSrc,
-                         N->getFlags());
+      SDValue BC = getVU0Broadcast(DAG, DL, BroadcastSrc, BroadcastIdx);
+      return DAG.getNode(N->getOpcode(), DL, MVT::v4f32, i ? BC : Vec,
+                         i ? Vec : BC, N->getFlags());
     }
   }
 
@@ -1858,7 +1829,7 @@ static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
 
 /// Collect the lanes of a single vector Base whose sum (Opc is fadd), maximum
 /// or minimum is lane Lane of V, through the vector or scalar operation Opc,
-/// its broadcast nodes, shuffles and extracts. Sums must be reassociable and
+/// broadcasts, shuffles and extracts. Sums must be reassociable and
 /// add each lane once, and scalar operations must be ones the R5900 FPU does
 /// in hardware (no NaNs, and no infinities for sums).
 static bool collectVU0Lanes(SDValue V, unsigned Lane, unsigned Opc,
@@ -1866,7 +1837,6 @@ static bool collectVU0Lanes(SDValue V, unsigned Lane, unsigned Opc,
   if (Depth > 8)
     return false;
   bool IsAdd = Opc == ISD::FADD;
-  unsigned BC;
 
   if (V.getOpcode() == Opc) {
     SDNodeFlags Flags = V->getFlags();
@@ -1880,15 +1850,10 @@ static bool collectVU0Lanes(SDValue V, unsigned Lane, unsigned Opc,
                            Depth + 1) &&
            collectVU0Lanes(V.getOperand(1), Lane, Opc, Base, Lanes, Depth + 1);
   }
-  if (getVU0BroadcastOperation(V.getOpcode(), BC) == Opc) {
-    if (IsAdd && !V->getFlags().hasAllowReassociation())
-      return false;
-    return collectVU0Lanes(V.getOperand(0), Lane, Opc, Base, Lanes,
-                           Depth + 1) &&
-           collectVU0Lanes(V.getOperand(1), BC, Opc, Base, Lanes, Depth + 1);
-  }
-
   switch (V.getOpcode()) {
+  case MipsISD::VU0_BCAST:
+    return collectVU0Lanes(V.getOperand(0), V.getConstantOperandVal(1), Opc,
+                           Base, Lanes, Depth + 1);
   case ISD::VECTOR_SHUFFLE: {
     int M = cast<ShuffleVectorSDNode>(V)->getMaskElt(Lane);
     if (M < 0)
@@ -1929,12 +1894,8 @@ static SDValue performVU0HorizontalCombine(SDNode *N, SelectionDAG &DAG,
     return SDValue();
 
   unsigned Opc = N->getOpcode();
-  if (Opc == ISD::EXTRACT_VECTOR_ELT) {
-    unsigned BC;
+  if (Opc == ISD::EXTRACT_VECTOR_ELT)
     Opc = N->getOperand(0).getOpcode();
-    if (unsigned Op = getVU0BroadcastOperation(Opc, BC))
-      Opc = Op;
-  }
   if (Opc != ISD::FADD && Opc != ISD::FMAXNUM && Opc != ISD::FMINNUM)
     return SDValue();
 
@@ -1947,9 +1908,9 @@ static SDValue performVU0HorizontalCombine(SDNode *N, SelectionDAG &DAG,
   SDLoc DL(N);
   SDNodeFlags Flags;
   Flags.setAllowReassociation(Opc == ISD::FADD);
-  const unsigned *Opcs = getVU0BroadcastOpcodes(Opc);
   auto Op = [&](unsigned BC, SDValue A, SDValue B) {
-    return DAG.getNode(Opcs[BC], DL, MVT::v4f32, A, B, Flags);
+    return DAG.getNode(Opc, DL, MVT::v4f32, A, getVU0Broadcast(DAG, DL, B, BC),
+                       Flags);
   };
   SmallVector<unsigned, 3> BCs;
   for (unsigned BC = 1; BC < 4; ++BC)
@@ -1968,6 +1929,29 @@ static SDValue performVU0HorizontalCombine(SDNode *N, SelectionDAG &DAG,
   if (Res.getNode() == N)
     return SDValue();
   return Res;
+}
+
+/// An operand of a broadcast add, max or min may have become part of a
+/// horizontal operation, such as a select that became an fmaxnum: revisit
+/// the extracts of the result, also through further broadcast operations.
+static void revisitVU0HorizontalUsers(SDNode *N,
+                                      TargetLowering::DAGCombinerInfo &DCI) {
+  if (N->getValueType(0) != MVT::v4f32 ||
+      none_of(N->ops(), [](const SDUse &U) { return isVU0Broadcast(U.get()); }))
+    return;
+  auto Revisit = [&](SDNode *U) {
+    unsigned Opc = U->getOpcode();
+    if (Opc == ISD::EXTRACT_VECTOR_ELT || Opc == ISD::FADD ||
+        Opc == ISD::FMAXNUM || Opc == ISD::FMINNUM)
+      DCI.AddToWorklist(U);
+  };
+  for (SDNode *U : N->users()) {
+    if (U->getOpcode() == MipsISD::VU0_BCAST)
+      for (SDNode *UU : U->users())
+        Revisit(UU);
+    else
+      Revisit(U);
+  }
 }
 
 // VU0 Blend Combine
@@ -2051,6 +2035,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performVU0HorizontalCombine(N, DAG, Subtarget);
     if (!Val)
       Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val)
+      revisitVU0HorizontalUsers(N, DCI);
     break;
   case ISD::FSUB:
     Val = performVU0BroadcastCombine(N, DAG, Subtarget);
@@ -2101,28 +2087,6 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case MipsISD::VU0_BLEND:
     Val = performVU0BlendCombine(N, DAG, Subtarget);
-    break;
-  case MipsISD::VU0_ADDx:
-  case MipsISD::VU0_ADDy:
-  case MipsISD::VU0_ADDz:
-  case MipsISD::VU0_ADDw:
-  case MipsISD::VU0_MAXx:
-  case MipsISD::VU0_MAXy:
-  case MipsISD::VU0_MAXz:
-  case MipsISD::VU0_MAXw:
-  case MipsISD::VU0_MINIx:
-  case MipsISD::VU0_MINIy:
-  case MipsISD::VU0_MINIz:
-  case MipsISD::VU0_MINIw:
-    // An operand may have become part of a horizontal operation, such as a
-    // select that became an fmaxnum: revisit the extracts of the result, also
-    // through further broadcast operations.
-    for (SDNode *U : N->users()) {
-      unsigned BC;
-      if (U->getOpcode() == ISD::EXTRACT_VECTOR_ELT ||
-          getVU0BroadcastOperation(U->getOpcode(), BC))
-        DCI.AddToWorklist(U);
-    }
     break;
   case ISD::BITCAST:
     Val = performR5900BITCASTCombine(N, DAG, Subtarget);
@@ -4966,34 +4930,8 @@ SDValue MipsSETargetLowering::lowerVECTOR_SHUFFLE(SDValue Op,
         }
       }
       if (IsSplat && SplatIdx >= 0 && SplatIdx < 4) {
-        // Create zero vector: zero = V1 - V1
-        SDValue Zero =
-            SDValue(DAG.getMachineNode(Mips::VSUB, DL, MVT::v4f32,
-                                       DAG.getTargetConstant(0xF, DL, MVT::i32),
-                                       V1, V1),
-                    0);
-        // Broadcast using VADDbc: result = zero + V1[SplatIdx]
-        unsigned VADDbcOpc;
-        switch (SplatIdx) {
-        case 0:
-          VADDbcOpc = Mips::VADDbcx;
-          break;
-        case 1:
-          VADDbcOpc = Mips::VADDbcy;
-          break;
-        case 2:
-          VADDbcOpc = Mips::VADDbcz;
-          break;
-        case 3:
-          VADDbcOpc = Mips::VADDbcw;
-          break;
-        default:
-          llvm_unreachable("Invalid splat index");
-        }
-        return SDValue(DAG.getMachineNode(
-                           VADDbcOpc, DL, MVT::v4f32,
-                           DAG.getTargetConstant(0xF, DL, MVT::i32), Zero, V1),
-                       0);
+        // A broadcast is the field added to zero: VADDbc(V1 - V1, V1).
+        return getVU0Broadcast(DAG, DL, V1, SplatIdx);
       }
     }
 

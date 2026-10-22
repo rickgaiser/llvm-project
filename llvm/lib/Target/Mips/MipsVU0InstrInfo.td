@@ -154,47 +154,12 @@ def MipsVU0ITOF : SDNode<"MipsISD::VU0_ITOF",
                                               SDTCisVT<1, v4i32>,
                                               SDTCisVT<2, i32>]>>;
 
-// SDTypeProfile for VU0 broadcast operations: 2 v4f32 inputs, 1 v4f32 output
-def SDT_VU0Broadcast
-    : SDTypeProfile<
-          1, 2, [SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, v4f32>]>;
-
-// SDNodes for VU0 broadcast add, subtract, max, min and multiply operations
-// VADDbc: fd = fs + ft[bc]
-def MipsVU0ADDx : SDNode<"MipsISD::VU0_ADDx", SDT_VU0Broadcast>;
-def MipsVU0ADDy : SDNode<"MipsISD::VU0_ADDy", SDT_VU0Broadcast>;
-def MipsVU0ADDz : SDNode<"MipsISD::VU0_ADDz", SDT_VU0Broadcast>;
-def MipsVU0ADDw : SDNode<"MipsISD::VU0_ADDw", SDT_VU0Broadcast>;
-// VSUBbc: fd = fs - ft[bc]
-def MipsVU0SUBx : SDNode<"MipsISD::VU0_SUBx", SDT_VU0Broadcast>;
-def MipsVU0SUBy : SDNode<"MipsISD::VU0_SUBy", SDT_VU0Broadcast>;
-def MipsVU0SUBz : SDNode<"MipsISD::VU0_SUBz", SDT_VU0Broadcast>;
-def MipsVU0SUBw : SDNode<"MipsISD::VU0_SUBw", SDT_VU0Broadcast>;
-// VMAXbc: fd = max(fs, ft[bc])
-def MipsVU0MAXx : SDNode<"MipsISD::VU0_MAXx", SDT_VU0Broadcast>;
-def MipsVU0MAXy : SDNode<"MipsISD::VU0_MAXy", SDT_VU0Broadcast>;
-def MipsVU0MAXz : SDNode<"MipsISD::VU0_MAXz", SDT_VU0Broadcast>;
-def MipsVU0MAXw : SDNode<"MipsISD::VU0_MAXw", SDT_VU0Broadcast>;
-// VMINIbc: fd = min(fs, ft[bc])
-def MipsVU0MINIx : SDNode<"MipsISD::VU0_MINIx", SDT_VU0Broadcast>;
-def MipsVU0MINIy : SDNode<"MipsISD::VU0_MINIy", SDT_VU0Broadcast>;
-def MipsVU0MINIz : SDNode<"MipsISD::VU0_MINIz", SDT_VU0Broadcast>;
-def MipsVU0MINIw : SDNode<"MipsISD::VU0_MINIw", SDT_VU0Broadcast>;
-// VMULbc: fd = fs * ft[bc]
-def MipsVU0MULx : SDNode<"MipsISD::VU0_MULx", SDT_VU0Broadcast>;
-def MipsVU0MULy : SDNode<"MipsISD::VU0_MULy", SDT_VU0Broadcast>;
-def MipsVU0MULz : SDNode<"MipsISD::VU0_MULz", SDT_VU0Broadcast>;
-def MipsVU0MULw : SDNode<"MipsISD::VU0_MULw", SDT_VU0Broadcast>;
-// VMADDbc: fd = ACC + fs * ft[bc]
-def MipsVU0MADDx : SDNode<"MipsISD::VU0_MADDx", SDT_VU0Broadcast>;
-def MipsVU0MADDy : SDNode<"MipsISD::VU0_MADDy", SDT_VU0Broadcast>;
-def MipsVU0MADDz : SDNode<"MipsISD::VU0_MADDz", SDT_VU0Broadcast>;
-def MipsVU0MADDw : SDNode<"MipsISD::VU0_MADDw", SDT_VU0Broadcast>;
-// VMULAbc: ACC = fs * ft[bc]
-def MipsVU0MULAx : SDNode<"MipsISD::VU0_MULAx", SDT_VU0Broadcast>;
-def MipsVU0MULAy : SDNode<"MipsISD::VU0_MULAy", SDT_VU0Broadcast>;
-def MipsVU0MULAz : SDNode<"MipsISD::VU0_MULAz", SDT_VU0Broadcast>;
-def MipsVU0MULAw : SDNode<"MipsISD::VU0_MULAw", SDT_VU0Broadcast>;
+// Broadcast field $f (x = 0 ... w = 3) of a vector to all four fields. It is
+// selected as the ft operand of a broadcast instruction (fs op ft.<field>).
+def MipsVU0BCAST : SDNode<"MipsISD::VU0_BCAST",
+                          SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
+                                               SDTCisVT<1, v4f32>,
+                                               SDTCisVT<2, i32>]>>;
 
 //===----------------------------------------------------------------------===//
 // VU0 Instruction Classes
@@ -591,12 +556,21 @@ let Predicates = [HasVU0] in {
   defm VMSUBAbc
       : VU0_ACC_BC_ALL<"vmsuba", 0b000111111, [VU0ACC]>;
 
-  // Broadcast operations: fs op ft.<field>
-  foreach F = ["x", "y", "z", "w"] in
-    foreach Op = ["ADD", "SUB", "MAX", "MINI", "MUL"] in
-      def : Pat<(!cast<SDNode>("MipsVU0" # Op # F) v4f32:$fs, v4f32:$ft),
-                (!cast<Instruction>("V" # Op # "bc" # F) 15, v4f32:$fs,
-                                                          v4f32:$ft)>;
+  // Broadcast operations: fs op ft.<field>. A broadcast on its own is added
+  // to zero.
+  foreach F = [["x", "0"], ["y", "1"], ["z", "2"], ["w", "3"]] in {
+    defvar Field = TImmLeaf<i32, "return Imm == " # F[1] # ";">;
+    defvar BC = F[0];
+    foreach Op = [["ADD", "fadd"], ["SUB", "fsub"], ["MAX", "fmaxnum"],
+                  ["MINI", "fminnum"], ["MUL", "fmul"]] in
+      def : Pat<(!cast<SDNode>(Op[1]) v4f32:$fs,
+                                      (MipsVU0BCAST v4f32:$ft, Field)),
+                (!cast<Instruction>("V" # Op[0] # "bc" # BC) 15, v4f32:$fs,
+                                                             v4f32:$ft)>;
+    def : Pat<(MipsVU0BCAST v4f32:$ft, Field),
+              (!cast<Instruction>("VADDbc" # BC) 15,
+                   (VSUB 15, v4f32:$ft, v4f32:$ft), v4f32:$ft)>;
+  }
 
   //===--------------------------------------------------------------------===//
   // VU0 Q-register operations
