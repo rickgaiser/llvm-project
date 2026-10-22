@@ -98,8 +98,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   for (unsigned Op : {ISD::INTRINSIC_VOID, ISD::INTRINSIC_W_CHAIN})
     setOperationAction(Op, MVT::Other, Custom);
 
-  setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FP_TO_SINT,
-                       ISD::INSERT_VECTOR_ELT});
+  setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
+                       ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -368,6 +368,100 @@ SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
   return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
 }
 
+/// Returns true if \p V is field 1-3 of a vector, which a scalar operation
+/// would have to move to the x field first.
+static bool isUpperLane(SDValue V) {
+  return V.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+         isa<ConstantSDNode>(V.getOperand(1)) &&
+         V.getConstantOperandVal(1) != 0;
+}
+
+static bool isScalarSum(SDValue V) {
+  return (V.getOpcode() == ISD::FADD || V.getOpcode() == ISD::FSUB) &&
+         V.getValueType() == MVT::f32 && V.hasOneUse();
+}
+
+/// Collects the terms of a left-linear chain of scalar FADD and FSUB nodes:
+/// a field k of a vector is vf0 * v.k, which is v.k in the w field.
+static void collectLaneTerms(SDValue V, SelectionDAG &DAG,
+                             SmallVectorImpl<AccTerm> &Terms) {
+  SDValue L = V.getOperand(0), R = V.getOperand(1);
+  if (V.getOpcode() == ISD::FADD && !isScalarSum(L) && isScalarSum(R))
+    std::swap(L, R);
+  SDValue VF0 = DAG.getRegister(VU::VF0, MVT::v4f32);
+  auto addLeaf = [&](SDValue Leaf, bool Neg) {
+    if (Leaf.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+        isa<ConstantSDNode>(Leaf.getOperand(1)))
+      Terms.push_back({VF0, Leaf.getOperand(0),
+                       unsigned(Leaf.getConstantOperandVal(1)), Neg});
+    else
+      Terms.push_back({VF0, Leaf, 0, Neg});
+  };
+  if (isScalarSum(L))
+    collectLaneTerms(L, DAG, Terms);
+  else
+    addLeaf(L, /*Neg=*/false);
+  addLeaf(R, V.getOpcode() == ISD::FSUB);
+}
+
+// Adds fields of vectors in the w field of ACC, like a dot product:
+//   (t.y + t.z) + t.x  ->  MULAy.w acc, vf0, t; MADDAz.w acc, vf0, t;
+//                         MADDx.w d, vf0, t
+// The scalar result is d.w; selection reads it from there, so no field is
+// moved to x. vf0 is (0, 0, 0, 1), so the products are exact and the sum is
+// rounded as before.
+static SDValue combineLaneSum(SDNode *N, SelectionDAG &DAG) {
+  if (N->getValueType(0) != MVT::f32 ||
+      (N->hasOneUse() && isScalarSum(SDValue(*N->user_begin(), 0))))
+    return SDValue();
+  SmallVector<AccTerm, 4> Terms;
+  collectLaneTerms(SDValue(N, 0), DAG, Terms);
+  if (Terms[0].Neg || Terms.size() < 2 || Terms.size() > 4 ||
+      none_of(Terms, [](const AccTerm &T) { return T.Field != 0; }))
+    return SDValue();
+  SDLoc DL(N);
+  SmallVector<SDValue, 16> Ops;
+  for (const AccTerm &T : Terms) {
+    Ops.push_back(T.A);
+    Ops.push_back(T.B);
+    Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
+    Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
+  }
+  SDValue Sum = DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Sum,
+                     DAG.getVectorIdxConstant(3, DL));
+}
+
+// A scalar operation on field k of a vector is done on the whole vector,
+// with the other operand broadcast, instead of moving the field to x first:
+//   max(v.w, 0)  ->  MAXx.w d, v, vf0x
+static SDValue combineLaneOp(SDNode *N, SelectionDAG &DAG) {
+  if (N->getValueType(0) != MVT::f32)
+    return SDValue();
+  SDValue Lane = N->getOperand(0), Other = N->getOperand(1);
+  if (!isUpperLane(Lane) && N->getOpcode() != ISD::FSUB)
+    std::swap(Lane, Other);
+  if (!isUpperLane(Lane))
+    return SDValue();
+  SDLoc DL(N);
+  SDValue Splat;
+  if (isUpperLane(Other))
+    Splat = DAG.getNode(
+        VUISD::BCAST, DL, MVT::v4f32, Other.getOperand(0),
+        DAG.getTargetConstant(Other.getConstantOperandVal(1), DL, MVT::i32));
+  else if (isNullFPConstant(Other))
+    Splat = DAG.getNode(VUISD::BCAST, DL, MVT::v4f32,
+                        DAG.getRegister(VU::VF0, MVT::v4f32),
+                        DAG.getTargetConstant(0, DL, MVT::i32));
+  else
+    Splat = DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Other,
+                        DAG.getTargetConstant(0, DL, MVT::i32));
+  SDValue Op = DAG.getNode(N->getOpcode(), DL, MVT::v4f32, Lane.getOperand(0),
+                           Splat, N->getFlags());
+  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Op,
+                     Lane.getOperand(1));
+}
+
 /// Returns n if \p C is a splat of 2^n, or of 2^-n if \p Inverse, for the
 /// fraction bits of the fixed-point conversions, or 0.
 static unsigned getFractionBits(SDValue C, bool Inverse) {
@@ -398,6 +492,8 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
     break;
   }
   case ISD::FMUL: {
+    if (DCI.isAfterLegalizeDAG() && N->getValueType(0) == MVT::f32)
+      return combineLaneOp(N, DAG);
     // sint_to_fp (v) * 2^-n -> ITOF<n> v
     if (N->getValueType(0) != MVT::v4f32)
       break;
@@ -426,6 +522,15 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
         VUISD::INSERT_VI, DL, MVT::v4i32, N->getOperand(0), Elt.getOperand(0),
         DAG.getTargetConstant(Idx->getZExtValue(), DL, MVT::i32));
   }
+  case VUISD::BCAST: {
+    // The x field of a field of a vector is that field of the vector.
+    SDValue Src = N->getOperand(0);
+    if (N->getConstantOperandVal(1) != 0 || !isUpperLane(Src))
+      break;
+    return DAG.getNode(
+        VUISD::BCAST, DL, MVT::v4f32, Src.getOperand(0),
+        DAG.getTargetConstant(Src.getConstantOperandVal(1), DL, MVT::i32));
+  }
   case VUISD::SPLAT: {
     // Broadcast straight from the field: no move to the x field first.
     SDValue Src;
@@ -436,8 +541,18 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
   }
   case ISD::FADD:
   case ISD::FSUB:
-    if (DCI.isAfterLegalizeDAG())
-      return combineAccSum(N, DAG);
+    if (!DCI.isAfterLegalizeDAG())
+      break;
+    if (N->getValueType(0) == MVT::f32) {
+      if (SDValue Sum = combineLaneSum(N, DAG))
+        return Sum;
+      return combineLaneOp(N, DAG);
+    }
+    return combineAccSum(N, DAG);
+  case ISD::FMAXNUM:
+  case ISD::FMINNUM:
+    if (DCI.isAfterLegalizeDAG() && N->getValueType(0) == MVT::f32)
+      return combineLaneOp(N, DAG);
     break;
   }
   return SDValue();

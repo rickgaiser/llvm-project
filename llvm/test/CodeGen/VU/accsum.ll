@@ -137,3 +137,39 @@ define void @broadcast_y() {
   call void @llvm.vu.sq(<4 x float> %bw, i16 3)
   ret void
 }
+
+; A dot product: the fields are added in the w field of ACC, in the original
+; order, and the result is used from there: max(d, 0) is MAXx.w with vf0.x,
+; and the broadcast reads the w field. No field is moved to x.
+define void @dot3() {
+; CHECK-LABEL: dot3:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf2 lq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    mulay.xyzw acc, vf0, vf1y nop
+; CHECK-NEXT:    maddaz.xyzw acc, vf0, vf1z nop
+; CHECK-NEXT:    maddx.xyzw vf1, vf0, vf1x nop
+; CHECK-NEXT:    maxx.xyzw vf1, vf1, vf0x nop
+; CHECK-NEXT:    mulw.xyzw vf1, vf2, vf1w nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %a = call <4 x float> @llvm.vu.lq(i16 0)
+  %b = call <4 x float> @llvm.vu.lq(i16 1)
+  %c = call <4 x float> @llvm.vu.lq(i16 2)
+  %t = fmul <4 x float> %a, %b
+  %tx = extractelement <4 x float> %t, i32 0
+  %ty = extractelement <4 x float> %t, i32 1
+  %tz = extractelement <4 x float> %t, i32 2
+  %tyz = fadd float %ty, %tz
+  %dot = fadd float %tyz, %tx
+  %d = call float @llvm.maxnum.f32(float %dot, float 0.0)
+  %sd = insertelement <4 x float> poison, float %d, i32 0
+  %bd = shufflevector <4 x float> %sd, <4 x float> poison, <4 x i32> zeroinitializer
+  %r = fmul <4 x float> %c, %bd
+  call void @llvm.vu.sq(<4 x float> %r, i16 3)
+  ret void
+}
+
+declare float @llvm.maxnum.f32(float, float)
