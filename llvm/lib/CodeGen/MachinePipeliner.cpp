@@ -3023,6 +3023,12 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
     if (scheduleFound && HRPDetector)
       scheduleFound =
           !HRPDetector->detect(this, Schedule, Schedule.getMaxStageCount());
+
+    if (scheduleFound &&
+        !LoopPipelinerInfo->isScheduleAcceptable(*this, Schedule)) {
+      LLVM_DEBUG(dbgs() << "Target rejected the schedule for this II\n");
+      scheduleFound = false;
+    }
   }
 
   LLVM_DEBUG(dbgs() << "Schedule Found? " << scheduleFound

@@ -859,6 +859,14 @@ public:
       return true;
     }
 
+    /// Return false if the schedule found for the current initiation interval
+    /// does not fit costs that the pipeliner does not model, like the copies
+    /// of values that live longer than one iteration. The pipeliner then
+    /// tries the next initiation interval.
+    virtual bool isScheduleAcceptable(SwingSchedulerDAG &SSD, SMSchedule &SMS) {
+      return true;
+    }
+
     /// Create a condition to determine if the trip count of the loop is greater
     /// than TC, where TC is always one more than for the previous prologue or
     /// 0 if this is being called for the outermost prologue.
