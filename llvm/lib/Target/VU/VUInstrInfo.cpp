@@ -11,6 +11,7 @@
 #include "VUSubtarget.h"
 #include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -19,6 +20,8 @@
 #include "VUGenInstrInfo.inc"
 
 using namespace llvm;
+
+#define DEBUG_TYPE "vu-instr-info"
 
 #include "VUGenDFAPacketizer.inc"
 
@@ -378,6 +381,8 @@ public:
     return is_contained(CondDefs, MI);
   }
 
+  bool isScheduleAcceptable(SwingSchedulerDAG &SSD, SMSchedule &SMS) override;
+
   // The branch "if (Cond) goto epilogue" is inserted after a copy of the
   // loop condition computation; Cond is normalized for that use.
   std::optional<bool> createTripCountGreaterCondition(
@@ -391,6 +396,75 @@ public:
   void adjustTripCount(int TripCountAdjust) override {}
 };
 } // namespace
+
+/// Without unrolling, a value that lives longer than one iteration is copied
+/// in every iteration: MOVE for VF registers and IADDIU for VI registers, in
+/// the lower slot. The schedule is only accepted if the instructions and the
+/// copies fit in II words, with the branch.
+bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
+                                               SMSchedule &SMS) {
+  const MachineFunction &MF = SSD.MF;
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+  const TargetSubtargetInfo &STI = MF.getSubtarget();
+  const MCSchedModel &SM = STI.getSchedModel();
+  int II = SMS.getInitiationInterval();
+  auto CycleOf = [&](SUnit *SU) {
+    return SMS.getFirstCycle() + SMS.stageScheduled(SU) * II +
+           (int)SMS.cycleScheduled(SU);
+  };
+
+  unsigned Upper = 0, Lower = 1; // The branch.
+  for (SUnit &SU : SSD.SUnits) {
+    const MachineInstr &MI = *SU.getInstr();
+    if (MI.isPHI() || MI.isMetaInstruction() || MI.isCopy())
+      continue;
+    const MCSchedClassDesc *SC =
+        SM.getSchedClassDesc(MI.getDesc().getSchedClass());
+    if (SC && SC->isValid())
+      for (const MCWriteProcResEntry &PRE : make_range(
+               STI.getWriteProcResBegin(SC), STI.getWriteProcResEnd(SC))) {
+        StringRef Name = SM.getProcResource(PRE.ProcResourceIdx)->Name;
+        if (Name == "VUUpperRes")
+          Upper += PRE.ReleaseAtCycle;
+        else if (Name == "VULowerRes")
+          Lower += PRE.ReleaseAtCycle;
+      }
+
+    for (const MachineOperand &MO : MI.all_defs()) {
+      Register Reg = MO.getReg();
+      if (!Reg.isVirtual())
+        continue;
+      const TargetRegisterClass *RC = MRI.getRegClass(Reg);
+      if (RC != &VU::VFRegClass)
+        continue;
+      // The last use, II cycles later per Phi on the way.
+      int Def = CycleOf(&SU), End = Def;
+      SmallVector<std::pair<Register, int>, 4> Worklist = {{Reg, 0}};
+      SmallSet<Register, 4> Visited;
+      while (!Worklist.empty()) {
+        auto [R, Distance] = Worklist.pop_back_val();
+        if (!Visited.insert(R).second)
+          continue;
+        for (MachineInstr &UseMI : MRI.use_nodbg_instructions(R)) {
+          if (UseMI.getParent() != MI.getParent())
+            continue;
+          if (UseMI.isPHI()) {
+            Worklist.push_back({UseMI.getOperand(0).getReg(), Distance + 1});
+            continue;
+          }
+          if (SUnit *UseSU = SSD.getSUnit(&UseMI))
+            End = std::max(End, CycleOf(UseSU) + Distance * II);
+        }
+      }
+      // A use in the cycle of the next definition reads the old value.
+      if (End > Def)
+        Lower += (End - Def - 1) / II;
+    }
+  }
+  LLVM_DEBUG(dbgs() << "VU: II " << II << " needs " << Upper << " upper and "
+                    << Lower << " lower words with copies\n");
+  return Upper <= (unsigned)II && Lower <= (unsigned)II;
+}
 
 std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
 VUInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {

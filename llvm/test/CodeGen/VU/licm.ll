@@ -9,47 +9,24 @@ declare void @llvm.vu.sq(<4 x float>, i16)
 define void @scale_loop() {
 ; CHECK-LABEL: scale_loop:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    nop iaddiu vi2, vi0, 0
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
 ; CHECK-NEXT:    nop loi 0x40400000
-; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, 0(vi2)
-; CHECK-NEXT:    nop iaddiu vi1, vi0, 100
-; CHECK-NEXT:    nop iaddi vi3, vi2, 1
+; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, 0(vi3)
+; CHECK-NEXT:    nop iaddiu vi2, vi0, 100
+; CHECK-NEXT:    nop iaddi vi1, vi3, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi3, vi1, .LBB0_6
+; CHECK-NEXT:    nop ibeq vi1, vi2, .LBB0_2
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop
-; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, 0(vi3)
-; CHECK-NEXT:    nop iaddi vi4, vi3, 1
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi4, vi1, .LBB0_5
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_2: ; %loop
-; CHECK-NEXT:    mulx.xyzw vf4, vf2, vf1x lq.xyzw vf2, 0(vi4)
-; CHECK-NEXT:    nop iaddi vi3, vi4, 1
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi3, vi1, .LBB0_4
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_3: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop sq.xyzw vf3, -3(vi3)
-; CHECK-NEXT:    mulx.xyzw vf4, vf2, vf1x move.xyzw vf3, vf4
-; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi3)
-; CHECK-NEXT:    nop iaddiu vi4, vi3, 0
-; CHECK-NEXT:    nop iaddi vi3, vi4, 1
+; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, 0(vi1)
+; CHECK-NEXT:    nop iaddi vi1, vi1, 1
+; CHECK-NEXT:    nop sq.xyzw vf3, -2(vi1)
+; CHECK-NEXT:    nop ibne vi1, vi2, .LBB0_1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibne vi3, vi1, .LBB0_3
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_4:
-; CHECK-NEXT:    nop iaddi vi2, vi3, -2
-; CHECK-NEXT:    nop sq.xyzw vf3, -3(vi3)
-; CHECK-NEXT:    nop iaddiu vi3, vi4, 0
-; CHECK-NEXT:    nop move.xyzw vf3, vf4
-; CHECK-NEXT:  .LBB0_5:
-; CHECK-NEXT:    nop sq.xyzw vf3, 0(vi2)
-; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
-; CHECK-NEXT:  .LBB0_6:
+; CHECK-NEXT:  .LBB0_2:
 ; CHECK-NEXT:    mulx.xyzw vf1, vf2, vf1x nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi2)
+; CHECK-NEXT:    nop sq.xyzw vf1, -1(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 entry:
