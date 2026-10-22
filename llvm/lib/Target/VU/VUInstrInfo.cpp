@@ -264,13 +264,124 @@ std::optional<unsigned> VUInstrInfo::getOperandLatency(
   return Latency;
 }
 
-unsigned VUInstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
-                                      const MachineInstr &MI,
-                                      unsigned *PredCost) const {
-  unsigned Latency = 1;
-  for (const MachineOperand &MO : MI.all_defs())
-    Latency = std::max(Latency, getResultLatency(MI, MO.getReg()));
-  return Latency;
+bool VUInstrInfo::getBaseAndOffsetPosition(const MachineInstr &MI,
+                                           unsigned &BasePos,
+                                           unsigned &OffsetPos) const {
+  switch (MI.getOpcode()) {
+  case VU::LQ:
+  case VU::SQ:
+  case VU::ILW:
+  case VU::ISW:
+    OffsetPos = 2;
+    BasePos = 3;
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool VUInstrInfo::getMemOperandsWithOffsetWidth(
+    const MachineInstr &MI, SmallVectorImpl<const MachineOperand *> &BaseOps,
+    int64_t &Offset, bool &OffsetIsScalable, LocationSize &Width) const {
+  unsigned BasePos, OffsetPos;
+  if (!getBaseAndOffsetPosition(MI, BasePos, OffsetPos))
+    return false;
+  // Masked and integer accesses are treated as accessing the whole quadword.
+  BaseOps.push_back(&MI.getOperand(BasePos));
+  Offset = MI.getOperand(OffsetPos).getImm() * 16;
+  OffsetIsScalable = false;
+  Width = LocationSize::precise(16);
+  return true;
+}
+
+bool VUInstrInfo::getIncrementValue(const MachineInstr &MI, int &Value) const {
+  switch (MI.getOpcode()) {
+  case VU::IADDI:
+  case VU::IADDIU:
+    Value = MI.getOperand(2).getImm() * 16;
+    return true;
+  case VU::ISUBIU:
+    Value = -MI.getOperand(2).getImm() * 16;
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool VUInstrInfo::areMemAccessesTriviallyDisjoint(
+    const MachineInstr &MIa, const MachineInstr &MIb) const {
+  SmallVector<const MachineOperand *, 1> BaseA, BaseB;
+  int64_t OffsetA, OffsetB;
+  bool Scalable;
+  LocationSize WidthA = LocationSize::precise(0),
+               WidthB = LocationSize::precise(0);
+  if (!getMemOperandsWithOffsetWidth(MIa, BaseA, OffsetA, Scalable, WidthA) ||
+      !getMemOperandsWithOffsetWidth(MIb, BaseB, OffsetB, Scalable, WidthB) ||
+      BaseA[0]->getReg() != BaseB[0]->getReg())
+    return false;
+  // A register written by MIa itself is not a common base.
+  if (MIa.modifiesRegister(BaseA[0]->getReg(), /*TRI=*/nullptr) ||
+      MIb.modifiesRegister(BaseB[0]->getReg(), /*TRI=*/nullptr))
+    return false;
+  int64_t Lo = std::min(OffsetA, OffsetB), Hi = std::max(OffsetA, OffsetB);
+  int64_t LoWidth = OffsetA <= OffsetB ? WidthA.getValue().getFixedValue()
+                                       : WidthB.getValue().getFixedValue();
+  return Lo + LoWidth <= Hi;
+}
+
+namespace {
+/// A single block loop that ends in a conditional branch back to itself.
+class VUPipelinerLoopInfo : public TargetInstrInfo::PipelinerLoopInfo {
+  SmallVector<const MachineInstr *, 2> CondDefs;
+  SmallVector<MachineOperand, 3> Cond;
+
+public:
+  VUPipelinerLoopInfo(ArrayRef<const MachineInstr *> CondDefs,
+                      ArrayRef<MachineOperand> Cond)
+      : CondDefs(CondDefs), Cond(Cond) {}
+
+  // Keep the instructions that compute the loop condition in stage 0.
+  bool shouldIgnoreForPipelining(const MachineInstr *MI) const override {
+    return is_contained(CondDefs, MI);
+  }
+
+  // The branch "if (Cond) goto epilogue" is inserted after a copy of the
+  // loop condition computation; Cond is normalized for that use.
+  std::optional<bool> createTripCountGreaterCondition(
+      int TC, MachineBasicBlock &MBB,
+      SmallVectorImpl<MachineOperand> &CondParam) override {
+    CondParam = Cond;
+    return {};
+  }
+
+  void setPreheader(MachineBasicBlock *NewPreheader) override {}
+  void adjustTripCount(int TripCountAdjust) override {}
+};
+} // namespace
+
+std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
+VUInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
+  MachineBasicBlock *TBB = nullptr, *FBB = nullptr;
+  SmallVector<MachineOperand, 4> Cond;
+  if (analyzeBranch(*LoopBB, TBB, FBB, Cond) || !FBB || TBB == FBB)
+    return nullptr;
+  assert((TBB == LoopBB || FBB == LoopBB) && "not a single block loop");
+  // Branch to the exit when the condition is true.
+  if (TBB == LoopBB)
+    reverseBranchCondition(Cond);
+
+  const MachineRegisterInfo &MRI = LoopBB->getParent()->getRegInfo();
+  SmallVector<const MachineInstr *, 2> CondDefs;
+  for (const MachineOperand &MO : drop_begin(Cond)) {
+    if (!MO.isReg() || !MO.getReg().isVirtual())
+      continue;
+    const MachineInstr *Def = MRI.getVRegDef(MO.getReg());
+    if (Def->isPHI())
+      return nullptr;
+    if (Def->getParent() == LoopBB)
+      CondDefs.push_back(Def);
+  }
+  return std::make_unique<VUPipelinerLoopInfo>(CondDefs, Cond);
 }
 
 /// Returns the opposite condition of a conditional branch, or 0.

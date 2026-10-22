@@ -14,48 +14,110 @@ declare void @llvm.vu.xgkick(i16)
 define void @xform() {
 ; CHECK-LABEL: xform:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    sub.xyzw vf8, vf0, vf0 loi 0x43a00000
-; CHECK-NEXT:    addi.x vf3, vf0, i loi 0x45000000
-; CHECK-NEXT:    addi.x vf4, vf0, i loi 0x43600000
-; CHECK-NEXT:    addi.x vf5, vf0, i loi 0x3f800000
-; CHECK-NEXT:    nop move.xyzw vf2, vf8
-; CHECK-NEXT:    addx.x vf2, vf0, vf3x move.xyzw vf1, vf8
-; CHECK-NEXT:    addi.x vf3, vf0, i nop
-; CHECK-NEXT:    addx.x vf1, vf0, vf4x nop
-; CHECK-NEXT:    addx.y vf2, vf0, vf5x nop
+; CHECK-NEXT:    sub.xyzw vf8, vf0, vf0 loi 0x45000000
+; CHECK-NEXT:    addi.x vf4, vf0, i loi 0x43a00000
+; CHECK-NEXT:    addi.x vf3, vf0, i loi 0x43600000
+; CHECK-NEXT:    addi.x vf5, vf0, i lq.xyzw vf6, 1(vi0)
+; CHECK-NEXT:    nop move.xyzw vf1, vf8
+; CHECK-NEXT:    addx.x vf1, vf0, vf4x move.xyzw vf2, vf8
+; CHECK-NEXT:    addx.x vf2, vf0, vf3x lq.xyzw vf7, 2(vi0)
 ; CHECK-NEXT:    addx.y vf1, vf0, vf4x nop
-; CHECK-NEXT:    addx.z vf1, vf0, vf8x lq.xyzw vf4, 0(vi0)
-; CHECK-NEXT:    addx.z vf2, vf0, vf3x lq.xyzw vf5, 1(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf6, 2(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf7, 3(vi0)
-; CHECK-NEXT:    mulx.w vf1, vf0, vf8x xtop vi1
-; CHECK-NEXT:    mulx.w vf2, vf0, vf3x ilw.x vi2, 0(vi1)
-; CHECK-NEXT:    nop iaddiu vi3, vi1, 200
-; CHECK-NEXT:  .LBB0_1: ; %loop
-; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop lq.xyzw vf8, -198(vi3)
-; CHECK-NEXT:    nop iaddi vi2, vi2, -1
+; CHECK-NEXT:    addx.y vf2, vf0, vf5x lq.xyzw vf5, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf4, 3(vi0)
+; CHECK-NEXT:    addx.z vf1, vf0, vf8x xtop vi1
+; CHECK-NEXT:    mulx.w vf1, vf0, vf8x iaddiu vi2, vi1, 200
+; CHECK-NEXT:    nop lq.xyzw vf8, -198(vi2)
+; CHECK-NEXT:    nop loi 0x3f800000
+; CHECK-NEXT:    addi.x vf3, vf0, i ilw.x vi3, 0(vi1)
 ; CHECK-NEXT:    addy.x vf9, vf0, vf8y nop
 ; CHECK-NEXT:    addz.x vf10, vf0, vf8z nop
-; CHECK-NEXT:    mulx.xyzw vf8, vf4, vf8x nop
-; CHECK-NEXT:    mulx.xyzw vf9, vf5, vf9x nop
-; CHECK-NEXT:    mulx.xyzw vf10, vf6, vf10x nop
-; CHECK-NEXT:    add.xyzw vf8, vf8, vf9 nop
-; CHECK-NEXT:    add.xyzw vf8, vf8, vf10 nop
-; CHECK-NEXT:    add.xyzw vf8, vf8, vf7 nop
-; CHECK-NEXT:    addw.x vf9, vf0, vf8w nop
-; CHECK-NEXT:    nop div q, vf3x, vf9x
-; CHECK-NEXT:    addq.x vf9, vf0, q waitq
-; CHECK-NEXT:    mulx.xyzw vf8, vf8, vf9x nop
-; CHECK-NEXT:    mul.xyzw vf8, vf8, vf2 nop
-; CHECK-NEXT:    add.xyzw vf8, vf8, vf1 nop
-; CHECK-NEXT:    ftoi0.xyzw vf8, vf8 nop
-; CHECK-NEXT:    nop sq.xyzw vf8, 0(vi3)
-; CHECK-NEXT:    nop iaddi vi3, vi3, 1
-; CHECK-NEXT:    nop ibne vi2, vi0, .LBB0_1
+; CHECK-NEXT:    mulx.xyzw vf8, vf5, vf8x iaddi vi4, vi3, -1
+; CHECK-NEXT:    addx.z vf2, vf0, vf3x iaddi vi3, vi2, 1
+; CHECK-NEXT:    mulx.w vf2, vf0, vf3x nop
+; CHECK-NEXT:    mulx.xyzw vf11, vf6, vf9x nop
+; CHECK-NEXT:    mulx.xyzw vf9, vf7, vf10x nop
+; CHECK-NEXT:    add.xyzw vf11, vf8, vf11 ibeq vi4, vi0, .LBB0_6
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_2: ; %exit
-; CHECK-NEXT:    nop iaddiu vi1, vi1, 199
+; CHECK-NEXT:  .LBB0_1: ; %loop
+; CHECK-NEXT:    add.xyzw vf8, vf11, vf9 lq.xyzw vf9, -198(vi3)
+; CHECK-NEXT:    nop iaddi vi5, vi4, -1
+; CHECK-NEXT:    nop iaddi vi4, vi3, 1
+; CHECK-NEXT:    add.xyzw vf8, vf8, vf4 nop
+; CHECK-NEXT:    addy.x vf10, vf0, vf9y nop
+; CHECK-NEXT:    addz.x vf12, vf0, vf9z nop
+; CHECK-NEXT:    mulx.xyzw vf13, vf5, vf9x nop
+; CHECK-NEXT:    addw.x vf11, vf0, vf8w nop
+; CHECK-NEXT:    mulx.xyzw vf14, vf6, vf10x nop
+; CHECK-NEXT:    mulx.xyzw vf9, vf7, vf12x nop
+; CHECK-NEXT:    nop div q, vf3x, vf11x
+; CHECK-NEXT:    add.xyzw vf11, vf13, vf14 nop
+; CHECK-NEXT:    addq.x vf10, vf0, q waitq
+; CHECK-NEXT:    nop ibeq vi5, vi0, .LBB0_5
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_2: ; %loop
+; CHECK-NEXT:    add.xyzw vf9, vf11, vf9 nop
+; CHECK-NEXT:    mulx.xyzw vf10, vf8, vf10x lq.xyzw vf11, -198(vi4)
+; CHECK-NEXT:    nop iaddi vi5, vi5, -1
+; CHECK-NEXT:    nop iaddi vi6, vi4, 1
+; CHECK-NEXT:    add.xyzw vf8, vf9, vf4 nop
+; CHECK-NEXT:    mul.xyzw vf12, vf10, vf2 nop
+; CHECK-NEXT:    addy.x vf9, vf0, vf11y nop
+; CHECK-NEXT:    addz.x vf14, vf0, vf11z nop
+; CHECK-NEXT:    mulx.xyzw vf11, vf5, vf11x nop
+; CHECK-NEXT:    addw.x vf13, vf0, vf8w nop
+; CHECK-NEXT:    mulx.xyzw vf15, vf6, vf9x nop
+; CHECK-NEXT:    mulx.xyzw vf9, vf7, vf14x nop
+; CHECK-NEXT:    nop div q, vf3x, vf13x
+; CHECK-NEXT:    add.xyzw vf11, vf11, vf15 nop
+; CHECK-NEXT:    addq.x vf10, vf0, q waitq
+; CHECK-NEXT:    nop ibeq vi5, vi0, .LBB0_4
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_3: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    add.xyzw vf9, vf11, vf9 iaddiu vi7, vi2, 0
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:    nop iaddiu vi3, vi4, 0
+; CHECK-NEXT:    add.xyzw vf12, vf12, vf1 iaddiu vi4, vi6, 0
+; CHECK-NEXT:    mulx.xyzw vf8, vf8, vf10x lq.xyzw vf11, -198(vi4)
+; CHECK-NEXT:    add.xyzw vf13, vf9, vf4 iaddi vi5, vi5, -1
+; CHECK-NEXT:    nop iaddi vi6, vi4, 1
+; CHECK-NEXT:    ftoi0.xyzw vf10, vf12 nop
+; CHECK-NEXT:    addy.x vf9, vf0, vf11y nop
+; CHECK-NEXT:    addz.x vf12, vf0, vf11z nop
+; CHECK-NEXT:    addw.x vf14, vf0, vf13w nop
+; CHECK-NEXT:    mulx.xyzw vf11, vf5, vf11x sq.xyzw vf10, 0(vi7)
+; CHECK-NEXT:    mulx.xyzw vf15, vf6, vf9x nop
+; CHECK-NEXT:    mulx.xyzw vf9, vf7, vf12x nop
+; CHECK-NEXT:    mul.xyzw vf12, vf8, vf2 div q, vf3x, vf14x
+; CHECK-NEXT:    nop move.xyzw vf8, vf13
+; CHECK-NEXT:    add.xyzw vf11, vf11, vf15 nop
+; CHECK-NEXT:    addq.x vf10, vf0, q waitq
+; CHECK-NEXT:    nop ibne vi5, vi0, .LBB0_3
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_4:
+; CHECK-NEXT:    add.xyzw vf5, vf12, vf1 nop
+; CHECK-NEXT:    ftoi0.xyzw vf5, vf5 nop
+; CHECK-NEXT:    nop sq.xyzw vf5, 0(vi2)
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:    nop iaddiu vi3, vi4, 0
+; CHECK-NEXT:  .LBB0_5:
+; CHECK-NEXT:    mulx.xyzw vf5, vf8, vf10x nop
+; CHECK-NEXT:    mul.xyzw vf5, vf5, vf2 nop
+; CHECK-NEXT:    add.xyzw vf5, vf5, vf1 nop
+; CHECK-NEXT:    ftoi0.xyzw vf5, vf5 nop
+; CHECK-NEXT:    nop sq.xyzw vf5, 0(vi2)
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:  .LBB0_6:
+; CHECK-NEXT:    add.xyzw vf5, vf11, vf9 iaddiu vi1, vi1, 199
+; CHECK-NEXT:    add.xyzw vf4, vf5, vf4 nop
+; CHECK-NEXT:    addw.x vf5, vf0, vf4w nop
+; CHECK-NEXT:    nop div q, vf3x, vf5x
+; CHECK-NEXT:    addq.x vf3, vf0, q waitq
+; CHECK-NEXT:    mulx.xyzw vf3, vf4, vf3x nop
+; CHECK-NEXT:    mul.xyzw vf2, vf3, vf2 nop
+; CHECK-NEXT:    add.xyzw vf1, vf2, vf1 nop
+; CHECK-NEXT:    ftoi0.xyzw vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi2)
 ; CHECK-NEXT:    nop xgkick vi1
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

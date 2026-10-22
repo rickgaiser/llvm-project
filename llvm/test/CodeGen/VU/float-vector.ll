@@ -52,12 +52,12 @@ define void @splat_store() {
 ; CHECK-NEXT:    sub.xyzw vf3, vf0, vf0 nop
 ; CHECK-NEXT:    addz.x vf1, vf0, vf1z nop
 ; CHECK-NEXT:    addx.xyz vf2, vf0, vf2x nop
+; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
 ; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
 ; CHECK-NEXT:    mulx.w vf2, vf0, vf2x nop
 ; CHECK-NEXT:    mulx.w vf1, vf0, vf1x nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf2, 2(vi0)
-; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
+; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)

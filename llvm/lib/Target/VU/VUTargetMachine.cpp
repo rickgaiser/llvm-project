@@ -6,8 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Code generation for VU micro programs. Instructions are scheduled before
-// and after register allocation, then paired into micro instruction words.
+// Code generation for VU micro programs. Loops are software pipelined, then
+// instructions are scheduled before and after register allocation and paired
+// into micro instruction words.
 //
 //===----------------------------------------------------------------------===//
 
@@ -76,6 +77,11 @@ public:
   bool addInstSelector() override {
     addPass(createVUISelDag(getVUTargetMachine(), getOptLevel()));
     return false;
+  }
+
+  void addPreRegAlloc() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(&MachinePipelinerID);
   }
 
   void addPreEmitPass() override {

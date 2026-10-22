@@ -9,19 +9,37 @@ declare void @llvm.vu.sq(<4 x float>, i16)
 define void @scale_loop() {
 ; CHECK-LABEL: scale_loop:
 ; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 0
 ; CHECK-NEXT:    nop loi 0x40400000
-; CHECK-NEXT:    addi.x vf1, vf0, i iaddiu vi1, vi0, 0
-; CHECK-NEXT:    nop iaddiu vi2, vi0, 100
-; CHECK-NEXT:  .LBB0_1: ; %loop
-; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi1)
-; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x nop
-; CHECK-NEXT:    nop sq.xyzw vf2, 0(vi1)
-; CHECK-NEXT:    nop iaddi vi1, vi1, 1
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 100
+; CHECK-NEXT:    addi.x vf1, vf0, i iaddi vi2, vi1, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibne vi1, vi2, .LBB0_1
+; CHECK-NEXT:    nop ibeq vi2, vi3, .LBB0_4
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_2: ; %exit
+; CHECK-NEXT:  .LBB0_1: ; %loop
+; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, 0(vi2)
+; CHECK-NEXT:    nop iaddi vi4, vi2, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibeq vi4, vi3, .LBB0_3
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_2: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    mulx.xyzw vf4, vf2, vf1x iaddiu vi5, vi1, 0
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:    nop iaddiu vi2, vi4, 0
+; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi2)
+; CHECK-NEXT:    nop iaddi vi4, vi2, 1
+; CHECK-NEXT:    nop sq.xyzw vf3, 0(vi5)
+; CHECK-NEXT:    nop move.xyzw vf3, vf4
+; CHECK-NEXT:    nop ibne vi4, vi3, .LBB0_2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_3:
+; CHECK-NEXT:    nop sq.xyzw vf3, 0(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:  .LBB0_4:
+; CHECK-NEXT:    mulx.xyzw vf1, vf2, vf1x nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 entry:

@@ -8,6 +8,7 @@
 
 #include "VUSubtarget.h"
 #include "MCTargetDesc/VUMCTargetDesc.h"
+#include "llvm/CodeGen/MachinePipeliner.h"
 
 using namespace llvm;
 
@@ -30,3 +31,8 @@ VUSubtarget::VUSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
     : VUGenSubtargetInfo(TT, CPU, /*TuneCPU=*/CPU, FS),
       InstrInfo(initializeSubtargetDependencies(CPU, FS)), TLInfo(TM, *this),
       InstrItins(getInstrItineraryForCPU(CPU.empty() ? "generic" : CPU)) {}
+
+void VUSubtarget::overridePipelinerPolicy(
+    MachinePipelinerPolicy &Policy) const {
+  Policy.ShouldLimitRegPressure = true;
+}

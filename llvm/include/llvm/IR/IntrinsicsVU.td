@@ -13,25 +13,31 @@
 
 let TargetPrefix = "vu" in {
 
+// The memory intrinsics carry a memory operand (see
+// VUTargetLowering::getTgtMemIntrinsic).
+
 // Load the quadword at a quadword address.
 def int_vu_lq : DefaultAttrsIntrinsic<[llvm_v4f32_ty], [llvm_i16_ty],
-                                      [IntrReadMem]>;
+                                      [IntrReadMem], "", [SDNPMemOperand]>;
 
 // Store a quadword. The mask selects the fields that are written
 // (x = 8, y = 4, z = 2, w = 1).
 def int_vu_sq : DefaultAttrsIntrinsic<[], [llvm_v4f32_ty, llvm_i16_ty],
-                                      [IntrWriteMem]>;
+                                      [IntrWriteMem], "", [SDNPMemOperand]>;
 def int_vu_sq_mask
     : DefaultAttrsIntrinsic<[], [llvm_v4f32_ty, llvm_i16_ty, llvm_i32_ty],
-                            [IntrWriteMem, ImmArg<ArgIndex<2>>]>;
+                            [IntrWriteMem, ImmArg<ArgIndex<2>>], "",
+                            [SDNPMemOperand]>;
 
 // Load or store the low 16 bits of one field (x = 0, y = 1, z = 2, w = 3) of
 // a quadword.
 def int_vu_ilw : DefaultAttrsIntrinsic<[llvm_i16_ty], [llvm_i16_ty, llvm_i32_ty],
-                                       [IntrReadMem, ImmArg<ArgIndex<1>>]>;
+                                       [IntrReadMem, ImmArg<ArgIndex<1>>], "",
+                                       [SDNPMemOperand]>;
 def int_vu_isw
     : DefaultAttrsIntrinsic<[], [llvm_i16_ty, llvm_i16_ty, llvm_i32_ty],
-                            [IntrWriteMem, ImmArg<ArgIndex<2>>]>;
+                            [IntrWriteMem, ImmArg<ArgIndex<2>>], "",
+                            [SDNPMemOperand]>;
 
 // VIF double buffering: the quadword address of the current (TOP) buffer and
 // the value of ITOP.

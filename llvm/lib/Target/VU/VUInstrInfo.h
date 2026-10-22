@@ -55,9 +55,21 @@ public:
                                             unsigned DefIdx,
                                             const MachineInstr &UseMI,
                                             unsigned UseIdx) const override;
-  unsigned getInstrLatency(const InstrItineraryData *ItinData,
-                           const MachineInstr &MI,
-                           unsigned *PredCost = nullptr) const override;
+
+  // Memory accesses, for alias analysis and the pipeliner. Addresses are in
+  // quadwords; offsets and increments are reported in bytes.
+  bool getMemOperandsWithOffsetWidth(
+      const MachineInstr &MI, SmallVectorImpl<const MachineOperand *> &BaseOps,
+      int64_t &Offset, bool &OffsetIsScalable,
+      LocationSize &Width) const override;
+  bool getBaseAndOffsetPosition(const MachineInstr &MI, unsigned &BasePos,
+                                unsigned &OffsetPos) const override;
+  bool getIncrementValue(const MachineInstr &MI, int &Value) const override;
+  bool areMemAccessesTriviallyDisjoint(const MachineInstr &MIa,
+                                       const MachineInstr &MIb) const override;
+
+  std::unique_ptr<PipelinerLoopInfo>
+  analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const override;
 
   // Branch analysis. Cond holds the branch opcode and its register operands.
   bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,

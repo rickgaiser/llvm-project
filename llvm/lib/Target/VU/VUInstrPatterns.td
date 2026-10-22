@@ -29,11 +29,14 @@ def VUsplat : SDNode<"VUISD::SPLAT", SDT_VUSplat>;
 // Pseudo instructions
 //===----------------------------------------------------------------------===//
 
-class VUPseudo<dag outs, dag ins, list<dag> pattern = []>
+class VUPseudo<dag outs, dag ins, list<dag> pattern = [],
+               InstrItinClass itin = NoItinerary>
     : VUInst<outs, ins, ""> {
   let isPseudo = 1;
   let isCodeGenOnly = 1;
   let Pattern = pattern;
+  // The issue slot of the expansion, for the pipeliner.
+  let Itinerary = itin;
 }
 
 // End of the micro program: a word with the E bit and its delay slot.
@@ -53,22 +56,23 @@ def DSNOP : VUUpperExt<0x2f, (outs), (ins), "nop"> {
 // f32 constant: LOI c; ADDi.x d, vf0, i
 let Defs = [I], isReMaterializable = 1, isAsCheapAsAMove = 1 in
 def LOADF32 : VUPseudo<(outs VF:$d), (ins f32imm:$c),
-                       [(set (f32 VF:$d), (f32 fpimm:$c))]>;
+                       [(set (f32 VF:$d), (f32 fpimm:$c))], IIC_VULower>;
 
 // Splat: ADDx.xyz d, vf0, s.x; MULx.w d, vf0, s.x
 def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s),
-                     [(set (v4f32 VF:$d), (VUsplat (f32 VF:$s)))]>;
+                     [(set (v4f32 VF:$d), (VUsplat (f32 VF:$s)))], IIC_VUUpper>;
 
 // Insert s.x into one field of src: ADDx.<field> d, vf0, s.x for x, y and
 // z, MULx.w d, vf0, s.x for w.
 let Constraints = "$d = $src" in
 def INSERT_FIELD : VUPseudo<(outs VF:$d), (ins VF:$src, VF:$s, i16imm:$f),
     [(set (v4f32 VF:$d),
-          (vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f))]>;
+          (vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f))],
+    IIC_VUUpper>;
 
 // Negation: LOI -1.0; MULi.xyzw d, s, i
 let Defs = [I] in
-def FNEG : VUPseudo<(outs VF:$d), (ins VF:$s)>;
+def FNEG : VUPseudo<(outs VF:$d), (ins VF:$s), [], IIC_VULower>;
 def : Pat<(fneg (v4f32 VF:$s)), (FNEG VF:$s)>;
 def : Pat<(fneg (f32 VF:$s)), (FNEG VF:$s)>;
 
@@ -76,9 +80,10 @@ def : Pat<(fneg (f32 VF:$s)), (FNEG VF:$s)>;
 //   DIV q, a.x, b.x / SQRT q, a.x; WAITQ; ADDq.x d, vf0, q
 let Defs = [Q] in {
 def FDIV32 : VUPseudo<(outs VF:$d), (ins VF:$a, VF:$b),
-                      [(set (f32 VF:$d), (fdiv (f32 VF:$a), (f32 VF:$b)))]>;
+                      [(set (f32 VF:$d), (fdiv (f32 VF:$a), (f32 VF:$b)))],
+                      IIC_VULower>;
 def FSQRT32 : VUPseudo<(outs VF:$d), (ins VF:$a),
-                       [(set (f32 VF:$d), (fsqrt (f32 VF:$a)))]>;
+                       [(set (f32 VF:$d), (fsqrt (f32 VF:$a)))], IIC_VULower>;
 }
 
 //===----------------------------------------------------------------------===//

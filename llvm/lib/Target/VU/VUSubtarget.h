@@ -47,6 +47,10 @@ public:
   bool enableMachineScheduler() const override { return true; }
   bool enablePostRAScheduler() const override { return true; }
 
+  // Software pipelining. There is no spilling, so the pipeliner must keep the
+  // register pressure within the register file.
+  void overridePipelinerPolicy(MachinePipelinerPolicy &Policy) const override;
+
   const InstrItineraryData *getInstrItineraryData() const override {
     return &InstrItins;
   }

@@ -180,6 +180,34 @@ SDValue VUTargetLowering::lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const {
   return Op;
 }
 
+void VUTargetLowering::getTgtMemIntrinsic(SmallVectorImpl<IntrinsicInfo> &Infos,
+                                          const CallBase &I,
+                                          MachineFunction &MF,
+                                          unsigned Intrinsic) const {
+  // The memory intrinsics access one quadword of VU data memory. The address
+  // is not an IR pointer, so the memory operand has no value; the scheduler
+  // and the pipeliner compare base registers and offsets instead.
+  IntrinsicInfo Info;
+  Info.memVT = MVT::v4f32;
+  Info.align = Align(16);
+  switch (Intrinsic) {
+  default:
+    return;
+  case Intrinsic::vu_lq:
+  case Intrinsic::vu_ilw:
+    Info.opc = ISD::INTRINSIC_W_CHAIN;
+    Info.flags = MachineMemOperand::MOLoad;
+    break;
+  case Intrinsic::vu_sq:
+  case Intrinsic::vu_sq_mask:
+  case Intrinsic::vu_isw:
+    Info.opc = ISD::INTRINSIC_VOID;
+    Info.flags = MachineMemOperand::MOStore;
+    break;
+  }
+  Infos.push_back(Info);
+}
+
 SDValue VUTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
   case ISD::BUILD_VECTOR:
