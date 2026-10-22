@@ -241,7 +241,10 @@ bool VULoopCopies::sinkLoopValues(MachineBasicBlock &MBB) {
   if (!MBB.isSuccessor(&MBB))
     return false;
   bool Changed = false;
-  for (MachineInstr &Phi : MBB.phis()) {
+  // The end of MBB.phis() would move with the instructions moved here.
+  SmallVector<MachineInstr *, 8> Phis(make_pointer_range(MBB.phis()));
+  for (MachineInstr *PhiPtr : Phis) {
+    MachineInstr &Phi = *PhiPtr;
     Register P = Phi.getOperand(0).getReg();
     // A phi that is also needed for the next iteration overlaps anyway.
     if (any_of(MRI->use_nodbg_instructions(P), [&](const MachineInstr &MI) {
