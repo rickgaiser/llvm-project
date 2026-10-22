@@ -139,6 +139,9 @@ public:
   VUPassConfig(VUTargetMachine &TM, PassManagerBase &PM)
       : TargetPassConfig(TM, PM) {
     substitutePass(&PostRASchedulerID, &PostMachineSchedulerID);
+    // A merged tail saves a few words but costs a branch and its delay slot,
+    // and it can split a loop kernel.
+    setEnableTailMerge(false);
   }
 
   VUTargetMachine &getVUTargetMachine() const {

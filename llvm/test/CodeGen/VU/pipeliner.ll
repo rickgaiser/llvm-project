@@ -64,21 +64,23 @@ exit:
 define void @recurrence() {
 ; CHECK-LABEL: recurrence:
 ; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 1
 ; CHECK-NEXT:    nop loi 0x40400000
-; CHECK-NEXT:    addi.x vf1, vf0, i iaddiu vi1, vi0, 1
+; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop iaddiu vi2, vi0, 11
-; CHECK-NEXT:  .LBB1_2: ; %loop
+; CHECK-NEXT:    nop iaddi vi1, vi1, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x ibeq vi1, vi2, .LBB1_2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop lq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x ibeq vi1, vi2, .LBB1_3
+; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x ibne vi1, vi2, .LBB1_1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB1_1: ; %loop
-; CHECK-NEXT:    ; in Loop: Header=BB1_2 Depth=1
-; CHECK-NEXT:    nop b .LBB1_2
-; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
-; CHECK-NEXT:  .LBB1_3:
+; CHECK-NEXT:  .LBB1_2:
 ; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -114,10 +116,11 @@ define void @two_acc_chains() {
 ; CHECK-NEXT:    nop lq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 5(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf3, 6(vi0)
-; CHECK-NEXT:    mulax.xyzw acc, vf4, vf8x iaddiu vi2, vi0, 50
-; CHECK-NEXT:    madday.xyzw acc, vf5, vf8y iaddi vi1, vi3, 2
-; CHECK-NEXT:    maddaz.xyzw acc, vf6, vf8z lq.xyzw vf9, 1(vi3)
-; CHECK-NEXT:    maddw.xyzw vf8, vf7, vf0w ibeq vi1, vi2, .LBB2_3
+; CHECK-NEXT:    mulax.xyzw acc, vf4, vf8x lq.xyzw vf9, 1(vi3)
+; CHECK-NEXT:    madday.xyzw acc, vf5, vf8y iaddiu vi2, vi0, 50
+; CHECK-NEXT:    maddaz.xyzw acc, vf6, vf8z iaddi vi1, vi3, 2
+; CHECK-NEXT:    maddw.xyzw vf8, vf7, vf0w nop
+; CHECK-NEXT:    nop ibeq vi1, vi2, .LBB2_2
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB2_1: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
@@ -129,7 +132,7 @@ define void @two_acc_chains() {
 ; CHECK-NEXT:    madday.xyzw acc, vf5, vf10y sq.xyzw vf11, 197(vi1)
 ; CHECK-NEXT:    maddaz.xyzw acc, vf6, vf10z ibne vi1, vi2, .LBB2_1
 ; CHECK-NEXT:    maddw.xyzw vf8, vf7, vf0w nop
-; CHECK-NEXT:  .LBB2_3:
+; CHECK-NEXT:  .LBB2_2:
 ; CHECK-NEXT:    mulax.xyzw acc, vf1, vf9x sq.xyzw vf8, 198(vi1)
 ; CHECK-NEXT:    madday.xyzw acc, vf2, vf9y nop
 ; CHECK-NEXT:    maddz.xyzw vf1, vf3, vf9z nop
