@@ -113,6 +113,8 @@ using ReverseIter = MachineBasicBlock::reverse_iterator;
 
 struct MBBInfo {
   uint64_t Size = 0;
+  // The most padding before the block for its alignment.
+  uint64_t Padding = 0;
   bool HasLongBranch = false;
   MachineInstr *Br = nullptr;
   uint64_t Offset = 0;
@@ -289,6 +291,14 @@ void MipsBranchExpansion::initMBBInfo() {
     // Compute size of MBB.
     for (MachineInstr &MI : *MBB)
       MBBInfos[I].Size += TII->getInstSizeInBytes(MI);
+
+    // An aligned block, such as an R5900 loop header, may be preceded by
+    // padding up to its alignment less the smallest instruction.
+    uint64_t MinInstSize =
+        STI->inMicroMipsMode() || STI->inMips16Mode() ? 2 : 4;
+    uint64_t Alignment = MBB->getAlignment().value();
+    if (Alignment > MinInstSize)
+      MBBInfos[I].Padding = Alignment - MinInstSize;
   }
 }
 
@@ -301,14 +311,14 @@ int64_t MipsBranchExpansion::computeOffset(const MachineInstr *Br) {
   // Compute offset of a forward branch.
   if (ThisMBB < TargetMBB) {
     for (int N = ThisMBB + 1; N < TargetMBB; ++N)
-      Offset += MBBInfos[N].Size;
+      Offset += MBBInfos[N].Padding + MBBInfos[N].Size;
 
-    return Offset + 4;
+    return Offset + MBBInfos[TargetMBB].Padding + 4;
   }
 
   // Compute offset of a backward branch.
   for (int N = ThisMBB; N >= TargetMBB; --N)
-    Offset += MBBInfos[N].Size;
+    Offset += MBBInfos[N].Size + (N > TargetMBB ? MBBInfos[N].Padding : 0);
 
   return -Offset + 4;
 }
@@ -317,8 +327,8 @@ int64_t MipsBranchExpansion::computeOffset(const MachineInstr *Br) {
 uint64_t MipsBranchExpansion::computeOffsetFromTheBeginning(int MBB) {
   uint64_t Offset = 0;
   for (int N = 0; N < MBB; ++N)
-    Offset += MBBInfos[N].Size;
-  return Offset;
+    Offset += MBBInfos[N].Padding + MBBInfos[N].Size;
+  return Offset + MBBInfos[MBB].Padding;
 }
 
 // Replace Br with a branch which has the opposite condition code and a
