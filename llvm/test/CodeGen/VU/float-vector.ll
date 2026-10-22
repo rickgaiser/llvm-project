@@ -66,3 +66,41 @@ define void @splat_store() {
   call void @llvm.vu.sq(<4 x float> zeroinitializer, i16 3)
   ret void
 }
+
+; Conversions to and from fixed point with 4, 12 or 15 fraction bits.
+define void @fixed_point() {
+; CHECK-LABEL: fixed_point:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop loi 0x40400000
+; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, 0(vi0)
+; CHECK-NEXT:    ftoi4.xyzw vf3, vf2 nop
+; CHECK-NEXT:    ftoi15.xyzw vf4, vf2 nop
+; CHECK-NEXT:    mulx.xyzw vf1, vf2, vf1x nop
+; CHECK-NEXT:    itof12.xyzw vf2, vf2 nop
+; CHECK-NEXT:    nop sq.xyzw vf3, 1(vi0)
+; CHECK-NEXT:    nop sq.xyzw vf4, 2(vi0)
+; CHECK-NEXT:    ftoi0.xyzw vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf2, 3(vi0)
+; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %m4 = fmul <4 x float> %v, <float 16.0, float 16.0, float 16.0, float 16.0>
+  %i4 = fptosi <4 x float> %m4 to <4 x i32>
+  %f4 = bitcast <4 x i32> %i4 to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f4, i16 1)
+  %m15 = fmul <4 x float> <float 32768.0, float 32768.0, float 32768.0, float 32768.0>, %v
+  %i15 = fptosi <4 x float> %m15 to <4 x i32>
+  %f15 = bitcast <4 x i32> %i15 to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f15, i16 2)
+  %b = bitcast <4 x float> %v to <4 x i32>
+  %c = sitofp <4 x i32> %b to <4 x float>
+  %d = fmul <4 x float> %c, <float 0x3F30000000000000, float 0x3F30000000000000, float 0x3F30000000000000, float 0x3F30000000000000>
+  call void @llvm.vu.sq(<4 x float> %d, i16 3)
+  ; Not a power of two: multiply, then convert.
+  %m3 = fmul <4 x float> %v, <float 3.0, float 3.0, float 3.0, float 3.0>
+  %i3 = fptosi <4 x float> %m3 to <4 x i32>
+  %f3 = bitcast <4 x i32> %i3 to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f3, i16 4)
+  ret void
+}

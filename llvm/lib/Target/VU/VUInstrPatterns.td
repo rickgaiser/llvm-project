@@ -36,6 +36,19 @@ def VUbcast : SDNode<"VUISD::BCAST", SDT_VUBcast>;
 // VUTargetLowering::combineAccSum. Selected in VUDAGToDAGISel.
 def VUaccsum : SDNode<"VUISD::ACCSUM", SDTypeProfile<1, -1, [SDTCisVT<0, v4f32>]>>;
 
+// Fixed-point conversions with n fraction bits (4, 12 or 15):
+// FTOI = fp_to_sint (v * 2^n), ITOF = sint_to_fp (v) * 2^-n.
+def VUftoi : SDNode<"VUISD::FTOI", SDTypeProfile<1, 2, [SDTCisVT<0, v4i32>,
+                                   SDTCisVT<1, v4f32>, SDTCisVT<2, i32>]>>;
+def VUitof : SDNode<"VUISD::ITOF", SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
+                                   SDTCisVT<1, v4i32>, SDTCisVT<2, i32>]>>;
+
+// Insert a VI register, sign-extended to 32 bits, into field $f of an
+// integer vector.
+def VUinsertvi : SDNode<"VUISD::INSERT_VI", SDTypeProfile<1, 3, [
+                        SDTCisVT<0, v4i32>, SDTCisVT<1, v4i32>,
+                        SDTCisVT<2, i16>, SDTCisVT<3, i32>]>>;
+
 //===----------------------------------------------------------------------===//
 // Pseudo instructions
 //===----------------------------------------------------------------------===//
@@ -86,6 +99,12 @@ def INSERT_FIELD : VUPseudo<(outs VF:$d), (ins VF:$src, VF:$s, i16imm:$f),
     [(set (v4f32 VF:$d),
           (vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f))],
     IIC_VUUpper>;
+
+// Insert a VI register into one field: MFIR.<field> d, s
+let Constraints = "$d = $src" in
+def INSERT_VI : VUPseudo<(outs VF:$d), (ins VF:$src, VI:$s, i32imm:$f),
+    [(set (v4i32 VF:$d), (VUinsertvi (v4i32 VF:$src), (i16 VI:$s), timm:$f))],
+    IIC_VULower>;
 
 // Negation: LOI -1.0; MULi.xyzw d, s, i
 let Defs = [I] in
@@ -160,6 +179,14 @@ def : Pat<(v4f32 (bitconvert (v4i32 VF:$v))), (v4f32 VF:$v)>;
 def : Pat<(v4f32 (sint_to_fp (v4i32 VF:$v))), (ITOF0 15, VF:$v)>;
 def : Pat<(v4i32 (fp_to_sint (v4f32 VF:$v))), (FTOI0 15, VF:$v)>;
 
+foreach N = [4, 12, 15] in {
+  defvar Bits = TImmLeaf<i32, "return Imm == " # N # ";">;
+  def : Pat<(VUftoi (v4f32 VF:$v), Bits),
+            (!cast<Instruction>("FTOI" # N) 15, VF:$v)>;
+  def : Pat<(VUitof (v4i32 VF:$v), Bits),
+            (!cast<Instruction>("ITOF" # N) 15, VF:$v)>;
+}
+
 // i16 <-> f32: through the x field. MFIR sign-extends to 32 bits.
 def : Pat<(f32 (sint_to_fp (i16 VI:$v))), (ITOF0 8, (MFIR 8, VI:$v))>;
 def : Pat<(i16 (fp_to_sint (f32 VF:$v))), (MTIR (FTOI0 8, VF:$v), 0)>;
@@ -186,21 +213,12 @@ def : Pat<(sub VI:$a, uimm15_imm:$c), (ISUBIU VI:$a, uimm15_imm:$c)>;
 
 def : Pat<(add VI:$a, VI:$b), (IADD VI:$a, VI:$b)>;
 def : Pat<(sub VI:$a, VI:$b), (ISUB VI:$a, VI:$b)>;
+def : Pat<(sub 0, VI:$b), (ISUB (i16 VI0), VI:$b)>;
 def : Pat<(and VI:$a, VI:$b), (IAND VI:$a, VI:$b)>;
 def : Pat<(or VI:$a, VI:$b), (IOR VI:$a, VI:$b)>;
 
-// There is no shift: shift left by adding.
-def : Pat<(shl VI:$a, (i16 1)), (IADD VI:$a, VI:$a)>;
-def : Pat<(shl VI:$a, (i16 2)),
-          (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a))>;
-def : Pat<(shl VI:$a, (i16 3)),
-          (IADD (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a)),
-                (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a)))>;
-def : Pat<(shl VI:$a, (i16 4)),
-          (IADD (IADD (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a)),
-                      (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a))),
-                (IADD (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a)),
-                      (IADD (IADD VI:$a, VI:$a), (IADD VI:$a, VI:$a))))>;
+// There is no multiplier or shifter: a multiplication or left shift by a
+// constant is lowered to additions in VUTargetLowering::lowerMUL.
 
 //===----------------------------------------------------------------------===//
 // Memory (llvm.vu.* intrinsics, quadword addresses)

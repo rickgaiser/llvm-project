@@ -55,6 +55,7 @@ private:
   SDValue lowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerVectorField(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerMUL(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerUnsupported(SDValue Op, SelectionDAG &DAG,
                            const char *What) const;
   SDValue combineAccSum(SDNode *N, SelectionDAG &DAG) const;

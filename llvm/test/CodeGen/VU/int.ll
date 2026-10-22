@@ -40,3 +40,52 @@ define void @int_ops() {
   call void @llvm.vu.isw(i16 %g, i16 %t, i32 3)
   ret void
 }
+
+; There is no integer multiplier or shifter: constants are sums of doublings.
+define void @mul_const() {
+; CHECK-LABEL: mul_const:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop ilw.x vi1, 0(vi0)
+; CHECK-NEXT:    nop iadd vi2, vi1, vi1
+; CHECK-NEXT:    nop iadd vi3, vi2, vi2
+; CHECK-NEXT:    nop iadd vi1, vi1, vi2
+; CHECK-NEXT:    nop iadd vi4, vi3, vi3
+; CHECK-NEXT:    nop isw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop iadd vi1, vi2, vi4
+; CHECK-NEXT:    nop isw.x vi3, 4(vi0)
+; CHECK-NEXT:    nop isw.x vi1, 2(vi0)
+; CHECK-NEXT:    nop isub vi1, vi0, vi2
+; CHECK-NEXT:    nop isw.x vi1, 3(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
+  %m3 = mul i16 %a, 3
+  call void @llvm.vu.isw(i16 %m3, i16 1, i32 0)
+  %m10 = mul i16 10, %a
+  call void @llvm.vu.isw(i16 %m10, i16 2, i32 0)
+  %mneg = mul i16 %a, -2
+  call void @llvm.vu.isw(i16 %mneg, i16 3, i32 0)
+  %s = shl i16 %a, 2
+  call void @llvm.vu.isw(i16 %s, i16 4, i32 0)
+  ret void
+}
+
+; A VI register inserted into a field of an integer vector: MFIR sign-extends.
+define void @insert_vi() {
+; CHECK-LABEL: insert_vi:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop ilw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop mfir.w vf1, vi1
+; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %a = call i16 @llvm.vu.ilw(i16 1, i32 0)
+  %i = bitcast <4 x float> %v to <4 x i32>
+  %e = sext i16 %a to i32
+  %w = insertelement <4 x i32> %i, i32 %e, i32 3
+  %f = bitcast <4 x i32> %w to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f, i16 2)
+  ret void
+}

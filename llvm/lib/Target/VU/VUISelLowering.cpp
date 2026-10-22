@@ -19,6 +19,7 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IntrinsicsVU.h"
+#include <cmath>
 
 using namespace llvm;
 
@@ -71,33 +72,20 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
     setOperationAction(Op, MVT::f32, Custom);
 
   // 16-bit integers.
-  for (unsigned Op : {ISD::MUL,
-                      ISD::MULHS,
-                      ISD::MULHU,
-                      ISD::SDIV,
-                      ISD::UDIV,
-                      ISD::SREM,
-                      ISD::UREM,
-                      ISD::SDIVREM,
-                      ISD::UDIVREM,
-                      ISD::SMUL_LOHI,
-                      ISD::UMUL_LOHI,
-                      ISD::SRA,
-                      ISD::SRL,
-                      ISD::ROTL,
-                      ISD::ROTR,
-                      ISD::CTPOP,
-                      ISD::CTLZ,
-                      ISD::CTTZ,
-                      ISD::BSWAP,
-                      ISD::SELECT,
-                      ISD::SELECT_CC,
-                      ISD::BR_CC,
-                      ISD::SIGN_EXTEND_INREG,
-                      ISD::BR_JT,
-                      ISD::BRIND})
+  for (unsigned Op : {ISD::MULHS,     ISD::MULHU,
+                      ISD::SDIV,      ISD::UDIV,
+                      ISD::SREM,      ISD::UREM,
+                      ISD::SDIVREM,   ISD::UDIVREM,
+                      ISD::SMUL_LOHI, ISD::UMUL_LOHI,
+                      ISD::SRA,       ISD::SRL,
+                      ISD::ROTL,      ISD::ROTR,
+                      ISD::CTPOP,     ISD::CTLZ,
+                      ISD::CTTZ,      ISD::BSWAP,
+                      ISD::SELECT,    ISD::SELECT_CC,
+                      ISD::BR_CC,     ISD::SIGN_EXTEND_INREG,
+                      ISD::BR_JT,     ISD::BRIND})
     setOperationAction(Op, MVT::i16, Expand);
-  for (unsigned Op : {ISD::LOAD, ISD::STORE})
+  for (unsigned Op : {ISD::LOAD, ISD::STORE, ISD::MUL, ISD::SHL})
     setOperationAction(Op, MVT::i16, Custom);
   for (MVT VT : {MVT::i1, MVT::i8})
     for (auto Ext : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD})
@@ -107,7 +95,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   for (unsigned Op : {ISD::INTRINSIC_VOID, ISD::INTRINSIC_W_CHAIN})
     setOperationAction(Op, MVT::Other, Custom);
 
-  setTargetDAGCombine({ISD::FADD, ISD::FSUB});
+  setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FP_TO_SINT,
+                       ISD::INSERT_VECTOR_ELT});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -168,6 +157,39 @@ SDValue VUTargetLowering::lowerVectorField(SDValue Op,
   return lowerUnsupported(Op, DAG, "VU: variable vector index");
 }
 
+SDValue VUTargetLowering::lowerMUL(SDValue Op, SelectionDAG &DAG) const {
+  // There is no integer multiplier and no shifter. A multiplication by a
+  // constant is a sum of doublings of the other operand.
+  SDLoc DL(Op);
+  SDValue X = Op.getOperand(0), C = Op.getOperand(1);
+  if (Op.getOpcode() == ISD::MUL && isa<ConstantSDNode>(X))
+    std::swap(X, C);
+  auto *CN = dyn_cast<ConstantSDNode>(C);
+  if (!CN)
+    return lowerUnsupported(Op, DAG,
+                            Op.getOpcode() == ISD::MUL
+                                ? "VU: integer multiply by a variable"
+                                : "VU: shift by a variable");
+  APInt M = CN->getAPIntValue().trunc(16);
+  if (Op.getOpcode() == ISD::SHL)
+    M = APInt::getOneBitSet(16, std::min<uint64_t>(CN->getZExtValue(), 15));
+  // x * -c is 0 - x * c, when c has fewer bits set.
+  bool Negate = M.isNegative() && (-M).popcount() < M.popcount();
+  if (Negate)
+    M = -M;
+  SDValue Sum, Power = X;
+  for (unsigned Bit = 0; !M.lshr(Bit).isZero(); ++Bit) {
+    if (M[Bit])
+      Sum = Sum ? DAG.getNode(ISD::ADD, DL, MVT::i16, Sum, Power) : Power;
+    if (!M.lshr(Bit + 1).isZero())
+      Power = DAG.getNode(ISD::ADD, DL, MVT::i16, Power, Power);
+  }
+  SDValue Zero = DAG.getConstant(0, DL, MVT::i16);
+  if (!Sum)
+    return Zero;
+  return Negate ? DAG.getNode(ISD::SUB, DL, MVT::i16, Zero, Sum) : Sum;
+}
+
 SDValue VUTargetLowering::lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const {
   // Operand 0 is the chain.
   switch (Op.getConstantOperandVal(1)) {
@@ -223,6 +245,9 @@ SDValue VUTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::INTRINSIC_VOID:
   case ISD::INTRINSIC_W_CHAIN:
     return lowerIntrinsic(Op, DAG);
+  case ISD::MUL:
+  case ISD::SHL:
+    return lowerMUL(Op, DAG);
   case ISD::LOAD:
   case ISD::STORE:
     return lowerUnsupported(Op, DAG,
@@ -340,16 +365,69 @@ SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
   return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
 }
 
+/// Returns n if \p C is a splat of 2^n, or of 2^-n if \p Inverse, for the
+/// fraction bits of the fixed-point conversions, or 0.
+static unsigned getFractionBits(SDValue C, bool Inverse) {
+  ConstantFPSDNode *CN = isConstOrConstSplatFP(C);
+  if (!CN)
+    return 0;
+  for (int N : {4, 12, 15})
+    if (CN->getValueAPF().isExactlyValue(std::ldexp(1.0, Inverse ? -N : N)))
+      return N;
+  return 0;
+}
+
 SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
                                             DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
+  SDLoc DL(N);
   switch (N->getOpcode()) {
+  case ISD::FP_TO_SINT: {
+    // fp_to_sint (v * 2^n) -> FTOI<n> v. The multiplication is exact.
+    SDValue Mul = N->getOperand(0);
+    if (N->getValueType(0) != MVT::v4i32 || Mul.getOpcode() != ISD::FMUL ||
+        !Mul.hasOneUse())
+      break;
+    for (unsigned I : {0, 1})
+      if (unsigned Bits = getFractionBits(Mul.getOperand(1 - I), false))
+        return DAG.getNode(VUISD::FTOI, DL, MVT::v4i32, Mul.getOperand(I),
+                           DAG.getTargetConstant(Bits, DL, MVT::i32));
+    break;
+  }
+  case ISD::FMUL: {
+    // sint_to_fp (v) * 2^-n -> ITOF<n> v
+    if (N->getValueType(0) != MVT::v4f32)
+      break;
+    for (unsigned I : {0, 1}) {
+      SDValue Conv = N->getOperand(I);
+      if (Conv.getOpcode() != ISD::SINT_TO_FP ||
+          Conv.getOperand(0).getValueType() != MVT::v4i32)
+        continue;
+      if (unsigned Bits = getFractionBits(N->getOperand(1 - I), true))
+        return DAG.getNode(VUISD::ITOF, DL, MVT::v4f32, Conv.getOperand(0),
+                           DAG.getTargetConstant(Bits, DL, MVT::i32));
+    }
+    break;
+  }
+  case ISD::INSERT_VECTOR_ELT: {
+    // A 16-bit integer inserted into an integer vector: MFIR sign-extends.
+    // This is done before the i32 element is legalized.
+    SDValue Elt = N->getOperand(1);
+    auto *Idx = dyn_cast<ConstantSDNode>(N->getOperand(2));
+    if (N->getValueType(0) != MVT::v4i32 || !Idx || Idx->getZExtValue() > 3 ||
+        (Elt.getOpcode() != ISD::SIGN_EXTEND &&
+         Elt.getOpcode() != ISD::ANY_EXTEND) ||
+        Elt.getOperand(0).getValueType() != MVT::i16)
+      break;
+    return DAG.getNode(
+        VUISD::INSERT_VI, DL, MVT::v4i32, N->getOperand(0), Elt.getOperand(0),
+        DAG.getTargetConstant(Idx->getZExtValue(), DL, MVT::i32));
+  }
   case VUISD::SPLAT: {
     // Broadcast straight from the field: no move to the x field first.
     SDValue Src;
     unsigned Field;
     isBroadcast(SDValue(N, 0), Src, Field);
-    SDLoc DL(N);
     return DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Src,
                        DAG.getTargetConstant(Field, DL, MVT::i32));
   }

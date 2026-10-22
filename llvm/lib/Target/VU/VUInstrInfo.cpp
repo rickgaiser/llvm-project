@@ -121,6 +121,16 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     break;
   }
 
+  case VU::INSERT_VI: {
+    // MFIR.<field> d, s
+    Register D = MI.getOperand(0).getReg();
+    BuildDef(VU::MFIR, D)
+        .addImm(8 >> MI.getOperand(3).getImm())
+        .add(MI.getOperand(2))
+        .addReg(D, RegState::Implicit);
+    break;
+  }
+
   case VU::FNEG:
     // LOI -1.0; MULi.xyzw d, s, i
     Build(VU::LOI).addImm(0xbf800000);
