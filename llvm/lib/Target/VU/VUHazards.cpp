@@ -14,7 +14,9 @@
 // reader when its lower half is free (the upper half of a WAITQ word sees the
 // new Q), or in a word of its own before it.
 //
-// This runs after the packetizer, on micro instruction words.
+// This runs last, on micro instruction words. A read in a delay slot waits in
+// a word before the branch, since no word may come between the branch and its
+// delay slot.
 //
 //===----------------------------------------------------------------------===//
 
@@ -144,6 +146,17 @@ bool VUHazards::runOnMachineFunction(MachineFunction &MF) {
       if (!stepWord(W, Need))
         continue;
       DebugLoc DL = W.Instrs.front()->getDebugLoc();
+      bool DelaySlot = any_of(W.Instrs, [](const MachineInstr *MI) {
+        return MI->getOpcode() == VU::DELAY_SLOT;
+      });
+      if (DelaySlot && W.HasLower) {
+        auto BranchWord = std::prev(I);
+        while (BranchWord->isMetaInstruction())
+          --BranchWord;
+        BuildMI(MBB, BranchWord, DL, TII.get(VU::WAITQ));
+        Changed = true;
+        continue;
+      }
       MachineInstr *Wait = BuildMI(MBB, I, DL, TII.get(VU::WAITQ));
       if (!W.HasLower) {
         // Share the word of the reader.

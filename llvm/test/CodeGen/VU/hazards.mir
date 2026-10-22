@@ -96,3 +96,44 @@ body: |
     }
     PROGRAM_END
 ...
+
+# The read is in a delay slot. No word may come between the branch and its
+# delay slot, so the WAITQ goes in a word before the branch.
+---
+name: delay_slot
+body: |
+  ; CHECK-LABEL: name: delay_slot
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.0(0x40000000), %bb.1(0x40000000)
+  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $q = DIV $vf1, 3, $vf1, 3
+  ; CHECK-NEXT:   $vi1 = IADDI $vi1, -1
+  ; CHECK-NEXT:   NOP
+  ; CHECK-NEXT:   WAITQ implicit-def $q, implicit $q
+  ; CHECK-NEXT:   IBNE $vi1, $vi0, %bb.0
+  ; CHECK-NEXT:   BUNDLE {
+  ; CHECK-NEXT:     $vf3 = MULq 15, $vf2, $q
+  ; CHECK-NEXT:     $vf4 = LQ 15, 0, $vi0
+  ; CHECK-NEXT:     DELAY_SLOT
+  ; CHECK-NEXT:   }
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   PROGRAM_END
+  bb.0:
+    successors: %bb.0, %bb.1
+    liveins: $vf1, $vf2, $vi1
+
+    $q = DIV $vf1, 3, $vf1, 3
+    $vi1 = IADDI $vi1, -1
+    NOP
+    IBNE $vi1, $vi0, %bb.0
+    BUNDLE {
+      $vf3 = MULq 15, $vf2, $q
+      $vf4 = LQ 15, 0, $vi0
+      DELAY_SLOT
+    }
+
+  bb.1:
+    PROGRAM_END
+...

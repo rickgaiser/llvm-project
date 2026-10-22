@@ -12,8 +12,7 @@
 // word:
 //   maddw.xyzw vf2, vf7, vf0w  iaddiu vi5, vi6, 1    maddw.xyzw vf2, ...  ibne
 //   nop                        ibne vi4, vi3, L  ->  nop iaddiu nop nop
-// The words keep their places, so the Q hazards found earlier stay valid.
-// Otherwise the delay slot is filled with a NOP.
+// Otherwise the delay slot is filled with a NOP. VUHazards runs afterwards.
 //
 // A conditional branch must not use a VI register written by the word right
 // before it, so a NOP is inserted in that case as well.

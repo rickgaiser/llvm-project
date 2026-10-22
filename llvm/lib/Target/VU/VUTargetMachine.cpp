@@ -201,8 +201,8 @@ public:
   void addPreEmitPass() override {
     if (getOptLevel() != CodeGenOptLevel::None)
       addPass(createVUPacketizerPass());
-    addPass(createVUHazardsPass());
     addPass(createVUDelaySlotFillerPass());
+    addPass(createVUHazardsPass());
   }
 };
 } // namespace
