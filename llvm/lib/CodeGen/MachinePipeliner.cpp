@@ -3764,8 +3764,36 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
           Victim = &SU;
       }
       if (!Victim) {
-        // No single instruction frees the resources: unschedule those in the
-        // same slot.
+        // No single instruction frees the resources: unschedule all those
+        // that use a resource of Op in a cycle that Op needs.
+        auto Busy = [&](SUnit *X, int C) {
+          SmallVector<std::pair<unsigned, int>, 8> Slots;
+          const MCSchedClassDesc *SC = getSchedClass(X);
+          if (SC && SC->isValid())
+            for (const MCWriteProcResEntry &PRE :
+                 make_range(MF.getSubtarget().getWriteProcResBegin(SC),
+                            MF.getSubtarget().getWriteProcResEnd(SC)))
+              for (unsigned K = 0; K != PRE.ReleaseAtCycle; ++K)
+                Slots.push_back(
+                    {PRE.ProcResourceIdx,
+                     (((C + (int)K) % (int)II) + (int)II) % (int)II});
+          return Slots;
+        };
+        auto Needed = Busy(Op, Cycle);
+        SmallVector<SUnit *, 4> Victims;
+        for (SUnit &SU : SUnits) {
+          std::optional<int> C = Schedule.getCycle(&SU);
+          if (C && &SU != Op && !SU.getInstr()->isPHI() &&
+              any_of(Busy(&SU, *C), [&](std::pair<unsigned, int> S) {
+                return is_contained(Needed, S);
+              }))
+            Victims.push_back(&SU);
+        }
+        for (SUnit *V : Victims)
+          Unschedule(V, "resources");
+        if (!Victims.empty())
+          continue;
+        // Unschedule those in the same slot.
         for (SUnit &SU : SUnits) {
           std::optional<int> C = Schedule.getCycle(&SU);
           if (C && &SU != Op && ((*C % (int)II) + (int)II) % (int)II == Slot)
