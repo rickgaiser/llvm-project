@@ -92,13 +92,19 @@ def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s, i32imm:$f), [], IIC_VUUpper2>;
 def : Pat<(VUbcast (v4f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 def : Pat<(VUbcast (f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 
-// Insert s.x into one field of src: ADDx.<field> d, vf0, s.x for x, y and
-// z, MULx.w d, vf0, s.x for w.
+// Insert field sf of s into field f of src: ADD<sf>.<f> d, vf0, s for x, y
+// and z, MUL<sf>.w d, vf0, s for w. A scalar is field x; a field of another
+// vector is inserted from its place, without moving it to x first.
 let Constraints = "$d = $src" in
-def INSERT_FIELD : VUPseudo<(outs VF:$d), (ins VF:$src, VF:$s, i16imm:$f),
-    [(set (v4f32 VF:$d),
-          (vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f))],
-    IIC_VUUpper>;
+def INSERT_FIELD : VUPseudo<(outs VF:$d),
+                            (ins VF:$src, VF:$s, i16imm:$f, i16imm:$sf), [],
+                            IIC_VUUpper>;
+def : Pat<(vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f),
+          (INSERT_FIELD VF:$src, VF:$s, imm:$f, 0)>;
+let AddedComplexity = 1 in
+def : Pat<(vector_insert (v4f32 VF:$src),
+                         (f32 (vector_extract (v4f32 VF:$v), imm:$sf)), imm:$f),
+          (INSERT_FIELD VF:$src, VF:$v, imm:$f, imm:$sf)>;
 
 // Insert a VI register into one field: MFIR.<field> d, s
 let Constraints = "$d = $src" in

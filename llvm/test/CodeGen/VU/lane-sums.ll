@@ -17,8 +17,7 @@ define void @no_loop() {
 ; CHECK-NEXT:    mulay.xyzw acc, vf0, vf2y nop
 ; CHECK-NEXT:    maddaz.xyzw acc, vf0, vf2z nop
 ; CHECK-NEXT:    maddx.xyzw vf2, vf0, vf2x nop
-; CHECK-NEXT:    addw.x vf2, vf0, vf2w nop
-; CHECK-NEXT:    mulx.w vf1, vf0, vf2x nop
+; CHECK-NEXT:    mulw.w vf1, vf0, vf2w nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -47,8 +46,7 @@ define void @in_loop() {
 ; CHECK-NEXT:    mul.xyzw vf3, vf1, vf2 nop
 ; CHECK-NEXT:    addz.xyzw vf4, vf3, vf3z nop
 ; CHECK-NEXT:    addx.xyzw vf3, vf4, vf3x nop
-; CHECK-NEXT:    addy.x vf3, vf0, vf3y nop
-; CHECK-NEXT:    mulx.w vf2, vf0, vf3x nop
+; CHECK-NEXT:    muly.w vf2, vf0, vf3y nop
 ; CHECK-NEXT:    nop sq.xyzw vf2, 100(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 1
 ; CHECK-NEXT:    nop nop

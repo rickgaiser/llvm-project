@@ -146,11 +146,14 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   }
 
   case VU::INSERT_FIELD: {
-    // ADDx.<field> d, vf0, s, or MULx.w d, vf0, s for the w field.
+    // ADD<sf>.<field> d, vf0, s, or MUL<sf>.w d, vf0, s for the w field.
+    static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw};
+    static constexpr unsigned Mul[] = {VU::MULx, VU::MULy, VU::MULz, VU::MULw};
     Register D = MI.getOperand(0).getReg();
     Register S = MI.getOperand(2).getReg();
     unsigned Field = MI.getOperand(3).getImm();
-    BuildDef(Field == 3 ? VU::MULx : VU::ADDx, D)
+    unsigned SrcField = MI.getOperand(4).getImm();
+    BuildDef(Field == 3 ? Mul[SrcField] : Add[SrcField], D)
         .addImm(8 >> Field)
         .addReg(VU::VF0)
         .addReg(S)
