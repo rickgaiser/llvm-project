@@ -182,3 +182,93 @@ loop:
 exit:
   ret void
 }
+
+; The second term of the ACC chain needs s^16, which takes four
+; multiplications. The chain starts only when that is ready, so it is not
+; split across two stages.
+define void @late_acc_term() {
+; CHECK-LABEL: late_acc_term:
+; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop iaddiu vi2, vi0, 10
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf4, 0(vi2)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 50
+; CHECK-NEXT:    nop iaddi vi3, vi2, 1
+; CHECK-NEXT:    mul.xyzw vf3, vf4, vf4 nop
+; CHECK-NEXT:    nop ibeq vi3, vi1, .LBB3_6
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB3_1: ; %loop
+; CHECK-NEXT:    nop lq.xyzw vf5, 0(vi3)
+; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 iaddi vi4, vi3, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    mul.xyzw vf3, vf5, vf5 ibeq vi4, vi1, .LBB3_5
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB3_2: ; %loop
+; CHECK-NEXT:    mul.xyzw vf6, vf6, vf6 lq.xyzw vf7, 0(vi4)
+; CHECK-NEXT:    nop iaddi vi3, vi4, 1
+; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 nop
+; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 ibeq vi3, vi1, .LBB3_4
+; CHECK-NEXT:    mul.xyzw vf3, vf7, vf7 nop
+; CHECK-NEXT:  .LBB3_3: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 iaddiu vi4, vi3, 0
+; CHECK-NEXT:    nop iaddi vi3, vi4, 1
+; CHECK-NEXT:    nop move.xyzw vf4, vf5
+; CHECK-NEXT:    mul.xyzw vf9, vf6, vf6 move.xyzw vf5, vf7
+; CHECK-NEXT:    maddx.xyzw vf10, vf2, vf8x lq.xyzw vf7, -1(vi3)
+; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf8, vf9, vf9 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf7, vf7 ibne vi3, vi1, .LBB3_3
+; CHECK-NEXT:    nop sq.xyzw vf10, 196(vi3)
+; CHECK-NEXT:  .LBB3_4:
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 iaddi vi2, vi3, -2
+; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf8x nop
+; CHECK-NEXT:    nop sq.xyzw vf4, 197(vi3)
+; CHECK-NEXT:    nop iaddiu vi3, vi4, 0
+; CHECK-NEXT:    nop move.xyzw vf4, vf5
+; CHECK-NEXT:    nop move.xyzw vf5, vf7
+; CHECK-NEXT:  .LBB3_5:
+; CHECK-NEXT:    mul.xyzw vf6, vf6, vf6 nop
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 nop
+; CHECK-NEXT:    mul.xyzw vf6, vf6, vf6 nop
+; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf6x nop
+; CHECK-NEXT:    nop sq.xyzw vf4, 200(vi2)
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:    nop move.xyzw vf4, vf5
+; CHECK-NEXT:  .LBB3_6:
+; CHECK-NEXT:    mul.xyzw vf3, vf3, vf3 nop
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf3, vf3 nop
+; CHECK-NEXT:    maddx.xyzw vf1, vf2, vf3x nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 200(vi2)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+entry:
+  %a = call <4 x float> @llvm.vu.lq(i16 0)
+  %b = call <4 x float> @llvm.vu.lq(i16 1)
+  br label %loop
+
+loop:
+  %i = phi i16 [ 10, %entry ], [ %i.next, %loop ]
+  %v = call <4 x float> @llvm.vu.lq(i16 %i)
+  %s = extractelement <4 x float> %v, i32 0
+  %s2 = fmul float %s, %s
+  %s4 = fmul float %s2, %s2
+  %s8 = fmul float %s4, %s4
+  %s16 = fmul float %s8, %s8
+  %ss = insertelement <4 x float> poison, float %s16, i32 0
+  %bs = shufflevector <4 x float> %ss, <4 x float> poison, <4 x i32> zeroinitializer
+  %t0 = fmul <4 x float> %a, %v
+  %t1 = fmul <4 x float> %b, %bs
+  %r = fadd <4 x float> %t0, %t1
+  %o = add i16 %i, 200
+  call void @llvm.vu.sq(<4 x float> %r, i16 %o)
+  %i.next = add i16 %i, 1
+  %done = icmp eq i16 %i.next, 50
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}

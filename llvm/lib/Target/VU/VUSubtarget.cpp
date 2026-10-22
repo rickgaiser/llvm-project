@@ -50,7 +50,44 @@ namespace {
 ///   instead of after both.
 /// - The next write of ACC is an upper instruction after the read, so it is
 ///   at least one word later.
+/// - A group starts only when all its instructions can follow without
+///   waiting for other operands. Otherwise the start would be scheduled as
+///   early as possible and the rest later, which makes ACC or Q busy for
+///   longer, or puts the group in two stages.
 class ResultRegChains : public ScheduleDAGMutation {
+  /// Delays the group of \p Reg that \p Start defines until the operands of
+  /// all its instructions are ready.
+  static void delayGroupStart(ScheduleDAGInstrs *DAG, SUnit *Start,
+                              Register Reg) {
+    // The earliest cycle of each instruction of the group, relative to Start.
+    DenseMap<SUnit *, unsigned> Offset = {{Start, 0}};
+    SmallVector<SUnit *, 8> Worklist = {Start};
+    while (!Worklist.empty()) {
+      SUnit *SU = Worklist.pop_back_val();
+      for (const SDep &D : SU->Succs) {
+        if (D.getKind() != SDep::Data || D.getReg() != Reg)
+          continue;
+        unsigned &O = Offset[D.getSUnit()];
+        unsigned New = Offset[SU] + D.getLatency();
+        if (New > O) {
+          O = New;
+          Worklist.push_back(D.getSUnit());
+        }
+      }
+    }
+    SmallVector<std::pair<SUnit *, unsigned>, 8> Edges;
+    for (auto [SU, O] : Offset)
+      for (const SDep &D : SU->Preds)
+        if (D.getKind() == SDep::Data && D.getReg() != Reg &&
+            !Offset.count(D.getSUnit()) && D.getLatency() > O)
+          Edges.push_back({D.getSUnit(), D.getLatency() - O});
+    for (auto [Pred, Latency] : Edges) {
+      SDep Dep(Pred, SDep::Artificial);
+      Dep.setLatency(Latency);
+      DAG->addEdge(Start, Dep);
+    }
+  }
+
 public:
   void apply(ScheduleDAGInstrs *DAG) override {
     auto isReg = [](const SDep &D, SDep::Kind K, Register Reg) {
@@ -87,6 +124,12 @@ public:
       Dep.setLatency(1);
       DAG->addEdge(Succ, Dep);
     }
+    // Groups start with a write that does not read the register: MULA, DIV.
+    for (SUnit &SU : DAG->SUnits)
+      for (Register Reg : {VU::ACC, VU::Q})
+        if (SU.getInstr()->modifiesRegister(Reg, /*TRI=*/nullptr) &&
+            !SU.getInstr()->readsRegister(Reg, /*TRI=*/nullptr))
+          delayGroupStart(DAG, &SU, Reg);
   }
 };
 } // namespace
