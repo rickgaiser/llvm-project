@@ -41,6 +41,7 @@
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -330,7 +331,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // Enable DAG combine for broadcast patterns and load optimization
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
     setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
-                         ISD::FMINNUM, ISD::BITCAST, ISD::SETCC});
+                         ISD::FMINNUM, ISD::BITCAST, ISD::SETCC,
+                         ISD::FP_TO_SINT});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -1756,6 +1758,53 @@ static unsigned getVU0BroadcastOperation(unsigned Opc, unsigned &BC) {
   return 0;
 }
 
+/// Returns n if \p C is a splat of 2^n, or of 2^-n if \p Inverse, for the
+/// fraction bits of the VU0 fixed-point conversions, or 0.
+static unsigned getVU0FractionBits(SDValue C, bool Inverse) {
+  ConstantFPSDNode *CN = isConstOrConstSplatFP(C);
+  if (!CN)
+    return 0;
+  for (int N : {4, 12, 15})
+    if (CN->getValueAPF().isExactlyValue(std::ldexp(1.0, Inverse ? -N : N)))
+      return N;
+  return 0;
+}
+
+// VU0 fixed-point conversions with n = 4, 12 or 15 fraction bits:
+//   fp_to_sint (v * 2^n) -> VU0_FTOI v, n
+//   sint_to_fp (v) * 2^-n -> VU0_ITOF v, n
+// The multiplications by a power of two are exact.
+static SDValue performVU0FixedPointCombine(SDNode *N, SelectionDAG &DAG,
+                                           const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0())
+    return SDValue();
+  SDLoc DL(N);
+  if (N->getOpcode() == ISD::FP_TO_SINT) {
+    SDValue Mul = N->getOperand(0);
+    if (N->getValueType(0) != MVT::v4i32 || Mul.getOpcode() != ISD::FMUL ||
+        !Mul.hasOneUse())
+      return SDValue();
+    for (unsigned I : {0, 1})
+      if (unsigned Bits = getVU0FractionBits(Mul.getOperand(1 - I), false))
+        return DAG.getNode(MipsISD::VU0_FTOI, DL, MVT::v4i32, Mul.getOperand(I),
+                           DAG.getTargetConstant(Bits, DL, MVT::i32));
+    return SDValue();
+  }
+
+  if (N->getValueType(0) != MVT::v4f32)
+    return SDValue();
+  for (unsigned I : {0, 1}) {
+    SDValue Conv = N->getOperand(I);
+    if (Conv.getOpcode() != ISD::SINT_TO_FP ||
+        Conv.getOperand(0).getValueType() != MVT::v4i32)
+      continue;
+    if (unsigned Bits = getVU0FractionBits(N->getOperand(1 - I), true))
+      return DAG.getNode(MipsISD::VU0_ITOF, DL, MVT::v4f32, Conv.getOperand(0),
+                         DAG.getTargetConstant(Bits, DL, MVT::i32));
+  }
+  return SDValue();
+}
+
 // VU0 Broadcast Combine
 // Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> VU0_<op>x/y/z/w(A, B) for fadd,
 // fsub, fmul, fmaxnum and fminnum. This enables efficient matrix-vector
@@ -2004,8 +2053,15 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
       Val = performVU0BroadcastCombine(N, DAG, Subtarget);
     break;
   case ISD::FSUB:
-  case ISD::FMUL:
     Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    break;
+  case ISD::FMUL:
+    Val = performVU0FixedPointCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    break;
+  case ISD::FP_TO_SINT:
+    Val = performVU0FixedPointCombine(N, DAG, Subtarget);
     break;
   case ISD::ADD:
     Val = performR5900ADDCombine(N, DAG, Subtarget);

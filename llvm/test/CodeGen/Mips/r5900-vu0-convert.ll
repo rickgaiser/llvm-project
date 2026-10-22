@@ -4,6 +4,10 @@
 ; v4f32 to and from v4i32 in a 128-bit GPR: VFTOI0 and QMFC2, QMTC2 and
 ; VITOF0. An unsigned conversion to v4i32 also converts X - 2^31 and selects
 ; that result with the sign bit set where it is not negative.
+;
+; A multiplication by 2^n before fptosi, or by 2^-n after sitofp, with n = 4,
+; 12 or 15, is the fixed-point conversion VFTOIn or VITOFn. Other factors stay
+; a VMUL.
 
 define void @fptosi(ptr %p, ptr %q) {
 ; CHECK-LABEL: fptosi:
@@ -62,5 +66,171 @@ define void @fptoui(ptr %p, ptr %q) {
   %v = load <4 x float>, ptr %q, align 16
   %c = fptoui <4 x float> %v to <4 x i32>
   store <4 x i32> %c, ptr %p, align 16
+  ret void
+}
+
+define void @fptosi_fix4(ptr %p, ptr %q) {
+; CHECK-LABEL: fptosi_fix4:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    vftoi4.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %v = load <4 x float>, ptr %q, align 16
+  %m = fmul <4 x float> %v, splat (float 16.0)
+  %c = fptosi <4 x float> %m to <4 x i32>
+  store <4 x i32> %c, ptr %p, align 16
+  ret void
+}
+
+define void @fptosi_fix12(ptr %p, ptr %q) {
+; CHECK-LABEL: fptosi_fix12:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    vftoi12.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %v = load <4 x float>, ptr %q, align 16
+  %m = fmul <4 x float> splat (float 4096.0), %v
+  %c = fptosi <4 x float> %m to <4 x i32>
+  store <4 x i32> %c, ptr %p, align 16
+  ret void
+}
+
+define void @fptosi_fix15(ptr %p, ptr %q) {
+; CHECK-LABEL: fptosi_fix15:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    vftoi15.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %v = load <4 x float>, ptr %q, align 16
+  %m = fmul <4 x float> %v, splat (float 32768.0)
+  %c = fptosi <4 x float> %m to <4 x i32>
+  store <4 x i32> %c, ptr %p, align 16
+  ret void
+}
+
+define void @fptosi_fix8(ptr %p, ptr %q) {
+; CHECK-LABEL: fptosi_fix8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    lui $1, %hi(.LCPI6_0)
+; CHECK-NEXT:    lqc2 $$vf2, %lo(.LCPI6_0)($1)
+; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf1, $$vf2
+; CHECK-NEXT:    vftoi0.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %v = load <4 x float>, ptr %q, align 16
+  %m = fmul <4 x float> %v, splat (float 256.0)
+  %c = fptosi <4 x float> %m to <4 x i32>
+  store <4 x i32> %c, ptr %p, align 16
+  ret void
+}
+
+; The product is also used, so it is computed anyway.
+define void @fptosi_fix4_used(ptr %p, ptr %q) {
+; CHECK-LABEL: fptosi_fix4_used:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lui $2, %hi(.LCPI7_0)
+; CHECK-NEXT:    lqc2 $$vf1, 0($1)
+; CHECK-NEXT:    sll $3, $4, 0
+; CHECK-NEXT:    lqc2 $$vf2, %lo(.LCPI7_0)($2)
+; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf1, $$vf2
+; CHECK-NEXT:    vftoi0.xyzw $$vf2, $$vf1
+; CHECK-NEXT:    qmfc2 $2, $$vf2
+; CHECK-NEXT:    sq $2, 0($3)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+  %v = load <4 x float>, ptr %q, align 16
+  %m = fmul <4 x float> %v, splat (float 16.0)
+  %c = fptosi <4 x float> %m to <4 x i32>
+  store <4 x i32> %c, ptr %p, align 16
+  store <4 x float> %m, ptr %q, align 16
+  ret void
+}
+
+define void @sitofp_fix4(ptr %p, ptr %q) {
+; CHECK-LABEL: sitofp_fix4:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vitof4.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+  %v = load <4 x i32>, ptr %q, align 16
+  %c = sitofp <4 x i32> %v to <4 x float>
+  %m = fmul <4 x float> %c, splat (float 0.0625)
+  store <4 x float> %m, ptr %p, align 16
+  ret void
+}
+
+define void @sitofp_fix12(ptr %p, ptr %q) {
+; CHECK-LABEL: sitofp_fix12:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vitof12.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+  %v = load <4 x i32>, ptr %q, align 16
+  %c = sitofp <4 x i32> %v to <4 x float>
+  %m = fmul <4 x float> splat (float 0x3F30000000000000), %c
+  store <4 x float> %m, ptr %p, align 16
+  ret void
+}
+
+define void @sitofp_fix15(ptr %p, ptr %q) {
+; CHECK-LABEL: sitofp_fix15:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vitof15.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+  %v = load <4 x i32>, ptr %q, align 16
+  %c = sitofp <4 x i32> %v to <4 x float>
+  %m = fmul <4 x float> %c, splat (float 0x3F00000000000000)
+  store <4 x float> %m, ptr %p, align 16
+  ret void
+}
+
+; 16.0 is 2^4, not 2^-4.
+define void @sitofp_mul16(ptr %p, ptr %q) {
+; CHECK-LABEL: sitofp_mul16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    qmtc2 $1, $$vf1
+; CHECK-NEXT:    lui $1, %hi(.LCPI11_0)
+; CHECK-NEXT:    vitof0.xyzw $$vf1, $$vf1
+; CHECK-NEXT:    lqc2 $$vf2, %lo(.LCPI11_0)($1)
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vmul.xyzw $$vf1, $$vf1, $$vf2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $$vf1, 0($1)
+  %v = load <4 x i32>, ptr %q, align 16
+  %c = sitofp <4 x i32> %v to <4 x float>
+  %m = fmul <4 x float> %c, splat (float 16.0)
+  store <4 x float> %m, ptr %p, align 16
   ret void
 }

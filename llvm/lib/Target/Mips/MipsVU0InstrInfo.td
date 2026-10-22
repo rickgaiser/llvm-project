@@ -143,6 +143,17 @@ def MipsVU0FADD_MASKED : SDNode<"MipsISD::VU0_FADD_MASKED", SDT_VU0Masked>;
 def MipsVU0FSUB_MASKED : SDNode<"MipsISD::VU0_FSUB_MASKED", SDT_VU0Masked>;
 def MipsVU0FMUL_MASKED : SDNode<"MipsISD::VU0_FMUL_MASKED", SDT_VU0Masked>;
 
+// Fixed-point conversions with n fraction bits (4, 12 or 15):
+// VU0_FTOI = fp_to_sint (v * 2^n), VU0_ITOF = sint_to_fp (v) * 2^-n.
+def MipsVU0FTOI : SDNode<"MipsISD::VU0_FTOI",
+                         SDTypeProfile<1, 2, [SDTCisVT<0, v4i32>,
+                                              SDTCisVT<1, v4f32>,
+                                              SDTCisVT<2, i32>]>>;
+def MipsVU0ITOF : SDNode<"MipsISD::VU0_ITOF",
+                         SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
+                                              SDTCisVT<1, v4i32>,
+                                              SDTCisVT<2, i32>]>>;
+
 // SDTypeProfile for VU0 broadcast operations: 2 v4f32 inputs, 1 v4f32 output
 def SDT_VU0Broadcast
     : SDTypeProfile<
@@ -930,5 +941,15 @@ let Predicates = [HasVU0] in {
   // v4i32 lives in a 128-bit GPR, so a conversion moves it to or from VU0.
   def : Pat<(v4i32 (fp_to_sint v4f32:$src)), (QMFC2 (VFTOI0_ISel v4f32:$src))>;
   def : Pat<(v4f32 (sint_to_fp v4i32:$src)), (VITOF0_ISel (QMTC2 v4i32:$src))>;
+
+  // Fixed-point conversions with n fraction bits, combined from a
+  // multiplication by 2^n or 2^-n.
+  foreach N = [4, 12, 15] in {
+    defvar Bits = TImmLeaf<i32, "return Imm == " # N # ";">;
+    def : Pat<(v4i32 (MipsVU0FTOI v4f32:$src, Bits)),
+              (QMFC2 (!cast<Instruction>("VFTOI" # N) 15, v4f32:$src))>;
+    def : Pat<(v4f32 (MipsVU0ITOF v4i32:$src, Bits)),
+              (!cast<Instruction>("VITOF" # N) 15, (QMTC2 v4i32:$src))>;
+  }
 
 } // Predicates = [HasVU0]
