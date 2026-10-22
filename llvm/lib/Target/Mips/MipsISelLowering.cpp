@@ -1262,9 +1262,10 @@ static SDValue lowerR5900WideningMUL(SDValue Op, SelectionDAG &DAG) {
 
   // Only the high word is used: MULT and MFHI, by the expansion, are faster.
   if (all_of(Op->users(), [](const SDNode *U) {
+        if (U->getOpcode() != ISD::SRL && U->getOpcode() != ISD::SRA)
+          return false;
         auto *C = isConstOrConstSplat(U->getOperand(1));
-        return (U->getOpcode() == ISD::SRL || U->getOpcode() == ISD::SRA) &&
-               C && C->getZExtValue() >= 32;
+        return C && C->getZExtValue() >= 32;
       }))
     return SDValue();
 

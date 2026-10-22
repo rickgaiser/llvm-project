@@ -279,3 +279,35 @@ define i16 @test_mult_i8_wide(i8 signext %a, i8 signext %b) {
   %result = mul i16 %a_ext, %b_ext
   ret i16 %result
 }
+
+; A widening multiply used by the expansion of another multiply, which
+; truncates it.
+define i64 @test_mul_widening_chain(i32 %a, i1 %c, i64 %b) {
+; CHECK-LABEL: test_mul_widening_chain:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    andi $1, $5, 1
+; CHECK-NEXT:    dsrl $2, $6, 32
+; CHECK-NEXT:    pmultw $1, $1, $4
+; CHECK-NEXT:    sll $2, $2, 0
+; CHECK-NEXT:    sll $4, $6, 0
+; CHECK-NEXT:    sll $3, $1, 0
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    mult $2, $3, $2
+; CHECK-NEXT:    sll $1, $1, 0
+; CHECK-NEXT:    multu $3, $4
+; CHECK-NEXT:    mfhi $3
+; CHECK-NEXT:    mflo $5
+; CHECK-NEXT:    addu $2, $3, $2
+; CHECK-NEXT:    mult $1, $1, $4
+; CHECK-NEXT:    addu $1, $2, $1
+; CHECK-NEXT:    dsll $2, $5, 32
+; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    dsrl $2, $2, 32
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    or $2, $2, $1
+  %s = select i1 %c, i64 1, i64 0
+  %x = sext i32 %a to i64
+  %m = mul i64 %s, %x
+  %r = mul i64 %m, %b
+  ret i64 %r
+}
