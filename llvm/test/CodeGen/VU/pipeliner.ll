@@ -12,36 +12,32 @@ declare void @llvm.vu.sq(<4 x float>, i16)
 define void @far_dependence() {
 ; CHECK-LABEL: far_dependence:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    nop iaddiu vi1, vi0, 65
-; CHECK-NEXT:    nop iaddiu vi3, vi0, 97
-; CHECK-NEXT:    nop lq.xyzw vf1, -64(vi1)
-; CHECK-NEXT:    nop iaddi vi2, vi1, 1
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 65
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 97
+; CHECK-NEXT:    nop lq.xyzw vf1, -64(vi3)
+; CHECK-NEXT:    nop iaddi vi4, vi3, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi2, vi3, .LBB0_4
+; CHECK-NEXT:    nop ibeq vi4, vi1, .LBB0_4
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop
-; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddi vi4, vi2, 1
-; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w lq.xyzw vf1, -64(vi2)
-; CHECK-NEXT:    nop ibeq vi4, vi3, .LBB0_3
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddi vi2, vi4, 1
+; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w lq.xyzw vf1, -64(vi4)
+; CHECK-NEXT:    nop ibeq vi2, vi1, .LBB0_3
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop iaddiu vi5, vi1, 0
-; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
-; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddiu vi2, vi4, 0
-; CHECK-NEXT:    nop lq.xyzw vf3, -64(vi2)
-; CHECK-NEXT:    nop iaddi vi4, vi2, 1
-; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w sq.xyzw vf2, 0(vi5)
-; CHECK-NEXT:    nop move.xyzw vf1, vf3
-; CHECK-NEXT:    nop ibne vi4, vi3, .LBB0_2
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddi vi2, vi2, 1
+; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w sq.xyzw vf2, -3(vi2)
+; CHECK-NEXT:    nop lq.xyzw vf1, -65(vi2)
+; CHECK-NEXT:    nop ibne vi2, vi1, .LBB0_2
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_3:
-; CHECK-NEXT:    nop sq.xyzw vf2, 0(vi1)
-; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:    nop iaddi vi3, vi2, -1
+; CHECK-NEXT:    nop sq.xyzw vf2, -2(vi2)
 ; CHECK-NEXT:  .LBB0_4:
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 nop
 ; CHECK-NEXT:    maddw.xyzw vf1, vf1, vf0w nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
+; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi3)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 entry:
@@ -74,18 +70,17 @@ define void @recurrence() {
 ; CHECK-NEXT:  .LBB1_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    nop lq.xyzw vf2, -1(vi1)
-; CHECK-NEXT:    nop iaddi vi3, vi1, 1
+; CHECK-NEXT:    nop iaddi vi1, vi1, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x ibeq vi3, vi2, .LBB1_3
+; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf1x ibeq vi1, vi2, .LBB1_3
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; in Loop: Header=BB1_2 Depth=1
-; CHECK-NEXT:    nop sq.xyzw vf2, 0(vi1)
-; CHECK-NEXT:    nop iaddiu vi1, vi3, 0
+; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop b .LBB1_2
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB1_3:
-; CHECK-NEXT:    nop sq.xyzw vf2, 0(vi1)
+; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 entry:

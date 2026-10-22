@@ -16,6 +16,7 @@
 #include "TargetInfo/VUTargetInfo.h"
 #include "VU.h"
 #include "VUTargetObjectFile.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Function.h"
@@ -33,6 +34,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUPacketizerPass(PR);
   initializeVUFoldQPass(PR);
   initializeVUHazardsPass(PR);
+  initializeVULoopCopiesPass(PR);
 }
 
 VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
@@ -49,6 +51,73 @@ VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
 }
 
 VUTargetMachine::~VUTargetMachine() = default;
+
+namespace {
+/// The scheduler does not see the next iteration of a loop. A register that
+/// is read at the top of a single block loop and written at the bottom gets
+/// a latency to the end of the block, so that it is written early enough not
+/// to stall the next iteration.
+class LoopCarriedLatency : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override {
+    if (DAG->SUnits.empty())
+      return;
+    MachineBasicBlock *MBB = DAG->SUnits.front().getInstr()->getParent();
+    if (!MBB->isSuccessor(MBB) || DAG->end() != MBB->getFirstTerminator())
+      return;
+
+    // The first read of each register that is read before it is written,
+    // and the number of instructions before it.
+    struct Read {
+      const MachineOperand *MO;
+      unsigned Index;
+    };
+    DenseMap<Register, Read> FirstRead;
+    SmallSet<Register, 16> Written;
+    unsigned Index = 0;
+    for (const MachineInstr &MI : *MBB) {
+      if (MI.isMetaInstruction())
+        continue;
+      for (const MachineOperand &MO : MI.all_uses())
+        if (MO.getReg() && !Written.count(MO.getReg()))
+          FirstRead.try_emplace(MO.getReg(), Read{&MO, Index});
+      for (const MachineOperand &MO : MI.all_defs())
+        Written.insert(MO.getReg());
+      ++Index;
+    }
+
+    // The last definition of each of these registers.
+    DenseMap<Register, std::pair<SUnit *, unsigned>> LastDef;
+    for (SUnit &SU : DAG->SUnits)
+      for (const MachineOperand &MO : SU.getInstr()->all_defs())
+        if (FirstRead.count(MO.getReg()))
+          LastDef[MO.getReg()] = {&SU, MO.getOperandNo()};
+
+    for (auto [Reg, Def] : LastDef) {
+      auto [SU, OpIdx] = Def;
+      const Read &R = FirstRead[Reg];
+      // The read is behind the branch, its delay slot and about two
+      // instructions per word.
+      int Latency =
+          DAG->getSchedModel()->computeOperandLatency(
+              SU->getInstr(), OpIdx, R.MO->getParent(), R.MO->getOperandNo()) -
+          2 - R.Index / 2;
+      if (Latency <= 0)
+        continue;
+      SDep Dep(SU, SDep::Artificial);
+      Dep.setLatency(Latency);
+      DAG->ExitSU.addPred(Dep);
+    }
+  }
+};
+} // namespace
+
+ScheduleDAGInstrs *
+VUTargetMachine::createPostMachineScheduler(MachineSchedContext *C) const {
+  ScheduleDAGMI *DAG = createSchedPostRA(C);
+  DAG->addMutation(std::make_unique<LoopCarriedLatency>());
+  return DAG;
+}
 
 const VUSubtarget *VUTargetMachine::getSubtargetImpl(const Function &F) const {
   Attribute CPUAttr = F.getFnAttribute("target-cpu");
@@ -85,6 +154,7 @@ public:
     if (getOptLevel() != CodeGenOptLevel::None) {
       addPass(createVUFoldQPass());
       addPass(&MachinePipelinerID);
+      addPass(createVULoopCopiesPass());
     }
   }
 

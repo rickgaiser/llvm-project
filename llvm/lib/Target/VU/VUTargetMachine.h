@@ -29,6 +29,8 @@ public:
 
   const VUSubtarget *getSubtargetImpl(const Function &F) const override;
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+  ScheduleDAGInstrs *
+  createPostMachineScheduler(MachineSchedContext *C) const override;
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
   }
