@@ -36,7 +36,7 @@ define i32 @select_oeq(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_ogt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_ogt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1f .LBB2_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -53,7 +53,7 @@ define i32 @select_ogt(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_oge(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_oge:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.olt.s $f12, $f13
+; CHECK-NEXT:    c.lt.s $f12, $f13
 ; CHECK-NEXT:    bc1f .LBB3_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -70,7 +70,7 @@ define i32 @select_oge(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_olt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_olt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.olt.s $f12, $f13
+; CHECK-NEXT:    c.lt.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB4_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -87,7 +87,7 @@ define i32 @select_olt(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_ole(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_ole:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB5_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -155,7 +155,7 @@ define i32 @select_ueq(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_ugt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_ugt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1f .LBB9_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -172,7 +172,7 @@ define i32 @select_ugt(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_uge(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_uge:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.olt.s $f12, $f13
+; CHECK-NEXT:    c.lt.s $f12, $f13
 ; CHECK-NEXT:    bc1f .LBB10_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -189,7 +189,7 @@ define i32 @select_uge(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_ult(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_ult:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.olt.s $f12, $f13
+; CHECK-NEXT:    c.lt.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB11_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -206,7 +206,7 @@ define i32 @select_ult(float %a, float %b, i32 %x, i32 %y) {
 define i32 @select_ule(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-LABEL: select_ule:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB12_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:
@@ -267,7 +267,7 @@ define i32 @select_true(float %a, float %b, i32 %x, i32 %y) {
 define void @branch_ogt(float %a, float %b, ptr %p) {
 ; CHECK-LABEL: branch_ogt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB16_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1: # %t
@@ -288,7 +288,7 @@ f:
 define void @branch_oge(float %a, float %b, ptr %p) {
 ; CHECK-LABEL: branch_oge:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.olt.s $f12, $f13
+; CHECK-NEXT:    c.lt.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB17_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1: # %t
@@ -309,7 +309,7 @@ f:
 define void @branch_ugt(float %a, float %b, ptr %p) {
 ; CHECK-LABEL: branch_ugt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1t .LBB18_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1: # %t
@@ -330,7 +330,7 @@ f:
 define void @branch_ule(float %a, float %b, ptr %p) {
 ; CHECK-LABEL: branch_ule:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    c.ole.s $f12, $f13
+; CHECK-NEXT:    c.le.s $f12, $f13
 ; CHECK-NEXT:    bc1f .LBB19_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1: # %t

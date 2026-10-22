@@ -10,7 +10,7 @@ define i32 @fptoui(float %x) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    lui $1, %hi(.LCPI0_0)
 ; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI0_0)($1)
-; CHECK-NEXT:    c.olt.s $f12, $f0
+; CHECK-NEXT:    c.lt.s $f12, $f0
 ; CHECK-NEXT:    bc1t .LBB0_2
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1:

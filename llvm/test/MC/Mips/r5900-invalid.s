@@ -63,7 +63,7 @@
 
 # =============================================================================
 # Single-precision FP compare instructions that R5900 does NOT support
-# (R5900 only supports c.f.s, c.eq.s, c.olt.s, c.ole.s)
+# (R5900 only supports c.f.s, c.eq.s, c.lt.s, c.le.s)
 # =============================================================================
 
 # CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
@@ -91,13 +91,7 @@
         c.ngl.s $f4, $f6
 
 # CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
-        c.lt.s  $f4, $f6
-
-# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
         c.nge.s $f4, $f6
-
-# CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
-        c.le.s  $f4, $f6
 
 # CHECK: :[[@LINE+1]]:{{[0-9]+}}: error: instruction requires a CPU feature not currently enabled
         c.ngt.s $f4, $f6

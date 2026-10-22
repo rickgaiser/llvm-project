@@ -43,7 +43,9 @@ cvt.s.w $f6, $f7
 cvt.w.s $f6, $f7
 
 #------------------------------------------------------------------------------
-# FP Compare Instructions (R5900 supports only 4 comparisons: F, EQ, OLT, OLE)
+# FP Compare Instructions (R5900 supports only 4 comparisons: F, EQ, LT, LE)
+# The LT and LE compares use the encodings of c.olt.s and c.ole.s, and also
+# accept those names.
 #------------------------------------------------------------------------------
 
 # CHECK: c.f.s   $f6, $f7           # encoding: [0x30,0x30,0x07,0x46]
@@ -52,10 +54,16 @@ c.f.s   $f6, $f7
 # CHECK: c.eq.s  $f6, $f7           # encoding: [0x32,0x30,0x07,0x46]
 c.eq.s  $f6, $f7
 
-# CHECK: c.olt.s $f6, $f7           # encoding: [0x34,0x30,0x07,0x46]
+# CHECK: c.lt.s  $f6, $f7           # encoding: [0x34,0x30,0x07,0x46]
+c.lt.s  $f6, $f7
+
+# CHECK: c.le.s  $f6, $f7           # encoding: [0x36,0x30,0x07,0x46]
+c.le.s  $f6, $f7
+
+# CHECK: c.lt.s  $f6, $f7           # encoding: [0x34,0x30,0x07,0x46]
 c.olt.s $f6, $f7
 
-# CHECK: c.ole.s $f6, $f7           # encoding: [0x36,0x30,0x07,0x46]
+# CHECK: c.le.s  $f6, $f7           # encoding: [0x36,0x30,0x07,0x46]
 c.ole.s $f6, $f7
 
 #------------------------------------------------------------------------------

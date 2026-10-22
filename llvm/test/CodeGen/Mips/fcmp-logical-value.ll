@@ -34,15 +34,15 @@ define i32 @and3(float %a, float %b, float %c, float %n) {
 ; R5900-LABEL: and3:
 ; R5900:       # %bb.0:
 ; R5900-NEXT:    add.s $f0, $f12, $f15
-; R5900-NEXT:    c.olt.s $f0, $f15
+; R5900-NEXT:    c.lt.s $f0, $f15
 ; R5900-NEXT:    bc1t .LBB0_4
 ; R5900-NEXT:    addiu $2, $zero, 0
 ; R5900-NEXT:  # %bb.1:
-; R5900-NEXT:    c.olt.s $f13, $f15
+; R5900-NEXT:    c.lt.s $f13, $f15
 ; R5900-NEXT:    bc1t .LBB0_4
 ; R5900-NEXT:    nop
 ; R5900-NEXT:  # %bb.2:
-; R5900-NEXT:    c.olt.s $f14, $f15
+; R5900-NEXT:    c.lt.s $f14, $f15
 ; R5900-NEXT:    bc1t .LBB0_4
 ; R5900-NEXT:    nop
 ; R5900-NEXT:  # %bb.3:
@@ -104,11 +104,11 @@ define i32 @or2(float %a, float %b, float %n) {
 ;
 ; R5900-LABEL: or2:
 ; R5900:       # %bb.0:
-; R5900-NEXT:    c.olt.s $f12, $f14
+; R5900-NEXT:    c.lt.s $f12, $f14
 ; R5900-NEXT:    bc1t .LBB1_2
 ; R5900-NEXT:    nop
 ; R5900-NEXT:  # %bb.1:
-; R5900-NEXT:    c.olt.s $f13, $f14
+; R5900-NEXT:    c.lt.s $f13, $f14
 ; R5900-NEXT:    bc1f .LBB1_3
 ; R5900-NEXT:    addiu $3, $zero, 0
 ; R5900-NEXT:  .LBB1_2:

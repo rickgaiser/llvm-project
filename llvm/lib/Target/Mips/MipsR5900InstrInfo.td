@@ -127,6 +127,19 @@ let Predicates = [IsR5900] in {
 }
 
 //===----------------------------------------------------------------------===//
+// R5900 FPU Compare Aliases
+//===----------------------------------------------------------------------===//
+// The R5900 names its LT and LE compares (conditions 4 and 6) c.lt.s and
+// c.le.s. GNU as only accepts these names for the R5900, so print them.
+
+let Predicates = [IsR5900], EmitPriority = 2 in {
+  def : MipsInstAlias<"c.lt.s $fs, $ft",
+                      (C_OLT_S FCC0, FGR32Opnd:$fs, FGR32Opnd:$ft)>;
+  def : MipsInstAlias<"c.le.s $fs, $ft",
+                      (C_OLE_S FCC0, FGR32Opnd:$fs, FGR32Opnd:$ft)>;
+}
+
+//===----------------------------------------------------------------------===//
 // R5900 EE Core Integer Instructions
 //===----------------------------------------------------------------------===//
 

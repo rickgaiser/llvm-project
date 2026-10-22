@@ -231,10 +231,23 @@ void MipsInstPrinter::printMemOperandEA(const MCInst *MI, int opNum,
 }
 
 void MipsInstPrinter::printFCCOperand(const MCInst *MI, int opNum,
-                                      const MCSubtargetInfo & /* STI */,
+                                      const MCSubtargetInfo &STI,
                                       raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(opNum);
-  O << MipsFCCToString((Mips::CondCode)MO.getImm());
+  auto CC = (Mips::CondCode)MO.getImm();
+  // The R5900 names its LT and LE compares c.lt.s and c.le.s, as GNU as
+  // expects.
+  if (STI.hasFeature(Mips::FeatureR5900)) {
+    if (CC == Mips::FCOND_OLT || CC == Mips::FCOND_UGE) {
+      O << "lt";
+      return;
+    }
+    if (CC == Mips::FCOND_OLE || CC == Mips::FCOND_UGT) {
+      O << "le";
+      return;
+    }
+  }
+  O << MipsFCCToString(CC);
 }
 
 void MipsInstPrinter::
