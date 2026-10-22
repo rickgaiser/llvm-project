@@ -392,6 +392,19 @@ let Predicates = [HasVU0] in {
   // ft.w=fs.x
   def VMR32 : VU0_2R<"vmr32", 0b01100111101>; // 0x33D
 
+  // VU0 conversions between float and fixed point with 0, 4, 12 or 15
+  // fraction bits. VFTOI rounds toward zero.
+  def VFTOI0 : VU0_2R<"vftoi0", 0b00101111100>;   // 0x17C
+  def VFTOI4 : VU0_2R<"vftoi4", 0b00101111101>;   // 0x17D
+  def VFTOI12 : VU0_2R<"vftoi12", 0b00101111110>; // 0x17E
+  def VFTOI15 : VU0_2R<"vftoi15", 0b00101111111>; // 0x17F
+  def VITOF0 : VU0_2R<"vitof0", 0b00100111100>;   // 0x13C
+  def VITOF4 : VU0_2R<"vitof4", 0b00100111101>;   // 0x13D
+  def VITOF12 : VU0_2R<"vitof12", 0b00100111110>; // 0x13E
+  def VITOF15 : VU0_2R<"vitof15", 0b00100111111>; // 0x13F
+  def VFTOI0_ISel : VU0_2R_ISel<"vftoi0", 0b00101111100, null_frag>;
+  def VITOF0_ISel : VU0_2R_ISel<"vitof0", 0b00100111100, null_frag>;
+
   // VU0 Multiply-Accumulate (uses ACC register)
   def VMADD : VU0_3R_ACC<"vmadd", 0b101001>; // 0x29
   def VMSUB : VU0_3R_ACC<"vmsub", 0b101101>; // 0x2D
@@ -875,5 +888,9 @@ let Predicates = [HasVU0] in {
   // Used for EXTRACT_VECTOR_ELT and INSERT_VECTOR_ELT lowering
   def : Pat<(v4i32 (bitconvert v4f32:$src)), (QMFC2 v4f32:$src)>;
   def : Pat<(v4f32 (bitconvert v4i32:$src)), (QMTC2 v4i32:$src)>;
+
+  // v4i32 lives in a 128-bit GPR, so a conversion moves it to or from VU0.
+  def : Pat<(v4i32 (fp_to_sint v4f32:$src)), (QMFC2 (VFTOI0_ISel v4f32:$src))>;
+  def : Pat<(v4f32 (sint_to_fp v4i32:$src)), (VITOF0_ISel (QMTC2 v4i32:$src))>;
 
 } // Predicates = [HasVU0]

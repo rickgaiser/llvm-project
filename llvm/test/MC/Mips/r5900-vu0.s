@@ -163,6 +163,24 @@ vopmula.xyz $acc, $vf1, $vf2
 vabs.xyzw $vf1, $vf2
 # CHECK: vclipw.xyz	$$vf1, $$vf2            # encoding: [0xff,0x09,0xc2,0x4b]
 vclipw.xyz $vf1, $vf2w
+# CHECK: vftoi0.xyzw	$$vf1, $$vf2            # encoding: [0x7c,0x11,0xe1,0x4b]
+vftoi0.xyzw $vf1, $vf2
+# CHECK: vftoi4.xyzw	$$vf1, $$vf2            # encoding: [0x7d,0x11,0xe1,0x4b]
+vftoi4.xyzw $vf1, $vf2
+# CHECK: vftoi12.xyzw	$$vf1, $$vf2            # encoding: [0x7e,0x11,0xe1,0x4b]
+vftoi12.xyzw $vf1, $vf2
+# CHECK: vftoi15.xyzw	$$vf1, $$vf2            # encoding: [0x7f,0x11,0xe1,0x4b]
+vftoi15.xyzw $vf1, $vf2
+# CHECK: vitof0.xyzw	$$vf1, $$vf2            # encoding: [0x3c,0x11,0xe1,0x4b]
+vitof0.xyzw $vf1, $vf2
+# CHECK: vitof4.xyzw	$$vf1, $$vf2            # encoding: [0x3d,0x11,0xe1,0x4b]
+vitof4.xyzw $vf1, $vf2
+# CHECK: vitof12.xyzw	$$vf1, $$vf2            # encoding: [0x3e,0x11,0xe1,0x4b]
+vitof12.xyzw $vf1, $vf2
+# CHECK: vitof15.xyzw	$$vf1, $$vf2            # encoding: [0x3f,0x11,0xe1,0x4b]
+vitof15.xyzw $vf1, $vf2
+# CHECK: vftoi0.xz	$$vf1, $$vf2            # encoding: [0x7c,0x11,0x41,0x4b]
+vftoi0.xz $vf1, $vf2
 # CHECK: vnop                                    # encoding: [0xff,0x02,0x00,0x4a]
 vnop
 # CHECK: vwaitq                                  # encoding: [0xbf,0x03,0x00,0x4a]

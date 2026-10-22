@@ -709,7 +709,27 @@ InstructionCost MipsTTIImpl::getCastInstrCost(unsigned Opcode, Type *Dst,
   case Instruction::FPToUI:
   case Instruction::SIToFP:
   case Instruction::UIToFP:
-    // VU0 v4f32 conversions are scalarized.
+    // VU0 v4f32 to and from v4i32: vftoi0 and qmfc2, or qmtc2 and vitof0.
+    // An unsigned conversion to v4i32 also converts X - 2^31 and selects
+    // with MMI operations; one from v4i32 converts both halfwords.
+    if (auto Parts = getVU0Parts(Opcode == Instruction::FPToSI ||
+                                         Opcode == Instruction::FPToUI
+                                     ? Src
+                                     : Dst);
+        Parts && DstVTy->getNumElements() % 4 == 0 &&
+        DstVTy->getScalarSizeInBits() == 32 &&
+        SrcVTy->getScalarSizeInBits() == 32) {
+      switch (Opcode) {
+      case Instruction::FPToSI:
+      case Instruction::SIToFP:
+        return *Parts * (1 + MMICycle);
+      case Instruction::FPToUI:
+        return *Parts * (3 + 7 * MMICycle);
+      default:
+        return *Parts * (4 + 6 * MMICycle);
+      }
+    }
+    // Other VU0 v4f32 conversions are scalarized.
     if (getVU0Parts(Src) || getVU0Parts(Dst)) {
       InstructionCost ScalarCost =
           getCastInstrCost(Opcode, DstVTy->getElementType(),

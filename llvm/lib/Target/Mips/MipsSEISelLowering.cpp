@@ -289,6 +289,11 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // QMTC2 and QMFC2 move a vector between VU0 and a 128-bit GPR.
     setOperationAction(ISD::BITCAST, MVT::v4f32, Legal);
 
+    // VFTOI0 and VITOF0 convert to and from a v4i32 in a 128-bit GPR.
+    setOperationAction(ISD::FP_TO_SINT, MVT::v4i32, Legal);
+    setOperationAction(ISD::SINT_TO_FP, MVT::v4i32, Legal);
+    setOperationAction(ISD::FP_TO_UINT, MVT::v4i32, Custom);
+
     // Enable VU0 arithmetic operations (VADD, VSUB, VMUL)
     setOperationAction(ISD::FADD, MVT::v4f32, Legal);
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
@@ -800,6 +805,9 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::STRICT_FP_TO_FP16:
     return lowerFP_TO_FP16(Op, DAG);
   case ISD::BITCAST:            return lowerBITCAST(Op, DAG);
+  case ISD::FP_TO_UINT:
+    assert(Subtarget.hasVU0() && Op.getValueType() == MVT::v4i32);
+    return lowerVU0FP_TO_UINT(Op, DAG);
   case ISD::CTLZ:
     return lowerCTLZ(Op, DAG);
   case ISD::SHL:
@@ -3803,6 +3811,26 @@ static SDValue lowerVU0BUILD_VECTOR(BuildVectorSDNode *Node,
                        0);
   }
   return DAG.getBitcast(MVT::v4f32, Result);
+}
+
+/// VU0: an unsigned conversion is the signed one of X, or for X >= 2^31,
+/// the signed one of X - 2^31 with the sign bit set. That one is non-negative
+/// exactly for X >= 2^31.
+SDValue MipsSETargetLowering::lowerVU0FP_TO_UINT(SDValue Op,
+                                                 SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue X = Op.getOperand(0);
+  SDValue Lo = DAG.getNode(ISD::FP_TO_SINT, DL, MVT::v4i32, X);
+  SDValue Hi =
+      DAG.getNode(ISD::FP_TO_SINT, DL, MVT::v4i32,
+                  DAG.getNode(ISD::FSUB, DL, MVT::v4f32, X,
+                              DAG.getConstantFP(0x1p31, DL, MVT::v4f32)));
+  SDValue IsHi = DAG.getSetCC(
+      DL, MVT::v4i32, Hi, DAG.getAllOnesConstant(DL, MVT::v4i32), ISD::SETGT);
+  SDValue HiResult =
+      DAG.getNode(ISD::XOR, DL, MVT::v4i32, Hi,
+                  DAG.getConstant(APInt::getSignMask(32), DL, MVT::v4i32));
+  return DAG.getSelect(DL, MVT::v4i32, IsHi, HiResult, Lo);
 }
 
 SDValue MipsSETargetLowering::lowerBUILD_VECTOR(SDValue Op,

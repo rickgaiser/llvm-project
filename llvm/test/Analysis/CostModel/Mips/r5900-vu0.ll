@@ -148,8 +148,8 @@ define void @elements(<4 x float> %a, <4 x float> %b, float %s, i32 %i) {
 
 define void @casts_cmps(<4 x float> %a, <4 x float> %b, <4 x i32> %w) {
 ; VU0-LABEL: 'casts_cmps'
-; VU0-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %fptosi = fptosi <4 x float> %a to <4 x i32>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 30 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 3 for instruction: %fptosi = fptosi <4 x float> %a to <4 x i32>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 3 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <4 x float>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 62 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b
@@ -168,5 +168,30 @@ define void @casts_cmps(<4 x float> %a, <4 x float> %b, <4 x i32> %w) {
   %bc = bitcast <4 x i32> %w to <4 x float>
   %cmp = fcmp ogt <4 x float> %a, %b
   %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b
+  ret void
+}
+
+define void @conversions(<4 x float> %a, <4 x i32> %w, <8 x float> %a8, <4 x i16> %h) {
+; VU0-LABEL: 'conversions'
+; VU0-NEXT:  Cost Model: Found an estimated cost of 17 for instruction: %fptoui = fptoui <4 x float> %a to <4 x i32>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 16 for instruction: %uitofp = uitofp <4 x i32> %w to <4 x float>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %fptosi8 = fptosi <8 x float> %a8 to <8 x i32>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %fptosi16 = fptosi <4 x float> %a to <4 x i16>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 30 for instruction: %sitofp16 = sitofp <4 x i16> %h to <4 x float>
+; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+; NOVU0-LABEL: 'conversions'
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 27 for instruction: %fptoui = fptoui <4 x float> %a to <4 x i32>
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %uitofp = uitofp <4 x i32> %w to <4 x float>
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %fptosi8 = fptosi <8 x float> %a8 to <8 x i32>
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %fptosi16 = fptosi <4 x float> %a to <4 x i16>
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %sitofp16 = sitofp <4 x i16> %h to <4 x float>
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %fptoui = fptoui <4 x float> %a to <4 x i32>
+  %uitofp = uitofp <4 x i32> %w to <4 x float>
+  %fptosi8 = fptosi <8 x float> %a8 to <8 x i32>
+  %fptosi16 = fptosi <4 x float> %a to <4 x i16>
+  %sitofp16 = sitofp <4 x i16> %h to <4 x float>
   ret void
 }
