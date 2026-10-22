@@ -918,6 +918,13 @@ void SwingSchedulerDAG::schedule() {
 
   LLVM_DEBUG(dbgs() << "MII = " << MII << " MAX_II = " << MAX_II
                     << " (rec=" << RecMII << ", res=" << ResMII << ")\n");
+  ORE->emit([&]() {
+    return MachineOptimizationRemarkAnalysis(
+               DEBUG_TYPE, "schedule", Loop.getStartLoc(), Loop.getHeader())
+           << "Minimal Initiation Interval: " << ore::NV("MII", (int)MII)
+           << " (ResMII " << ore::NV("ResMII", (int)ResMII) << ", RecMII "
+           << ore::NV("RecMII", (int)RecMII) << ")";
+  });
 
   // Can't schedule a loop without a valid MII.
   if (MII == 0) {

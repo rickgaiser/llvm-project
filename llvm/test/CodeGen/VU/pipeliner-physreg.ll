@@ -1,6 +1,10 @@
 ; RUN: llc -mtriple=vu -verify-machineinstrs -debug-only=pipeliner < %s \
 ; RUN:   -o /dev/null 2>&1 | FileCheck %s
+; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner < %s -o /dev/null 2>&1 \
+; RUN:   | FileCheck %s --check-prefix=MII
 ; REQUIRES: asserts
+
+; MII: Minimal Initiation Interval: 7 (ResMII 7, RecMII 2)
 
 ; A square root and two divisions per iteration, all through Q, which is not
 ; renamed between iterations. A schedule in which an iteration writes Q while
