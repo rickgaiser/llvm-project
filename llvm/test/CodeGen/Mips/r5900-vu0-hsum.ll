@@ -192,3 +192,151 @@ define float @sum_two_vectors(<4 x float> %a, <4 x float> %b) {
   %r = fadd fast float %e0, %e1
   ret float %r
 }
+
+; Maxima and minima of a broadcast lane are VMAXbc and VMINIbc.
+define <4 x float> @broadcast_max_z(<4 x float> %a, <4 x float> %b) {
+; CHECK-LABEL: broadcast_max_z:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf12, $$vf13
+  %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+  %r = call <4 x float> @llvm.maxnum.v4f32(<4 x float> %splat, <4 x float> %a)
+  ret <4 x float> %r
+}
+
+define <4 x float> @broadcast_min_x(<4 x float> %a, <4 x float> %b) {
+; CHECK-LABEL: broadcast_min_x:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vminix.xyzw $$vf1, $$vf12, $$vf13
+  %splat = shufflevector <4 x float> %b, <4 x float> poison, <4 x i32> zeroinitializer
+  %r = call <4 x float> @llvm.minnum.v4f32(<4 x float> %a, <4 x float> %splat)
+  ret <4 x float> %r
+}
+
+; Horizontal maxima and minima are trees like the sums.
+define float @reduce_fmax(<4 x float> %v) {
+; CHECK-LABEL: reduce_fmax:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmaxw.xyzw $$vf1, $$vf12, $$vf12
+; CHECK-NEXT:    vmaxy.xyzw $$vf2, $$vf12, $$vf12
+; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf2, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %r = call fast float @llvm.vector.reduce.fmax.v4f32(<4 x float> %v)
+  ret float %r
+}
+
+define float @reduce_fmin(<4 x float> %v) {
+; CHECK-LABEL: reduce_fmin:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vminiw.xyzw $$vf1, $$vf12, $$vf12
+; CHECK-NEXT:    vminiy.xyzw $$vf2, $$vf12, $$vf12
+; CHECK-NEXT:    vminiz.xyzw $$vf1, $$vf2, $$vf1
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %r = call fast float @llvm.vector.reduce.fmin.v4f32(<4 x float> %v)
+  ret float %r
+}
+
+define float @max_xyz(<4 x float> %m) {
+; CHECK-LABEL: max_xyz:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmaxy.xyzw $$vf1, $$vf12, $$vf12
+; CHECK-NEXT:    vmaxz.xyzw $$vf1, $$vf1, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %e0 = extractelement <4 x float> %m, i32 0
+  %e1 = extractelement <4 x float> %m, i32 1
+  %e2 = extractelement <4 x float> %m, i32 2
+  %s = call nnan float @llvm.maxnum.f32(float %e0, float %e1)
+  %r = call nnan float @llvm.maxnum.f32(float %s, float %e2)
+  ret float %r
+}
+
+; A lane may appear twice in a maximum or minimum.
+define float @min_xwx(<4 x float> %m) {
+; CHECK-LABEL: min_xwx:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vminiw.xyzw $$vf1, $$vf12, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $$vf1
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %e0 = extractelement <4 x float> %m, i32 0
+  %e3 = extractelement <4 x float> %m, i32 3
+  %s = call nnan float @llvm.minnum.f32(float %e0, float %e3)
+  %r = call nnan float @llvm.minnum.f32(float %s, float %e0)
+  ret float %r
+}
+
+; A maximum of a sum is not rebuilt.
+define float @max_of_sum(<4 x float> %m) {
+; CHECK-LABEL: max_of_sum:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vaddy.xyzw $$vf1, $$vf12, $$vf12
+; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    pcpyud $1, $1, $1
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    qmfc2 $2, $$vf1
+; CHECK-NEXT:    mtc1 $2, $f1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    max.s $f0, $f1, $f0
+  %e0 = extractelement <4 x float> %m, i32 0
+  %e1 = extractelement <4 x float> %m, i32 1
+  %e2 = extractelement <4 x float> %m, i32 2
+  %s = fadd fast float %e0, %e1
+  %r = call nnan float @llvm.maxnum.f32(float %s, float %e2)
+  ret float %r
+}
+
+; Scalar operations that are IEEE libcalls on the R5900 FPU are not rebuilt.
+define float @max_xy_ieee(<4 x float> %m) {
+; CHECK-LABEL: max_xy_ieee:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    daddiu $sp, $sp, -16
+; CHECK-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
+; CHECK-NEXT:    .cfi_offset 31, -8
+; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    mtc1 $1, $f12
+; CHECK-NEXT:    dsrl32 $1, $1, 0
+; CHECK-NEXT:    mtc1 $1, $f13
+; CHECK-NEXT:    jal fmaxf
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    daddiu $sp, $sp, 16
+  %e0 = extractelement <4 x float> %m, i32 0
+  %e1 = extractelement <4 x float> %m, i32 1
+  %r = call float @llvm.maxnum.f32(float %e0, float %e1)
+  ret float %r
+}
+
+define float @sum_xy_reassoc(<4 x float> %m) {
+; CHECK-LABEL: sum_xy_reassoc:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    daddiu $sp, $sp, -16
+; CHECK-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
+; CHECK-NEXT:    .cfi_offset 31, -8
+; CHECK-NEXT:    qmfc2 $1, $$vf12
+; CHECK-NEXT:    mtc1 $1, $f12
+; CHECK-NEXT:    dsrl32 $1, $1, 0
+; CHECK-NEXT:    mtc1 $1, $f13
+; CHECK-NEXT:    jal __addsf3
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    daddiu $sp, $sp, 16
+  %e0 = extractelement <4 x float> %m, i32 0
+  %e1 = extractelement <4 x float> %m, i32 1
+  %r = fadd reassoc float %e0, %e1
+  ret float %r
+}

@@ -148,7 +148,7 @@ def SDT_VU0Broadcast
     : SDTypeProfile<
           1, 2, [SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>, SDTCisVT<2, v4f32>]>;
 
-// SDNodes for VU0 broadcast add, subtract and multiply operations
+// SDNodes for VU0 broadcast add, subtract, max, min and multiply operations
 // VADDbc: fd = fs + ft[bc]
 def MipsVU0ADDx : SDNode<"MipsISD::VU0_ADDx", SDT_VU0Broadcast>;
 def MipsVU0ADDy : SDNode<"MipsISD::VU0_ADDy", SDT_VU0Broadcast>;
@@ -159,6 +159,16 @@ def MipsVU0SUBx : SDNode<"MipsISD::VU0_SUBx", SDT_VU0Broadcast>;
 def MipsVU0SUBy : SDNode<"MipsISD::VU0_SUBy", SDT_VU0Broadcast>;
 def MipsVU0SUBz : SDNode<"MipsISD::VU0_SUBz", SDT_VU0Broadcast>;
 def MipsVU0SUBw : SDNode<"MipsISD::VU0_SUBw", SDT_VU0Broadcast>;
+// VMAXbc: fd = max(fs, ft[bc])
+def MipsVU0MAXx : SDNode<"MipsISD::VU0_MAXx", SDT_VU0Broadcast>;
+def MipsVU0MAXy : SDNode<"MipsISD::VU0_MAXy", SDT_VU0Broadcast>;
+def MipsVU0MAXz : SDNode<"MipsISD::VU0_MAXz", SDT_VU0Broadcast>;
+def MipsVU0MAXw : SDNode<"MipsISD::VU0_MAXw", SDT_VU0Broadcast>;
+// VMINIbc: fd = min(fs, ft[bc])
+def MipsVU0MINIx : SDNode<"MipsISD::VU0_MINIx", SDT_VU0Broadcast>;
+def MipsVU0MINIy : SDNode<"MipsISD::VU0_MINIy", SDT_VU0Broadcast>;
+def MipsVU0MINIz : SDNode<"MipsISD::VU0_MINIz", SDT_VU0Broadcast>;
+def MipsVU0MINIw : SDNode<"MipsISD::VU0_MINIw", SDT_VU0Broadcast>;
 // VMULbc: fd = fs * ft[bc]
 def MipsVU0MULx : SDNode<"MipsISD::VU0_MULx", SDT_VU0Broadcast>;
 def MipsVU0MULy : SDNode<"MipsISD::VU0_MULy", SDT_VU0Broadcast>;
@@ -626,6 +636,18 @@ let Predicates = [HasVU0] in {
   defm VSUBbc_ISel
       : VU0_3R_BC_ALL_ISel<"vsub", 0b0001, MipsVU0SUBx,
                            MipsVU0SUBy, MipsVU0SUBz, MipsVU0SUBw>;
+
+  // VMAXbc: fd = max(fs, ft[bc]) (opcode = 0100)
+  defm VMAXbc : VU0_3R_BC_ALL<"vmax", 0b0100>;
+  defm VMAXbc_ISel
+      : VU0_3R_BC_ALL_ISel<"vmax", 0b0100, MipsVU0MAXx,
+                           MipsVU0MAXy, MipsVU0MAXz, MipsVU0MAXw>;
+
+  // VMINIbc: fd = min(fs, ft[bc]) (opcode = 0101)
+  defm VMINIbc : VU0_3R_BC_ALL<"vmini", 0b0101>;
+  defm VMINIbc_ISel
+      : VU0_3R_BC_ALL_ISel<"vmini", 0b0101, MipsVU0MINIx,
+                           MipsVU0MINIy, MipsVU0MINIz, MipsVU0MINIw>;
 
   // VMULbc: fd = fs * ft[bc] (opcode = 0110)
   defm VMULbc : VU0_3R_BC_ALL<"vmul", 0b0110>;

@@ -101,6 +101,26 @@ vsubx.xyzw $vf13, $vf14, $vf15
 # CHECK: vsuby.xyzw      $$vf16, $$vf17, $$vf18  # encoding: [0x05,0x8c,0xf2,0x4b]
 vsuby.xyzw $vf16, $vf17, $vf18
 
+# VMAXbc - Vector Maximum with broadcast
+# CHECK: vmaxx.xyzw      $$vf1, $$vf2, $$vf3     # encoding: [0x50,0x10,0xe3,0x4b]
+vmaxx.xyzw $vf1, $vf2, $vf3
+# CHECK: vmaxy.xyzw      $$vf1, $$vf2, $$vf3     # encoding: [0x51,0x10,0xe3,0x4b]
+vmaxy.xyzw $vf1, $vf2, $vf3
+# CHECK: vmaxz.xyz       $$vf1, $$vf2, $$vf3     # encoding: [0x52,0x10,0xc3,0x4b]
+vmaxz.xyz $vf1, $vf2, $vf3
+# CHECK: vmaxw.x         $$vf1, $$vf2, $$vf3     # encoding: [0x53,0x10,0x03,0x4b]
+vmaxw.x $vf1, $vf2, $vf3
+
+# VMINIbc - Vector Minimum with broadcast
+# CHECK: vminix.xyzw     $$vf1, $$vf2, $$vf3     # encoding: [0x54,0x10,0xe3,0x4b]
+vminix.xyzw $vf1, $vf2, $vf3
+# CHECK: vminiy.xyzw     $$vf1, $$vf2, $$vf3     # encoding: [0x55,0x10,0xe3,0x4b]
+vminiy.xyzw $vf1, $vf2, $vf3
+# CHECK: vminiz.xyzw     $$vf1, $$vf2, $$vf3     # encoding: [0x56,0x10,0xe3,0x4b]
+vminiz.xyzw $vf1, $vf2, $vf3
+# CHECK: vminiw.w        $$vf1, $$vf2, $$vf3     # encoding: [0x57,0x10,0x23,0x4a]
+vminiw.w $vf1, $vf2, $vf3
+
 # VMADDbc - Vector Multiply-Add with broadcast
 # CHECK: vmaddx.xyzw     $$vf1, $$vf2, $$vf3     # encoding: [0x48,0x10,0xe3,0x4b]
 vmaddx.xyzw $vf1, $vf2, $vf3
