@@ -18098,13 +18098,17 @@ BoUpSLP::getEntryCost(const TreeEntry *E, ArrayRef<Value *> VectorizedVals,
         VecCost = ChainCost(E->getOpcode()) + ChainCost(E->getAltOpcode());
       } else if (auto *CI0 = dyn_cast<CmpInst>(VL0)) {
         auto *MaskTy = getWidenedType(Builder.getInt1Ty(), VL.size());
+        // getCmpSelInstrCost expects the compared type, not the i1 result.
+        auto *CmpTy = getWidenedType(
+            getValueType(VL0, Opts.slp_revec, /*LookThroughCmp=*/true),
+            VL.size());
         TTI::OperandValueInfo Op0Info = TTI::getOperandInfo(E->getOperand(0));
         TTI::OperandValueInfo Op1Info = TTI::getOperandInfo(E->getOperand(1));
-        VecCost = TTIRef.getCmpSelInstrCost(E->getOpcode(), VecTy, MaskTy,
+        VecCost = TTIRef.getCmpSelInstrCost(E->getOpcode(), CmpTy, MaskTy,
                                             CI0->getPredicate(), CostKind,
                                             Op0Info, Op1Info, VL0);
         VecCost += TTIRef.getCmpSelInstrCost(
-            E->getOpcode(), VecTy, MaskTy,
+            E->getOpcode(), CmpTy, MaskTy,
             cast<CmpInst>(E->getAltOp())->getPredicate(), CostKind, Op0Info,
             Op1Info, E->getAltOp());
       } else {
