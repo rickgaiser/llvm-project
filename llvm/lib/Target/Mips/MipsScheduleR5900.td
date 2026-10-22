@@ -207,9 +207,9 @@ def : InstRW<[R5900WritePipe1], (instrs PREF, CACHE, SYNC, MFC0, MTC0, DMFC0,
 def : InstRW<[R5900WriteLoad], (instrs LWC2, LDC2, MFC2, MTC2, DMFC2, DMTC2)>;
 def : InstRW<[R5900WritePipe1], (instrs SWC2, SDC2)>;
 
-// The VU0 macro instruction after a transfer to VU0 (LQC2, CTC2) stalls for
-// one cycle (VU Users Manual, section 5.4.4).
-def R5900WriteVU0MoveIn : R5900Write<[R5900Pipe1, R5900C2], 2, [1, 2]>;
+// A transfer to VU0 holds the C2 slot for one cycle: an independent VU0
+// instruction or transfer issues in the next cycle (measured).
+def R5900WriteVU0MoveIn : R5900Write<[R5900Pipe1, R5900C2], 2>;
 def R5900WriteVU0MoveOut : R5900Write<[R5900Pipe1, R5900C2], 2>;
 def R5900WriteVU0Store : R5900Write<[R5900Pipe1, R5900C2]>;
 
@@ -293,21 +293,33 @@ def : InstRW<[R5900WriteFPUStore, R5900ReadFPRLate], (instrs SWC1)>;
 def R5900WriteVU0 : R5900Write<[R5900Pipe0, R5900C2], 4>;
 def R5900WriteVU0Acc : R5900Write<[R5900Pipe0, R5900C2]>;
 
-// The Q register result, as seen by VWAITQ.
-def R5900WriteVU0Div : R5900Write<[R5900Pipe0, R5900C2, R5900VU0FDiv], 9,
-                                  [1, 1, 9]>;
-def R5900WriteVU0Rsqrt : R5900Write<[R5900Pipe0, R5900C2, R5900VU0FDiv], 15,
-                                    [1, 1, 15]>;
+// VDIV, VSQRT and VRSQRT issue in either pipe, also next to an FPU or VU0
+// operation, and hold only the divider: VDIV and VSQRT for 7 cycles. The Q
+// result is available to VWAITQ after 9 cycles, or 15 for VRSQRT, and the
+// instruction after VWAITQ issues in the next cycle (measured).
+def R5900WriteVU0Div : R5900Write<[R5900Pipe01, R5900VU0FDiv], 9, [1, 7]>;
+def R5900WriteVU0Rsqrt : R5900Write<[R5900Pipe01, R5900VU0FDiv], 15, [1, 15]>;
+// VWAITQ stalls the whole core until Q is available: nothing issues with it.
+def R5900WriteVU0WaitQ : R5900Write<[R5900Pipe0, R5900Pipe1, R5900C2]>;
+// Reads of Q are not interlocked: an instruction that reads Q before VWAITQ
+// gets the previous Q (measured), so it does not wait for the division.
+def R5900ReadVU0Q : SchedReadAdvance<15, [R5900WriteVU0Div,
+                                          R5900WriteVU0Rsqrt]>;
 
 def : InstRW<[R5900WriteVU0], (instrs VADD, VSUB, VMUL, VMADD, VMSUB, VADDm,
                                VSUBm, VMULm, VMOVE, VMOVEm, VMR32, VABS, VMAX,
-                               VMINI, VCLIPW, VOPMSUB, VADDQ, VSUBQ, VMULQ,
-                               VMADDQ, VMSUBQ, VFTOI0, VFTOI4, VFTOI12,
-                               VFTOI15, VITOF0, VITOF4, VITOF12, VITOF15)>;
+                               VMINI, VCLIPW, VOPMSUB, VFTOI0, VFTOI4,
+                               VFTOI12, VFTOI15, VITOF0, VITOF4, VITOF12,
+                               VITOF15)>;
+// The advance applies only to the divider results, so it is given for every
+// use: llvm-mca counts the dest mask as a use, the MachineScheduler does not.
+def : InstRW<[R5900WriteVU0, R5900ReadVU0Q, R5900ReadVU0Q, R5900ReadVU0Q],
+             (instrs VADDQ, VSUBQ, VMULQ, VMADDQ, VMSUBQ)>;
 def : InstRW<[R5900WriteVU0],
              (instregex "^V(ADD|SUB|MUL|MADD|MSUB|MAX|MINI)bc[xyzw]$")>;
 def : InstRW<[R5900WriteVU0Acc], (instrs VADDA, VSUBA, VMULA, VMADDA, VMSUBA,
-                                  VOPMULA, VNOP, VWAITQ)>;
+                                  VOPMULA, VNOP)>;
+def : InstRW<[R5900WriteVU0WaitQ], (instrs VWAITQ)>;
 def : InstRW<[R5900WriteVU0Div], (instrs VDIV, VSQRT)>;
 def : InstRW<[R5900WriteVU0Rsqrt], (instrs VRSQRT)>;
 def : InstRW<[R5900WriteVU0Acc],

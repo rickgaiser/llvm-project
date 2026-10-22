@@ -30,37 +30,37 @@
 
 # CHECK:      Iterations:        1
 # CHECK-NEXT: Instructions:      19
-# CHECK-NEXT: Total Cycles:      42
+# CHECK-NEXT: Total Cycles:      41
 # CHECK-NEXT: Total uOps:        19
 
 # CHECK:      Dispatch Width:    2
-# CHECK-NEXT: uOps Per Cycle:    0.45
-# CHECK-NEXT: IPC:               0.45
-# CHECK-NEXT: Block RThroughput: 11.0
+# CHECK-NEXT: uOps Per Cycle:    0.46
+# CHECK-NEXT: IPC:               0.46
+# CHECK-NEXT: Block RThroughput: 10.0
 
 # CHECK:      Timeline view:
 # CHECK-NEXT:                     0123456789          0123456789
-# CHECK-NEXT: Index     0123456789          0123456789          01
+# CHECK-NEXT: Index     0123456789          0123456789          0
 
-# CHECK:      [0,0]     DeeeE.    .    .    .    .    .    .    ..   mult	$3, $4
-# CHECK-NEXT: [0,1]     .   DE    .    .    .    .    .    .    ..   mflo	$2
-# CHECK-NEXT: [0,2]     .    DeeeE.    .    .    .    .    .    ..   madd	$5, $6, $7
-# CHECK-NEXT: [0,3]     .    . DeeeE   .    .    .    .    .    ..   madd	$8, $6, $7
-# CHECK-NEXT: [0,4]     .    .    .DE  .    .    .    .    .    ..   mflo	$9
-# CHECK-NEXT: [0,5]     .    .    .DeeeE    .    .    .    .    ..   madd1	$5, $6, $7
-# CHECK-NEXT: [0,6]     .    .    .  DeeeE  .    .    .    .    ..   madd1	$8, $6, $7
-# CHECK-NEXT: [0,7]     .    .    .    DeeeE.    .    .    .    ..   pmaddw	$10, $11, $12
-# CHECK-NEXT: [0,8]     .    .    .    . DeeeE   .    .    .    ..   pmaddw	$13, $11, $12
-# CHECK-NEXT: [0,9]     .    .    .    . DeE.    .    .    .    ..   ldl	$14, 7($15)
-# CHECK-NEXT: [0,10]    .    .    .    .  DeE    .    .    .    ..   ldr	$14, 0($15)
-# CHECK-NEXT: [0,11]    .    .    .    .  DeeeeeE.    .    .    ..   c.eq.s	$f0, $f1
-# CHECK-NEXT: [0,12]    .    .    .    .    .   DE    .    .    ..   bc1f	.Ltmp0
-# CHECK-NEXT: [0,13]    .    .    .    .    .   DE    .    .    ..   nop
-# CHECK-NEXT: [0,14]    .    .    .    .    .    DE   .    .    ..   nop
-# CHECK-NEXT: [0,15]    .    .    .    .    .    DeeeE.    .    ..   vadd.xyzw	$vf1, $vf2, $vf3
-# CHECK-NEXT: [0,16]    .    .    .    .    .    .    DeE  .    ..   qmfc2	$16, $vf1
-# CHECK-NEXT: [0,17]    .    .    .    .    .    .    .DeeeeeeeeE.   vdiv	$q, $vf1x, $vf2x
-# CHECK-NEXT: [0,18]    .    .    .    .    .    .    .    .    DE   vwaitq
+# CHECK:      [0,0]     DeeeE.    .    .    .    .    .    .    .   mult	$3, $4
+# CHECK-NEXT: [0,1]     .   DE    .    .    .    .    .    .    .   mflo	$2
+# CHECK-NEXT: [0,2]     .    DeeeE.    .    .    .    .    .    .   madd	$5, $6, $7
+# CHECK-NEXT: [0,3]     .    . DeeeE   .    .    .    .    .    .   madd	$8, $6, $7
+# CHECK-NEXT: [0,4]     .    .    .DE  .    .    .    .    .    .   mflo	$9
+# CHECK-NEXT: [0,5]     .    .    .DeeeE    .    .    .    .    .   madd1	$5, $6, $7
+# CHECK-NEXT: [0,6]     .    .    .  DeeeE  .    .    .    .    .   madd1	$8, $6, $7
+# CHECK-NEXT: [0,7]     .    .    .    DeeeE.    .    .    .    .   pmaddw	$10, $11, $12
+# CHECK-NEXT: [0,8]     .    .    .    . DeeeE   .    .    .    .   pmaddw	$13, $11, $12
+# CHECK-NEXT: [0,9]     .    .    .    . DeE.    .    .    .    .   ldl	$14, 7($15)
+# CHECK-NEXT: [0,10]    .    .    .    .  DeE    .    .    .    .   ldr	$14, 0($15)
+# CHECK-NEXT: [0,11]    .    .    .    .  DeeeeeE.    .    .    .   c.eq.s	$f0, $f1
+# CHECK-NEXT: [0,12]    .    .    .    .    .   DE    .    .    .   bc1f	.Ltmp0
+# CHECK-NEXT: [0,13]    .    .    .    .    .   DE    .    .    .   nop
+# CHECK-NEXT: [0,14]    .    .    .    .    .    DE   .    .    .   nop
+# CHECK-NEXT: [0,15]    .    .    .    .    .    DeeeE.    .    .   vadd.xyzw	$vf1, $vf2, $vf3
+# CHECK-NEXT: [0,16]    .    .    .    .    .    .    DeE  .    .   qmfc2	$16, $vf1
+# CHECK-NEXT: [0,17]    .    .    .    .    .    .    DeeeeeeeeE.   vdiv	$q, $vf1x, $vf2x
+# CHECK-NEXT: [0,18]    .    .    .    .    .    .    .    .   DE   vwaitq
 
 # CHECK:      Average Wait times (based on the timeline view):
 # CHECK-NEXT: [0]: Executions

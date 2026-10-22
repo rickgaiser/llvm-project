@@ -24,13 +24,13 @@
 
 # CHECK:      Iterations:        1
 # CHECK-NEXT: Instructions:      16
-# CHECK-NEXT: Total Cycles:      29
+# CHECK-NEXT: Total Cycles:      28
 # CHECK-NEXT: Total uOps:        16
 
 # CHECK:      Dispatch Width:    2
-# CHECK-NEXT: uOps Per Cycle:    0.55
-# CHECK-NEXT: IPC:               0.55
-# CHECK-NEXT: Block RThroughput: 11.0
+# CHECK-NEXT: uOps Per Cycle:    0.57
+# CHECK-NEXT: IPC:               0.57
+# CHECK-NEXT: Block RThroughput: 10.0
 
 # CHECK:      Instruction Info:
 # CHECK-NEXT: [1]: #uOps
@@ -48,11 +48,11 @@
 # CHECK-NEXT:  1      1     1.00                        mula.s	$f1, $f2
 # CHECK-NEXT:  1      1     1.00                        madda.s	$f3, $f4
 # CHECK-NEXT:  1      4     1.00                        madd.s	$f0, $f5, $f6
-# CHECK-NEXT:  1      2     2.00                        qmtc2	$9, $vf1
+# CHECK-NEXT:  1      2     1.00                        qmtc2	$9, $vf1
 # CHECK-NEXT:  1      1     1.00                        vmula.xyzw	$acc, $vf1, $vf2
 # CHECK-NEXT:  1      1     1.00                        vmadda.xyzw	$acc, $vf3, $vf4
 # CHECK-NEXT:  1      4     1.00                        vmadd.xyzw	$vf5, $vf6, $vf7
-# CHECK-NEXT:  1      9     9.00                  U     vdiv	$q, $vf1x, $vf2y
+# CHECK-NEXT:  1      9     7.00                  U     vdiv	$q, $vf1x, $vf2y
 # CHECK-NEXT:  1      1     1.00                  U     vwaitq
 # CHECK-NEXT:  1      1     1.00                        paddw	$10, $11, $12
 # CHECK-NEXT:  1      4     2.00                        pmultw	$13, $14, $15

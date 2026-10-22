@@ -635,17 +635,16 @@ let Predicates = [HasVU0] in {
     let Inst{15 -11} = fs;
     let Inst{10 -6} = fd;
     let Inst{5 -0} = funct;
-    let Uses = [VU0Q];
   }
 
   def VMULQ : VU0_2R_Q<"vmulq", 0b011100>;
   def VADDQ : VU0_2R_Q<"vaddq", 0b100000>;
   def VSUBQ : VU0_2R_Q<"vsubq", 0b100100>;
   def VMADDQ : VU0_2R_Q<"vmaddq", 0b100001> {
-    let Uses = [VU0Q, VU0ACC];
+    let Uses = [VU0ACC];
   }
   def VMSUBQ : VU0_2R_Q<"vmsubq", 0b100101> {
-    let Uses = [VU0Q, VU0ACC];
+    let Uses = [VU0ACC];
   }
 
   //===--------------------------------------------------------------------===//
@@ -743,7 +742,6 @@ let Predicates = [HasVU0] in {
     let Inst{20 -16} = src2{4 -0};   // ft register
     let Inst{15 -11} = src1{4 -0};   // fs register
     let Inst{10 -0} = 0b01110111100; // VDIV opcode
-    let Defs = [VU0Q];
     let hasSideEffects = 1;
   }
 
@@ -763,7 +761,6 @@ let Predicates = [HasVU0] in {
     let Inst{20 -16} = src2{4 -0};   // ft register
     let Inst{15 -11} = src1{4 -0};   // fs register
     let Inst{10 -0} = 0b01110111110; // VRSQRT opcode
-    let Defs = [VU0Q];
     let hasSideEffects = 1;
   }
 
@@ -782,7 +779,6 @@ let Predicates = [HasVU0] in {
     let Inst{20 -16} = src{4 -0};    // ft register
     let Inst{15 -11} = 0b00000;      // fs = 0 (unused)
     let Inst{10 -0} = 0b01110111101; // VSQRT opcode
-    let Defs = [VU0Q];
     let hasSideEffects = 1;
   }
 

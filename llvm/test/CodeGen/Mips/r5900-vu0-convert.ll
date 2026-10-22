@@ -58,8 +58,8 @@ define void @fptoui(ptr %p, ptr %q) {
 ; CHECK-NEXT:    pxor $1, $1, $5
 ; CHECK-NEXT:    psllw $2, $2, 31
 ; CHECK-NEXT:    pxor $1, $1, $2
-; CHECK-NEXT:    pand $1, $1, $3
 ; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    pand $1, $1, $3
 ; CHECK-NEXT:    pxor $1, $5, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sq $1, 0($2)
@@ -222,9 +222,9 @@ define void @sitofp_mul16(ptr %p, ptr %q) {
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    qmtc2 $1, $vf1
 ; CHECK-NEXT:    lui $1, %hi(.LCPI11_0)
-; CHECK-NEXT:    vitof0.xyzw $vf1, $vf1
 ; CHECK-NEXT:    lqc2 $vf2, %lo(.LCPI11_0)($1)
 ; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    vitof0.xyzw $vf1, $vf1
 ; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf2
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sqc2 $vf1, 0($1)
