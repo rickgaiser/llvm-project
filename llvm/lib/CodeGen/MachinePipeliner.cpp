@@ -3384,8 +3384,9 @@ bool SMSchedule::insert(SUnit *SU, int StartCycle, int EndCycle, int II) {
   for (int curCycle = StartCycle; curCycle != termCycle;
        forward ? ++curCycle : --curCycle) {
 
-    if (ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()) ||
-        ProcItinResources.canReserveResources(*SU, curCycle)) {
+    if ((ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()) ||
+         ProcItinResources.canReserveResources(*SU, curCycle)) &&
+        !overlapsSingleRegValue(SU, curCycle)) {
       LLVM_DEBUG({
         dbgs() << "\tinsert at cycle " << curCycle << " ";
         SU->getInstr()->dump();
@@ -3406,6 +3407,120 @@ bool SMSchedule::insert(SUnit *SU, int StartCycle, int EndCycle, int II) {
       SU->getInstr()->dump();
     });
   }
+  return false;
+}
+
+/// Returns true if \p Reg is in a register class with a single register.
+static bool isSingleRegValue(Register Reg, const MachineRegisterInfo &MRI) {
+  if (!Reg.isVirtual())
+    return false;
+  const TargetRegisterClass *RC = MRI.getRegClass(Reg);
+  return RC->isAllocatable() && RC->getNumRegs() == 1;
+}
+
+std::optional<std::pair<int, int>>
+SMSchedule::getLiveCycles(Register Reg, SUnit *SU, int Cycle) const {
+  auto CycleOf = [&](const MachineInstr &MI) -> std::optional<int> {
+    SUnit *Other = SSD->getSUnit(const_cast<MachineInstr *>(&MI));
+    if (!Other)
+      return std::nullopt;
+    if (Other == SU)
+      return Cycle;
+    auto It = InstrToCycle.find(Other);
+    if (It == InstrToCycle.end())
+      return std::nullopt;
+    return It->second;
+  };
+  const MachineInstr *Def = MRI.getVRegDef(Reg);
+  if (!Def || Def->isPHI())
+    return std::nullopt;
+  std::optional<int> Start = CycleOf(*Def);
+  if (!Start)
+    return std::nullopt;
+  const MachineBasicBlock *BB = Def->getParent();
+
+  // A use through a Phi is in the next iteration.
+  int End = *Start;
+  SmallVector<std::pair<Register, int>, 4> Worklist = {{Reg, 0}};
+  SmallSet<Register, 4> Visited;
+  while (!Worklist.empty()) {
+    auto [R, Distance] = Worklist.pop_back_val();
+    if (!Visited.insert(R).second)
+      continue;
+    for (const MachineInstr &UseMI : MRI.use_nodbg_instructions(R)) {
+      if (UseMI.getParent() != BB)
+        continue;
+      if (UseMI.isPHI()) {
+        Worklist.push_back({UseMI.getOperand(0).getReg(), Distance + 1});
+        continue;
+      }
+      std::optional<int> UseCycle = CycleOf(UseMI);
+      if (!UseCycle)
+        return std::nullopt;
+      End = std::max(End, *UseCycle + Distance * InitiationInterval);
+    }
+  }
+  return std::make_pair(*Start, End);
+}
+
+bool SMSchedule::overlapsSingleRegValue(SUnit *SU, int Cycle) const {
+  const MachineInstr &MI = *SU->getInstr();
+  if (none_of(MI.operands(), [&](const MachineOperand &MO) {
+        return MO.isReg() && isSingleRegValue(MO.getReg(), MRI);
+      }))
+    return false;
+
+  // The values of each class whose definition and uses are all scheduled.
+  struct Value {
+    Register Reg;
+    int Start, End;
+  };
+  DenseMap<const TargetRegisterClass *, SmallVector<Value, 4>> Values;
+  auto Add = [&](SUnit *DefSU) {
+    for (const MachineOperand &MO : DefSU->getInstr()->all_defs()) {
+      Register Reg = MO.getReg();
+      if (!isSingleRegValue(Reg, MRI))
+        continue;
+      if (auto Live = getLiveCycles(Reg, SU, Cycle))
+        Values[MRI.getRegClass(Reg)].push_back(
+            {Reg, Live->first, Live->second});
+    }
+  };
+  Add(SU);
+  for (const auto &[Other, OtherCycle] : InstrToCycle)
+    if (Other != SU)
+      Add(Other);
+
+  // Reads come before writes in a cycle, but only an instruction that reads
+  // one value and writes the next one is ordered that way.
+  auto Reads = [&](Register Def, Register Use) {
+    const MachineInstr *DefMI = MRI.getVRegDef(Def);
+    return DefMI->readsVirtualRegister(Use);
+  };
+  int II = InitiationInterval;
+  for (const auto &[RC, Vals] : Values)
+    for (unsigned I = 0, E = Vals.size(); I != E; ++I) {
+      const Value &A = Vals[I];
+      int LenA = A.End - A.Start;
+      // A value can not live longer than II cycles, when the next iteration
+      // writes the register again, unless that write reads the value.
+      if (LenA > II || (LenA == II && !Reads(A.Reg, A.Reg)))
+        return true;
+      for (unsigned J = I + 1; J != E; ++J) {
+        const Value &B = Vals[J];
+        int LenB = B.End - B.Start;
+        int D = ((B.Start - A.Start) % II + II) % II;
+        bool BAfterA = D > LenA || (D == LenA && Reads(B.Reg, A.Reg));
+        bool AAfterB = II - D > LenB || (II - D == LenB && Reads(A.Reg, B.Reg));
+        if (!BAfterA || !AAfterB) {
+          LLVM_DEBUG(dbgs()
+                     << "\t" << printReg(A.Reg) << " live in cycles " << A.Start
+                     << "-" << A.End << " overlaps " << printReg(B.Reg)
+                     << " in cycles " << B.Start << "-" << B.End << "\n");
+          return true;
+        }
+      }
+    }
   return false;
 }
 

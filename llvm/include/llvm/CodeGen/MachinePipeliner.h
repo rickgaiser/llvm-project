@@ -722,10 +722,20 @@ private:
 
   ResourceManager ProcItinResources;
 
+  SwingSchedulerDAG *SSD;
+
+  /// The cycles from the definition of the value \p Reg to its last use in
+  /// the loop, with \p SU in \p Cycle, if they are all scheduled.
+  std::optional<std::pair<int, int>> getLiveCycles(Register Reg, SUnit *SU,
+                                                   int Cycle) const;
+  /// Returns true if \p SU in \p Cycle makes the value of a register class
+  /// with a single register overlap with another value of that class.
+  bool overlapsSingleRegValue(SUnit *SU, int Cycle) const;
+
 public:
   SMSchedule(MachineFunction *mf, SwingSchedulerDAG *DAG)
       : ST(mf->getSubtarget()), MRI(mf->getRegInfo()),
-        ProcItinResources(&ST, DAG) {}
+        ProcItinResources(&ST, DAG), SSD(DAG) {}
 
   void reset() {
     ScheduledInstrs.clear();
