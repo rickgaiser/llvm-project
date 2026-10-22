@@ -157,6 +157,16 @@ static cl::opt<bool>
 static cl::opt<int> SwpLoopLimit("pipeliner-max", cl::Hidden, cl::init(-1));
 #endif
 
+static cl::opt<bool>
+    SwpIterative("pipeliner-iterative", cl::Hidden,
+                 cl::desc("Use iterative modulo scheduling instead of swing "
+                          "modulo scheduling"));
+
+static cl::opt<unsigned> SwpIterativeBudget(
+    "pipeliner-iterative-budget", cl::Hidden, cl::init(10),
+    cl::desc("The number of times that iterative modulo scheduling may "
+             "schedule each instruction for one II"));
+
 static cl::opt<bool> SwpIgnoreRecMII("pipeliner-ignore-recmii",
                                      cl::ReallyHidden,
                                      cl::desc("Ignore RecMII"));
@@ -2894,6 +2904,8 @@ void SwingSchedulerDAG::initPolicy() {
   // After subtarget overrides, apply command line options.
   if (LimitRegPressure.getNumOccurrences())
     Policy.ShouldLimitRegPressure = LimitRegPressure;
+  if (SwpIterative.getNumOccurrences())
+    Policy.UseIterativeScheduler = SwpIterative;
 }
 
 /// Process the nodes in the computed order and create the pipelined schedule
@@ -2920,62 +2932,77 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
 
     SetVector<SUnit *>::iterator NI = NodeOrder.begin();
     SetVector<SUnit *>::iterator NE = NodeOrder.end();
-    do {
-      SUnit *SU = *NI;
-
-      // Compute the schedule time for the instruction, which is based
-      // upon the scheduled time for any predecessors/successors.
-      int EarlyStart = INT_MIN;
-      int LateStart = INT_MAX;
-      Schedule.computeStart(SU, &EarlyStart, &LateStart, II, this);
-      LLVM_DEBUG({
-        dbgs() << "\n";
-        dbgs() << *SU << " ";
-        SU->getInstr()->dump();
-        dbgs() << "\n";
-      });
-      LLVM_DEBUG(
-          dbgs() << format("\tes: %8x ls: %8x\n", EarlyStart, LateStart));
-
-      if (EarlyStart > LateStart)
-        scheduleFound = false;
-      else if (EarlyStart != INT_MIN && LateStart == INT_MAX)
-        scheduleFound =
-            Schedule.insert(SU, EarlyStart, EarlyStart + (int)II - 1, II);
-      else if (EarlyStart == INT_MIN && LateStart != INT_MAX)
-        scheduleFound =
-            Schedule.insert(SU, LateStart, LateStart - (int)II + 1, II);
-      else if (EarlyStart != INT_MIN && LateStart != INT_MAX) {
-        LateStart = std::min(LateStart, EarlyStart + (int)II - 1);
-        // When scheduling a Phi it is better to start at the late cycle and
-        // go backwards. The default order may insert the Phi too far away
-        // from its first dependence.
-        // Also, do backward search when all scheduled predecessors are
-        // loop-carried output/order dependencies. Empirically, there are also
-        // cases where scheduling becomes possible with backward search.
-        if (SU->getInstr()->isPHI() ||
-            Schedule.onlyHasLoopCarriedOutputOrOrderPreds(SU, this->getDDG()))
-          scheduleFound = Schedule.insert(SU, LateStart, EarlyStart, II);
-        else
-          scheduleFound = Schedule.insert(SU, EarlyStart, LateStart, II);
-      } else {
-        int FirstCycle = Schedule.getFirstCycle();
-        scheduleFound = Schedule.insert(SU, FirstCycle + getASAP(SU),
-                                        FirstCycle + getASAP(SU) + II - 1, II);
+    if (Policy.UseIterativeScheduler) {
+      // Without and with the values of single register classes in order;
+      // each finds schedules that the other does not.
+      for (bool KeepSingleRegOrder : {false, true}) {
+        Schedule.reset();
+        Schedule.setInitiationInterval(II);
+        scheduleFound = scheduleIteratively(Schedule, II, KeepSingleRegOrder) &&
+                        (SwpMaxStages < 0 ||
+                         Schedule.getMaxStageCount() <= (unsigned)SwpMaxStages);
+        if (scheduleFound)
+          break;
       }
+      NI = NE;
+    } else
+      do {
+        SUnit *SU = *NI;
 
-      // Even if we find a schedule, make sure the schedule doesn't exceed the
-      // allowable number of stages. We keep trying if this happens.
-      if (scheduleFound)
-        if (SwpMaxStages > -1 &&
-            Schedule.getMaxStageCount() > (unsigned)SwpMaxStages)
+        // Compute the schedule time for the instruction, which is based
+        // upon the scheduled time for any predecessors/successors.
+        int EarlyStart = INT_MIN;
+        int LateStart = INT_MAX;
+        Schedule.computeStart(SU, &EarlyStart, &LateStart, II, this);
+        LLVM_DEBUG({
+          dbgs() << "\n";
+          dbgs() << *SU << " ";
+          SU->getInstr()->dump();
+          dbgs() << "\n";
+        });
+        LLVM_DEBUG(
+            dbgs() << format("\tes: %8x ls: %8x\n", EarlyStart, LateStart));
+
+        if (EarlyStart > LateStart)
           scheduleFound = false;
+        else if (EarlyStart != INT_MIN && LateStart == INT_MAX)
+          scheduleFound =
+              Schedule.insert(SU, EarlyStart, EarlyStart + (int)II - 1, II);
+        else if (EarlyStart == INT_MIN && LateStart != INT_MAX)
+          scheduleFound =
+              Schedule.insert(SU, LateStart, LateStart - (int)II + 1, II);
+        else if (EarlyStart != INT_MIN && LateStart != INT_MAX) {
+          LateStart = std::min(LateStart, EarlyStart + (int)II - 1);
+          // When scheduling a Phi it is better to start at the late cycle and
+          // go backwards. The default order may insert the Phi too far away
+          // from its first dependence.
+          // Also, do backward search when all scheduled predecessors are
+          // loop-carried output/order dependencies. Empirically, there are also
+          // cases where scheduling becomes possible with backward search.
+          if (SU->getInstr()->isPHI() ||
+              Schedule.onlyHasLoopCarriedOutputOrOrderPreds(SU, this->getDDG()))
+            scheduleFound = Schedule.insert(SU, LateStart, EarlyStart, II);
+          else
+            scheduleFound = Schedule.insert(SU, EarlyStart, LateStart, II);
+        } else {
+          int FirstCycle = Schedule.getFirstCycle();
+          scheduleFound =
+              Schedule.insert(SU, FirstCycle + getASAP(SU),
+                              FirstCycle + getASAP(SU) + II - 1, II);
+        }
 
-      LLVM_DEBUG({
-        if (!scheduleFound)
-          dbgs() << "\tCan't schedule\n";
-      });
-    } while (++NI != NE && scheduleFound);
+        // Even if we find a schedule, make sure the schedule doesn't exceed the
+        // allowable number of stages. We keep trying if this happens.
+        if (scheduleFound)
+          if (SwpMaxStages > -1 &&
+              Schedule.getMaxStageCount() > (unsigned)SwpMaxStages)
+            scheduleFound = false;
+
+        LLVM_DEBUG({
+          if (!scheduleFound)
+            dbgs() << "\tCan't schedule\n";
+        });
+      } while (++NI != NE && scheduleFound);
 
     // If a schedule is found, validate it against the validation-only
     // dependencies.
@@ -3463,12 +3490,13 @@ SMSchedule::getLiveCycles(Register Reg, SUnit *SU, int Cycle) const {
   return std::make_pair(*Start, End);
 }
 
-bool SMSchedule::overlapsSingleRegValue(SUnit *SU, int Cycle) const {
+Register SMSchedule::getOverlappingSingleRegValue(SUnit *SU, int Cycle,
+                                                  Register &Reg) const {
   const MachineInstr &MI = *SU->getInstr();
   if (none_of(MI.operands(), [&](const MachineOperand &MO) {
         return MO.isReg() && isSingleRegValue(MO.getReg(), MRI);
       }))
-    return false;
+    return Register();
 
   // The values of each class whose definition and uses are all scheduled.
   struct Value {
@@ -3504,8 +3532,10 @@ bool SMSchedule::overlapsSingleRegValue(SUnit *SU, int Cycle) const {
       int LenA = A.End - A.Start;
       // A value can not live longer than II cycles, when the next iteration
       // writes the register again, unless that write reads the value.
-      if (LenA > II || (LenA == II && !Reads(A.Reg, A.Reg)))
-        return true;
+      if (LenA > II || (LenA == II && !Reads(A.Reg, A.Reg))) {
+        Reg = A.Reg;
+        return A.Reg;
+      }
       for (unsigned J = I + 1; J != E; ++J) {
         const Value &B = Vals[J];
         int LenB = B.End - B.Start;
@@ -3517,11 +3547,47 @@ bool SMSchedule::overlapsSingleRegValue(SUnit *SU, int Cycle) const {
                      << "\t" << printReg(A.Reg) << " live in cycles " << A.Start
                      << "-" << A.End << " overlaps " << printReg(B.Reg)
                      << " in cycles " << B.Start << "-" << B.End << "\n");
-          return true;
+          Reg = A.Reg;
+          return B.Reg;
         }
       }
     }
-  return false;
+  return Register();
+}
+
+bool SMSchedule::fitsResources(SUnit *SU, int Cycle) {
+  return ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()) ||
+         ProcItinResources.canReserveResources(*SU, Cycle);
+}
+
+void SMSchedule::place(SUnit *SU, int Cycle) {
+  if (!ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()))
+    ProcItinResources.reserveResources(*SU, Cycle);
+  ScheduledInstrs[Cycle].push_back(SU);
+  InstrToCycle[SU] = Cycle;
+  if (InstrToCycle.size() == 1) {
+    FirstCycle = LastCycle = Cycle;
+    return;
+  }
+  FirstCycle = std::min(FirstCycle, Cycle);
+  LastCycle = std::max(LastCycle, Cycle);
+}
+
+void SMSchedule::remove(SUnit *SU) {
+  int Cycle = InstrToCycle.at(SU);
+  if (!ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()))
+    ProcItinResources.unreserveResources(*SU, Cycle);
+  llvm::erase(ScheduledInstrs[Cycle], SU);
+  InstrToCycle.erase(SU);
+  FirstCycle = LastCycle = 0;
+  if (InstrToCycle.empty())
+    return;
+  FirstCycle = INT_MAX;
+  LastCycle = INT_MIN;
+  for (const auto &[Other, C] : InstrToCycle) {
+    FirstCycle = std::min(FirstCycle, C);
+    LastCycle = std::max(LastCycle, C);
+  }
 }
 
 /// If an instruction has a use that spans multiple iterations, then
@@ -3534,6 +3600,229 @@ static SUnit *multipleIterations(SUnit *SU, SwingSchedulerDAG *DAG) {
         if (S.getKind() == SDep::Data && S.getSUnit()->getInstr()->isPHI())
           return P.getSUnit();
   return nullptr;
+}
+
+/// Iterative modulo scheduling (B. R. Rau, "Iterative Modulo Scheduling",
+/// MICRO 27). Instructions are scheduled by decreasing height, each in the
+/// first cycle from its earliest start where it fits. If it fits nowhere
+/// within II cycles, it is scheduled anyway, and the instructions that it
+/// conflicts with are unscheduled: those that use the same resources, those
+/// that make a value of a single register class overlap with one of its
+/// values, and the successors and predecessors whose dependences it breaks.
+bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
+                                            bool KeepSingleRegOrder) {
+  // Cycle(Dst) >= Cycle(Src) + Latency.
+  struct Constraint {
+    SUnit *Src, *Dst;
+    int Latency;
+  };
+  unsigned N = SUnits.size();
+  std::vector<SmallVector<Constraint, 4>> In(N), Out(N);
+  auto AddConstraint = [&](SUnit *Src, SUnit *Dst, int Latency) {
+    In[Dst->NodeNum].push_back({Src, Dst, Latency});
+    Out[Src->NodeNum].push_back({Src, Dst, Latency});
+  };
+  for (SUnit &SU : SUnits)
+    for (const SwingSchedulerDDGEdge &OE : DDG->getOutEdges(&SU))
+      if (!OE.getDst()->isBoundaryNode())
+        AddConstraint(&SU, OE.getDst(),
+                      (int)OE.getLatency() - (int)OE.getDistance() * (int)II);
+  // Like computeStart: an instruction that depends on the back edge of a use
+  // that spans several iterations is not scheduled after that use.
+  for (SUnit &I : SUnits)
+    if (SUnit *BE = multipleIterations(&I, this))
+      for (SUnit &SU : SUnits)
+        if (&SU != &I && !SU.getInstr()->isPHI() && !SU.isPred(&I) &&
+            any_of(SU.Preds, [&](const SDep &D) { return D.getSUnit() == BE; }))
+          AddConstraint(&SU, &I, 0);
+  // Optionally, the values of each single register class of one iteration
+  // keep their order: an instruction that defines a value without reading
+  // one follows the readers of the previous value.
+  if (KeepSingleRegOrder) {
+    auto IsValue = [&](const MachineOperand &MO) {
+      return isSingleRegValue(MO.getReg(), MRI);
+    };
+    DenseMap<const TargetRegisterClass *, SmallVector<SUnit *, 4>> Readers;
+    for (SUnit &SU : SUnits) {
+      const MachineInstr &MI = *SU.getInstr();
+      if (MI.isPHI())
+        continue;
+      for (const MachineOperand &MO : MI.all_defs())
+        if (IsValue(MO) &&
+            none_of(MI.all_uses(), [&](const MachineOperand &Use) {
+              return IsValue(Use) && MRI.getRegClass(Use.getReg()) ==
+                                         MRI.getRegClass(MO.getReg());
+            })) {
+          auto &R = Readers[MRI.getRegClass(MO.getReg())];
+          for (SUnit *Reader : R)
+            AddConstraint(Reader, &SU, 0);
+          R.clear();
+        }
+      for (const MachineOperand &MO : MI.all_uses())
+        if (IsValue(MO))
+          Readers[MRI.getRegClass(MO.getReg())].push_back(&SU);
+    }
+  }
+
+  // The height: the longest path to the end of the iteration.
+  std::vector<int> Height(N, 0);
+  for (unsigned Changed = true, Iter = 0; Changed && Iter <= N; ++Iter) {
+    Changed = false;
+    for (SUnit &SU : SUnits)
+      for (const Constraint &C : Out[SU.NodeNum]) {
+        int H = Height[C.Dst->NodeNum] + C.Latency;
+        if (C.Dst != &SU && H > Height[SU.NodeNum]) {
+          Height[SU.NodeNum] = H;
+          Changed = true;
+        }
+      }
+  }
+
+  unsigned NumScheduled = 0;
+  auto Unschedule = [&](SUnit *SU, const char *Reason) {
+    if (!Schedule.getCycle(SU))
+      return;
+    LLVM_DEBUG(dbgs() << "\tunschedule SU(" << SU->NodeNum << "): " << Reason
+                      << "\n");
+    Schedule.remove(SU);
+    --NumScheduled;
+  };
+
+  std::vector<int> LastCycle(N, INT_MIN);
+  for (unsigned Budget = SwpIterativeBudget * N; NumScheduled != N;) {
+    if (Budget-- == 0) {
+      LLVM_DEBUG(dbgs() << "\tbudget exhausted\n");
+      return false;
+    }
+    SUnit *Op = nullptr;
+    for (SUnit &SU : SUnits)
+      if (!Schedule.getCycle(&SU) &&
+          (!Op || Height[SU.NodeNum] > Height[Op->NodeNum]))
+        Op = &SU;
+
+    int EarlyStart = INT_MIN;
+    for (const Constraint &C : In[Op->NodeNum])
+      if (C.Src != Op)
+        if (std::optional<int> Src = Schedule.getCycle(C.Src))
+          EarlyStart = std::max(EarlyStart, *Src + C.Latency);
+    if (EarlyStart == INT_MIN)
+      EarlyStart = 0;
+
+    // The first cycle where Op fits, preferably without breaking the
+    // dependences of scheduled successors.
+    auto KeepsSuccs = [&](int Cycle) {
+      return all_of(Out[Op->NodeNum], [&](const Constraint &C) {
+        std::optional<int> Dst = Schedule.getCycle(C.Dst);
+        return C.Dst == Op || !Dst || *Dst >= Cycle + C.Latency;
+      });
+    };
+    std::optional<int> Fits, FitsAll;
+    for (int Cycle = EarlyStart; Cycle != EarlyStart + (int)II; ++Cycle) {
+      if (!Schedule.canPlace(Op, Cycle))
+        continue;
+      if (!Fits)
+        Fits = Cycle;
+      if (KeepsSuccs(Cycle)) {
+        FitsAll = Cycle;
+        break;
+      }
+    }
+    // Without a fitting cycle, Op goes to its earliest start, or after the
+    // cycle it had before, so that it does not displace the same
+    // instructions again. It stays within II cycles of its earliest start, so
+    // that the schedule does not grow.
+    int Cycle = FitsAll ? *FitsAll : Fits ? *Fits : EarlyStart;
+    int Last = LastCycle[Op->NodeNum];
+    if (!Fits && Last != INT_MIN && EarlyStart <= Last &&
+        Last + 1 < EarlyStart + (int)II)
+      Cycle = Last + 1;
+    LastCycle[Op->NodeNum] = Cycle;
+    LLVM_DEBUG(dbgs() << "\tSU(" << Op->NodeNum << ") in cycle " << Cycle
+                      << (Fits ? "" : " (forced)") << "\n");
+
+    // Unschedule the instructions that use the resources Op needs, lowest
+    // first.
+    while (!Schedule.fitsResources(Op, Cycle)) {
+      SUnit *Victim = nullptr;
+      int Slot = ((Cycle % (int)II) + (int)II) % (int)II;
+      for (SUnit &SU : SUnits) {
+        std::optional<int> C = Schedule.getCycle(&SU);
+        if (!C || &SU == Op || SU.getInstr()->isPHI())
+          continue;
+        if ((!Victim || Height[SU.NodeNum] < Height[Victim->NodeNum]) && [&] {
+              Schedule.remove(&SU);
+              bool Frees = Schedule.fitsResources(Op, Cycle);
+              Schedule.place(&SU, *C);
+              return Frees;
+            }())
+          Victim = &SU;
+      }
+      if (!Victim) {
+        // No single instruction frees the resources: unschedule those in the
+        // same slot.
+        for (SUnit &SU : SUnits) {
+          std::optional<int> C = Schedule.getCycle(&SU);
+          if (C && &SU != Op && ((*C % (int)II) + (int)II) % (int)II == Slot)
+            Victim = &SU;
+        }
+        if (!Victim) {
+          LLVM_DEBUG(dbgs()
+                     << "\tno resources for SU(" << Op->NodeNum << ")\n");
+          return false;
+        }
+      }
+      Unschedule(Victim, "resources");
+    }
+
+    Schedule.place(Op, Cycle);
+    ++NumScheduled;
+
+    // Values of single register classes that overlap. A use of a value that
+    // makes it overlap unschedules the definition of that value first, which
+    // can then move closer to the use.
+    Register Reg;
+    while (Register Other =
+               Schedule.getOverlappingSingleRegValue(Op, Cycle, Reg)) {
+      if (!Op->getInstr()->readsVirtualRegister(Reg) &&
+          Op->getInstr()->readsVirtualRegister(Other))
+        std::swap(Reg, Other);
+      SUnit *Victim = nullptr;
+      for (Register R : {Reg, Other}) {
+        MachineInstr *Def = MRI.getVRegDef(R);
+        SUnit *DefSU = Def ? getSUnit(Def) : nullptr;
+        if (DefSU && DefSU != Op && Schedule.getCycle(DefSU)) {
+          Victim = DefSU;
+          break;
+        }
+      }
+      if (!Victim) {
+        // Op defines both: unschedule the uses.
+        for (MachineInstr &UseMI : MRI.use_nodbg_instructions(Other))
+          if (SUnit *UseSU = getSUnit(&UseMI))
+            if (UseSU != Op && Schedule.getCycle(UseSU))
+              Victim = UseSU;
+      }
+      if (!Victim) {
+        LLVM_DEBUG(dbgs() << "\t" << printReg(Other)
+                          << " can not be unscheduled\n");
+        return false;
+      }
+      Unschedule(Victim, "single register value");
+    }
+
+    // Successors and predecessors whose dependences Op breaks.
+    for (const Constraint &C : Out[Op->NodeNum])
+      if (C.Dst != Op)
+        if (std::optional<int> Dst = Schedule.getCycle(C.Dst))
+          if (*Dst < Cycle + C.Latency)
+            Unschedule(C.Dst, "successor");
+    for (const Constraint &C : In[Op->NodeNum])
+      if (C.Src != Op)
+        if (std::optional<int> Src = Schedule.getCycle(C.Src))
+          if (Cycle < *Src + C.Latency)
+            Unschedule(C.Src, "predecessor");
+  }
+  return true;
 }
 
 /// Compute the scheduling start slot for the instruction.  The start slot
@@ -4283,6 +4572,13 @@ void ResourceManager::reserveResources(SUnit &SU, int Cycle) {
       dbgs() << "reserveResources: done!\n\n";
     }
   });
+}
+
+void ResourceManager::unreserveResources(SUnit &SU, int Cycle) {
+  assert(!UseDFA && "The DFA can not release resources");
+  const MCSchedClassDesc *SCDesc = DAG->getSchedClass(&SU);
+  if (SCDesc->isValid())
+    unreserveResources(SCDesc, Cycle);
 }
 
 void ResourceManager::reserveResources(const MCSchedClassDesc *SCDesc,

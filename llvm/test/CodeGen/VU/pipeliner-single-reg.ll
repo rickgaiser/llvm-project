@@ -1,5 +1,7 @@
 ; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner < %s -o /dev/null 2>&1 \
-; RUN:   | FileCheck %s --check-prefix=MII
+; RUN:   | FileCheck %s --check-prefixes=MII,SMS
+; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner -pipeliner-iterative \
+; RUN:   < %s -o /dev/null 2>&1 | FileCheck %s --check-prefixes=MII,IMS
 ; RUN: llc -mtriple=vu -verify-machineinstrs -debug-only=pipeliner < %s \
 ; RUN:   -o /dev/null 2>&1 | FileCheck %s --check-prefix=OVERLAP
 ; REQUIRES: asserts
@@ -12,6 +14,12 @@
 ; not place an instruction where two values of Q would be live at the same
 ; time, in the same or in different iterations.
 ; OVERLAP: live in cycles {{-?[0-9]+}}-{{[0-9]+}} overlaps
+
+; Swing modulo scheduling places a read of Q first and can not move the
+; division close enough to it. Iterative modulo scheduling unschedules
+; instructions to make room.
+; SMS: Unable to find schedule
+; IMS: Schedule found with Initiation Interval: 24
 
 declare <4 x float> @llvm.vu.lq(i16)
 declare void @llvm.vu.sq(<4 x float>, i16)

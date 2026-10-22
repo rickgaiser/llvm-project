@@ -68,6 +68,10 @@ struct MachinePipelinerPolicy {
   /// Limit the register pressure of the scheduled loop, retrying at a higher
   /// II when a schedule needs too many registers.
   bool ShouldLimitRegPressure = false;
+  /// Use iterative modulo scheduling, which unschedules instructions when an
+  /// instruction does not fit, instead of the swing modulo scheduler. It
+  /// requires the processor resources instead of the DFA.
+  bool UseIterativeScheduler = false;
 };
 
 class LLVM_ABI MachinePipelinerLegacy : public MachineFunctionPass {
@@ -448,6 +452,8 @@ private:
   void computeNodeOrder(NodeSetType &NodeSets);
   void checkValidNodeOrder(const NodeSetType &Circuits) const;
   bool schedulePipeline(SMSchedule &Schedule);
+  bool scheduleIteratively(SMSchedule &Schedule, unsigned II,
+                           bool KeepSingleRegOrder);
   bool computeDelta(const MachineInstr &MI, int &Delta) const;
   MachineInstr *findDefInLoop(Register Reg);
   bool canUseLastOffsetValue(MachineInstr *MI, unsigned &BasePos,
@@ -682,6 +688,9 @@ public:
   /// current state to reflect that change.
   LLVM_ABI void reserveResources(SUnit &SU, int Cycle);
 
+  /// Release the resources that \p SU reserved in \p Cycle (not with DFA).
+  LLVM_ABI void unreserveResources(SUnit &SU, int Cycle);
+
   LLVM_ABI int calculateResMII() const;
 
   /// Initialize resources with the initiation interval II.
@@ -728,9 +737,6 @@ private:
   /// the loop, with \p SU in \p Cycle, if they are all scheduled.
   std::optional<std::pair<int, int>> getLiveCycles(Register Reg, SUnit *SU,
                                                    int Cycle) const;
-  /// Returns true if \p SU in \p Cycle makes the value of a register class
-  /// with a single register overlap with another value of that class.
-  bool overlapsSingleRegValue(SUnit *SU, int Cycle) const;
 
 public:
   SMSchedule(MachineFunction *mf, SwingSchedulerDAG *DAG)
@@ -764,6 +770,38 @@ public:
   LLVM_ABI void computeStart(SUnit *SU, int *MaxEarlyStart, int *MinLateStart,
                              int II, SwingSchedulerDAG *DAG);
   LLVM_ABI bool insert(SUnit *SU, int StartCycle, int EndCycle, int II);
+
+  /// Returns a value of a register class with a single register that \p SU
+  /// in \p Cycle would make overlap with \p Reg, another value of that class,
+  /// or an invalid register. \p Reg is set to the value of \p SU, or to
+  /// itself when it lives too long.
+  Register getOverlappingSingleRegValue(SUnit *SU, int Cycle,
+                                        Register &Reg) const;
+  /// Returns true if \p SU in \p Cycle makes the value of a register class
+  /// with a single register overlap with another value of that class.
+  bool overlapsSingleRegValue(SUnit *SU, int Cycle) const {
+    Register Reg;
+    return getOverlappingSingleRegValue(SU, Cycle, Reg).isValid();
+  }
+
+  /// Returns true if \p SU fits the resources in \p Cycle.
+  LLVM_ABI bool fitsResources(SUnit *SU, int Cycle);
+  /// Returns true if \p SU fits the resources in \p Cycle and does not make
+  /// values of single register classes overlap.
+  bool canPlace(SUnit *SU, int Cycle) {
+    return fitsResources(SU, Cycle) && !overlapsSingleRegValue(SU, Cycle);
+  }
+  /// Schedules \p SU in \p Cycle, which may overbook the resources.
+  LLVM_ABI void place(SUnit *SU, int Cycle);
+  /// Unschedules \p SU.
+  LLVM_ABI void remove(SUnit *SU);
+  /// The cycle of \p SU, if it is scheduled.
+  std::optional<int> getCycle(SUnit *SU) const {
+    auto It = InstrToCycle.find(SU);
+    if (It == InstrToCycle.end())
+      return std::nullopt;
+    return It->second;
+  }
 
   /// Iterators for the cycle to instruction map.
   using sched_iterator = DenseMap<int, std::deque<SUnit *>>::iterator;
