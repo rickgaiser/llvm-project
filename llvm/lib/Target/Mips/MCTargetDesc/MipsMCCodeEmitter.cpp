@@ -749,6 +749,16 @@ unsigned MipsMCCodeEmitter::getImmOpValue(const MCInst &MI, const MCOperand &MO,
   return getExprOpValue(Expr, Fixups, STI);
 }
 
+/// Return the binary encoding of an R5900 VU0 field of a VF register: the
+/// field in bits 6-5 and the register in bits 4-0.
+unsigned
+MipsMCCodeEmitter::getVFWithFieldEncoding(const MCInst &MI, unsigned OpNo,
+                                          SmallVectorImpl<MCFixup> &Fixups,
+                                          const MCSubtargetInfo &STI) const {
+  unsigned Reg = getMachineOpValue(MI, MI.getOperand(OpNo), Fixups, STI);
+  return (MI.getOperand(OpNo + 1).getImm() << 5) | Reg;
+}
+
 /// Return binary encoding of memory related operand.
 /// If the offset operand requires relocation, record the relocation.
 template <unsigned ShiftAmount>

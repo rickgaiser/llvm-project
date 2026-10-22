@@ -1474,6 +1474,22 @@ static DecodeStatus DecodeFMem3(MCInst &Inst, unsigned Insn, uint64_t Address,
 }
 
 // Decode VU0 VF register memory operands (R5900 LQC2/SQC2)
+// The VU0 Q register, which is not encoded.
+static DecodeStatus DecodeVU0Q(MCInst &Inst, const MCDisassembler *Decoder) {
+  Inst.addOperand(MCOperand::createReg(Mips::VU0Q));
+  return MCDisassembler::Success;
+}
+
+// A field of a VF register: the field in bits 6-5, the register in 4-0.
+static DecodeStatus DecodeVFWithField(MCInst &Inst, unsigned Insn,
+                                      uint64_t Address,
+                                      const MCDisassembler *Decoder) {
+  Inst.addOperand(MCOperand::createReg(
+      getReg(Decoder, Mips::VFRegsRegClassID, Insn & 0x1f)));
+  Inst.addOperand(MCOperand::createImm((Insn >> 5) & 0x3));
+  return MCDisassembler::Success;
+}
+
 static DecodeStatus DecodeVFMem(MCInst &Inst, unsigned Insn, uint64_t Address,
                                 const MCDisassembler *Decoder) {
   int Offset = SignExtend32<16>(Insn & 0xffff);

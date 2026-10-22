@@ -205,3 +205,18 @@ vftoi0.xz $vf1, $vf2
 vnop
 # CHECK: vwaitq                                  # encoding: [0xbf,0x03,0x00,0x4a]
 vwaitq
+
+# VDIV, VSQRT and VRSQRT write Q from a field of a VF register. The encodings
+# are those of GNU as, except that it sets the unused fsf field of VSQRT to 01.
+# CHECK: vdiv	$$q, $vf1x, $vf2x               # encoding: [0xbc,0x0b,0x02,0x4a]
+vdiv $Q, $vf1x, $vf2x
+# CHECK: vdiv	$$q, $vf0w, $vf31z              # encoding: [0xbc,0x03,0x7f,0x4b]
+vdiv $Q, $vf0w, $vf31z
+# CHECK: vrsqrt	$$q, $vf0w, $vf5y               # encoding: [0xbe,0x03,0xe5,0x4a]
+vrsqrt $Q, $vf0w, $vf5y
+# CHECK: vrsqrt	$$q, $vf11w, $vf2y              # encoding: [0xbe,0x5b,0xe2,0x4a]
+vrsqrt $Q, $vf11w, $vf2y
+# CHECK: vsqrt	$$q, $vf2x                      # encoding: [0xbd,0x03,0x02,0x4a]
+vsqrt $Q, $vf2x
+# CHECK: vsqrt	$$q, $vf7w                      # encoding: [0xbd,0x03,0x87,0x4b]
+vsqrt $Q, $vf7w

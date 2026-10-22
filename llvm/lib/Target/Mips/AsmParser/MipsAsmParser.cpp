@@ -1408,15 +1408,15 @@ public:
   // Used by VDIV/VRSQRT/VSQRT instructions ($vf0w syntax)
   bool isVFWithField() const { return Kind == k_VFWithField; }
 
-  /// RenderMethod for VFWithField - adds combined 7-bit immediate to MCInst
-  /// Bits 6-5: field selector (0=x, 1=y, 2=z, 3=w)
-  /// Bits 4-0: VF register index (0-31)
+  /// RenderMethod for VFWithField - adds the VF register and the field
+  /// selector (0=x, 1=y, 2=z, 3=w)
   void addVFWithFieldOperands(MCInst &Inst, unsigned N) const {
     assert(Kind == k_VFWithField && "Wrong operand kind");
-    assert(N == 1 && "VFWithField renders to 1 operand");
-    // Combine field (bits 6-5) and register index (bits 4-0) into 7-bit value
-    unsigned CombinedValue = (VFField.Field << 5) | VFField.RegIndex;
-    Inst.addOperand(MCOperand::createImm(CombinedValue));
+    assert(N == 2 && "VFWithField renders to 2 operands");
+    const MCRegisterInfo *RI = AsmParser.getContext().getRegisterInfo();
+    Inst.addOperand(MCOperand::createReg(
+        RI->getRegClass(Mips::VFRegsRegClassID).getRegister(VFField.RegIndex)));
+    Inst.addOperand(MCOperand::createImm(VFField.Field));
   }
 
   bool isToken() const override {

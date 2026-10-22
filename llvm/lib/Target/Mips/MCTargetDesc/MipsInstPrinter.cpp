@@ -17,6 +17,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -417,11 +418,9 @@ void MipsInstPrinter::printVU0FieldSel(const MCInst *MI, int opNum,
 void MipsInstPrinter::printVFWithField(const MCInst *MI, int opNum,
                                        const MCSubtargetInfo &STI,
                                        raw_ostream &O) {
-  // Combined 7-bit operand: bits 6-5 = field, bits 4-0 = register index
-  // Print as: $vfN<field> (e.g., $vf0w)
-  unsigned CombinedValue = MI->getOperand(opNum).getImm();
-  unsigned Field = (CombinedValue >> 5) & 0x3; // bits 6-5
-  unsigned RegIndex = CombinedValue & 0x1F;    // bits 4-0
+  // A VF register and a field selector. Print as: $vfN<field> (e.g., $vf0w)
+  unsigned RegIndex = MRI.getEncodingValue(MI->getOperand(opNum).getReg());
+  unsigned Field = MI->getOperand(opNum + 1).getImm();
 
   // Print register
   O << "$vf" << RegIndex;

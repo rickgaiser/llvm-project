@@ -92,6 +92,8 @@ def VU0QAsmOperand : AsmOperandClass {
 
 def VU0QOpnd : RegisterOperand<VU0QRC> {
   let ParserMatchClass = VU0QAsmOperand;
+  // Q is not encoded.
+  let DecoderMethod = "DecodeVU0Q";
 }
 
 // VU0 Field selector operand - for instructions like VDIV, VRSQRT, VSQRT
@@ -118,13 +120,15 @@ def VFWithFieldAsmOperand : AsmOperandClass {
   let ParserMethod = "parseVFWithField";
 }
 
-// Composite operand: VF register + field selector encoded as 7-bit immediate
-// Bits 6-5: field (0=x, 1=y, 2=z, 3=w)
-// Bits 4-0: VF register index (0-31)
-// Parser creates composite operand, RenderMethod adds single immediate
+// A field of a VF register: a VF register and a field selector (0=x, 1=y,
+// 2=z, 3=w), encoded as 7 bits: the field in bits 6-5 and the register in
+// bits 4-0.
 def VFWithFieldOpnd : Operand<i32> {
   let ParserMatchClass = VFWithFieldAsmOperand;
   let PrintMethod = "printVFWithField";
+  let EncoderMethod = "getVFWithFieldEncoding";
+  let DecoderMethod = "DecodeVFWithField";
+  let MIOperandInfo = (ops VFRegs, i32imm);
 }
 
 //===----------------------------------------------------------------------===//
@@ -724,12 +728,11 @@ let Predicates = [HasVU0] in {
   // VDIV - Floating divide: Q = fs[fsf] / ft[ftf]
   // MacroOP field type 4: COP2 + co + ftf + fsf + ft + fs + opcode
   // Encoding: 010010 1 ftf(2) fsf(2) ft(5) fs(5) 01110111100
-  // Uses VFWithFieldOpnd which parses $vf0w and creates (field, register) pair
-  let hasCompleteDecoder = 0 in // Assembly only - no disassembly support yet
-      def VDIV
-      : InstSE<(outs VU0QOpnd:$q),
-               (ins VFWithFieldOpnd:$src1, VFWithFieldOpnd:$src2),
-               "vdiv\t$q, $src1, $src2", [], FrmR, "vdiv"> {
+  // VFWithFieldOpnd is a VF register and a field ($vf0w).
+  def VDIV : InstSE<(outs VU0QOpnd:$q),
+                    (ins VFWithFieldOpnd:$src1, VFWithFieldOpnd:$src2),
+                    "vdiv\t$q, $src1, $src2", [], FrmR, "vdiv"> {
+    bits<0> q;
     bits<7> src1; // Combined: fsf(2) + fs(5)
     bits<7> src2; // Combined: ftf(2) + ft(5)
 
@@ -746,11 +749,10 @@ let Predicates = [HasVU0] in {
 
   // VRSQRT - Reciprocal square root: Q = fs[fsf] / sqrt(ft[ftf])
   // Encoding: 010010 1 ftf(2) fsf(2) ft(5) fs(5) 01110111110
-  let hasCompleteDecoder = 0 in // Assembly only - no disassembly support yet
-      def VRSQRT
-      : InstSE<(outs VU0QOpnd:$q),
-               (ins VFWithFieldOpnd:$src1, VFWithFieldOpnd:$src2),
-               "vrsqrt\t$q, $src1, $src2", [], FrmR, "vrsqrt"> {
+  def VRSQRT : InstSE<(outs VU0QOpnd:$q),
+                      (ins VFWithFieldOpnd:$src1, VFWithFieldOpnd:$src2),
+                      "vrsqrt\t$q, $src1, $src2", [], FrmR, "vrsqrt"> {
+    bits<0> q;
     bits<7> src1; // Combined: fsf(2) + fs(5)
     bits<7> src2; // Combined: ftf(2) + ft(5)
 
@@ -768,9 +770,9 @@ let Predicates = [HasVU0] in {
   // VSQRT - Square root: Q = sqrt(ft[ftf])
   // Only uses ft register, fs is fixed to 0
   // Encoding: 010010 1 ftf(2) 00 ft(5) 00000 01110111101
-  let hasCompleteDecoder = 0 in // Assembly only - no disassembly support yet
-      def VSQRT : InstSE<(outs VU0QOpnd:$q), (ins VFWithFieldOpnd:$src),
-                         "vsqrt\t$q, $src", [], FrmR, "vsqrt"> {
+  def VSQRT : InstSE<(outs VU0QOpnd:$q), (ins VFWithFieldOpnd:$src),
+                     "vsqrt\t$q, $src", [], FrmR, "vsqrt"> {
+    bits<0> q;
     bits<7> src; // Combined: ftf(2) + ft(5)
 
     let Inst{31 -26} = 0b010010;     // COP2
