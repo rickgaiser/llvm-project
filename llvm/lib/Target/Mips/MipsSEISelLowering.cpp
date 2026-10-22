@@ -149,6 +149,10 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       setOperationAction(ISD::XOR, VT, Legal);
     }
 
+    // A word with a constant index: the low doubleword or PCPYUD, and DSRL32
+    // for an odd one.
+    setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v4i32, Custom);
+
     // Min/Max: Only available for v4i32 (PMAXW/PMINW) and v8i16 (PMAXH/PMINH)
     setOperationAction(ISD::SMAX, MVT::v4i32, Legal);
     setOperationAction(ISD::SMIN, MVT::v4i32, Legal);
@@ -3784,6 +3788,25 @@ lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
 
   if (!VecTy.is128BitVector())
     return SDValue();
+
+  // R5900 v4i32 extraction with a constant index; the others go through a
+  // stack temporary.
+  if (Subtarget.isR5900() && VecTy == MVT::v4i32) {
+    auto *IdxConst = dyn_cast<ConstantSDNode>(Op1);
+    if (!IdxConst || IdxConst->getZExtValue() > 3)
+      return SDValue();
+    unsigned Idx = IdxConst->getZExtValue();
+    SDValue Vec = Op0;
+    if (Idx >= 2)
+      Vec = SDValue(DAG.getMachineNode(Mips::PCPYUD, DL, MVT::v4i32, Vec, Vec),
+                    0);
+    // A truncate or an arithmetic shift keeps the i32 sign-extended.
+    SDValue Dword = DAG.getTargetExtractSubreg(Mips::sub_64, DL, MVT::i64, Vec);
+    if (Idx & 1)
+      Dword = DAG.getNode(ISD::SRA, DL, MVT::i64, Dword,
+                          DAG.getConstant(32, DL, MVT::i32));
+    return DAG.getNode(ISD::TRUNCATE, DL, ResTy, Dword);
+  }
 
   // VU0 v4f32 extraction: emit machine nodes directly
   // This avoids the MipsISD::VEXTRACT_SEXT_ELT node which has no patterns for

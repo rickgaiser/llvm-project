@@ -480,8 +480,14 @@ InstructionCost MipsTTIImpl::getVectorInstrCost(
              !(Op0 && isa<UndefValue>(Op0));
   }
 
-  // R5900 MMI integer vector extract/insert, through a stack temporary.
+  // R5900 MMI integer vector extract/insert, through a stack temporary,
+  // except for a v4i32 extract with a constant index: the low doubleword or
+  // PCPYUD, and DSRL32 for an odd element.
   if (getMMIType(Val)) {
+    if (Opcode == Instruction::ExtractElement && Index != -1U &&
+        cast<FixedVectorType>(Val)->getNumElements() == 4 &&
+        Val->getScalarType()->isIntegerTy(32))
+      return (Index >= 2) * MMICycle + (Index & 1);
     // sq, then a load of the element.
     if (Opcode == Instruction::ExtractElement)
       return 2 * MMICycle;

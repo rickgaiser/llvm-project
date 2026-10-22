@@ -75,7 +75,7 @@ define void @memory(ptr %p) {
 
 define void @vector_ops(<4 x i32> %w, <4 x i16> %h4, i32 %s) {
 ; CHECK-LABEL: 'vector_ops'
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %ext = extractelement <4 x i32> %w, i32 1
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %ext = extractelement <4 x i32> %w, i32 1
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %ins = insertelement <4 x i32> %w, i32 %s, i32 2
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %ins.undef = insertelement <4 x i32> poison, i32 %s, i32 0
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %splat = shufflevector <4 x i32> %w, <4 x i32> poison, <4 x i32> zeroinitializer
@@ -85,7 +85,7 @@ define void @vector_ops(<4 x i32> %w, <4 x i16> %h4, i32 %s) {
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %zext = zext <4 x i16> %h4 to <4 x i32>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %trunc = trunc <4 x i32> %w to <4 x i16>
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <8 x i16>
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 48 for instruction: %red = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %w)
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 44 for instruction: %red = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %w)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
   %ext = extractelement <4 x i32> %w, i32 1
