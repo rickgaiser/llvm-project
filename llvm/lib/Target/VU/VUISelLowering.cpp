@@ -531,6 +531,22 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
         VUISD::BCAST, DL, MVT::v4f32, Src.getOperand(0),
         DAG.getTargetConstant(Src.getConstantOperandVal(1), DL, MVT::i32));
   }
+  case VUISD::ACCSUM: {
+    // A term that broadcasts the x field of a field of a vector broadcasts
+    // that field of the vector.
+    SmallVector<SDValue, 16> Ops(N->ops());
+    bool Changed = false;
+    for (unsigned I = 0, E = Ops.size(); I != E; I += 4)
+      if (Ops[I + 2]->getAsZExtVal() == 0 && isUpperLane(Ops[I + 1])) {
+        Ops[I + 2] = DAG.getTargetConstant(Ops[I + 1].getConstantOperandVal(1),
+                                           DL, MVT::i32);
+        Ops[I + 1] = Ops[I + 1].getOperand(0);
+        Changed = true;
+      }
+    if (!Changed)
+      break;
+    return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+  }
   case VUISD::SPLAT: {
     // Broadcast straight from the field: no move to the x field first.
     SDValue Src;

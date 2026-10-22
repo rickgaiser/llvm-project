@@ -173,3 +173,31 @@ define void @dot3() {
 }
 
 declare float @llvm.maxnum.f32(float, float)
+
+; The square is computed in the y field of the vector. The ACC sum broadcasts
+; it from there, without moving it to x.
+define void @upper_lane_term() {
+; CHECK-LABEL: upper_lane_term:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 2(vi0)
+; CHECK-NEXT:    muly.xyzw vf1, vf1, vf1y nop
+; CHECK-NEXT:    mulay.xyzw acc, vf2, vf1y nop
+; CHECK-NEXT:    madd.xyzw vf1, vf3, vf2 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %a = call <4 x float> @llvm.vu.lq(i16 0)
+  %b = call <4 x float> @llvm.vu.lq(i16 1)
+  %c = call <4 x float> @llvm.vu.lq(i16 2)
+  %ay = extractelement <4 x float> %a, i32 1
+  %s = fmul float %ay, %ay
+  %si = insertelement <4 x float> poison, float %s, i32 0
+  %ss = shufflevector <4 x float> %si, <4 x float> poison, <4 x i32> zeroinitializer
+  %p = fmul <4 x float> %b, %ss
+  %q = fmul <4 x float> %c, %b
+  %r = fadd <4 x float> %p, %q
+  call void @llvm.vu.sq(<4 x float> %r, i16 3)
+  ret void
+}
