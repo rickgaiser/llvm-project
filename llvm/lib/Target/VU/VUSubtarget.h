@@ -50,6 +50,9 @@ public:
   // Software pipelining. There is no spilling, so the pipeliner must keep the
   // register pressure within the register file.
   void overridePipelinerPolicy(MachinePipelinerPolicy &Policy) const override;
+  // The pipeliner uses the processor resources, which model the FDIV and
+  // EFU units that stay busy for several cycles.
+  bool useDFAforSMS() const override { return false; }
   void getSMSMutations(std::vector<std::unique_ptr<ScheduleDAGMutation>>
                            &Mutations) const override;
 

@@ -11,9 +11,9 @@ define void @scale_loop() {
 ; CHECK:       ; %bb.0: ; %entry
 ; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
 ; CHECK-NEXT:    nop loi 0x40400000
-; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi3)
+; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, 0(vi3)
 ; CHECK-NEXT:    nop iaddiu vi1, vi0, 100
-; CHECK-NEXT:    addi.x vf1, vf0, i iaddi vi4, vi3, 1
+; CHECK-NEXT:    nop iaddi vi4, vi3, 1
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop ibeq vi4, vi1, .LBB0_4
 ; CHECK-NEXT:    nop nop

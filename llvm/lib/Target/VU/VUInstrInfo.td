@@ -524,6 +524,7 @@ def MTIR : VULowerExt<0x3c, (outs VI:$it), (ins VF:$fs, vufield:$fsf),
 //--- FDIV -------------------------------------------------------------------//
 
 let Defs = [Q] in {
+let Itinerary = IIC_VUFdiv7 in
 def DIV : VULowerExt<0x38, (outs), (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$ftf),
                      "div\tq, $fs$fsf, $ft$ftf"> {
   bits<5> fs;
@@ -536,6 +537,7 @@ def DIV : VULowerExt<0x38, (outs), (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$f
   let Inst{15-11} = fs;
 }
 
+let Itinerary = IIC_VUFdiv13 in
 def RSQRT : VULowerExt<0x3a, (outs),
                        (ins VF:$fs, vufield:$fsf, VF:$ft, vufield:$ftf),
                        "rsqrt\tq, $fs$fsf, $ft$ftf"> {
@@ -549,6 +551,7 @@ def RSQRT : VULowerExt<0x3a, (outs),
   let Inst{15-11} = fs;
 }
 
+let Itinerary = IIC_VUFdiv7 in
 def SQRT : VULowerExt<0x39, (outs), (ins VF:$ft, vufield:$ftf),
                       "sqrt\tq, $ft$ftf"> {
   bits<5> ft;
@@ -750,8 +753,10 @@ def WAITP : VULowerExt<0x7b, (outs), (ins), "waitp"> {
 }
 
 // Vector EFU operations use a fixed destination mask.
-class EFUVector<bits<7> idx, bits<4> mask, string mn>
+// \p itin gives the throughput of the EFU.
+class EFUVector<bits<7> idx, bits<4> mask, string mn, InstrItinClass itin>
     : VULowerExt<idx, (outs), (ins VF:$fs), mn # "\tp, $fs"> {
+  let Itinerary = itin;
   bits<5> fs;
   let Inst{24-21} = mask;
   let Inst{20-16} = 0;
@@ -759,16 +764,17 @@ class EFUVector<bits<7> idx, bits<4> mask, string mn>
   let Defs = [P];
 }
 
-def ESADD   : EFUVector<0x70, 0b1110, "esadd">;
-def ERSADD  : EFUVector<0x71, 0b1110, "ersadd">;
-def ELENG   : EFUVector<0x72, 0b1110, "eleng">;
-def ERLENG  : EFUVector<0x73, 0b1110, "erleng">;
-def EATANxy : EFUVector<0x74, 0b1100, "eatanxy">;
-def EATANxz : EFUVector<0x75, 0b1010, "eatanxz">;
-def ESUM    : EFUVector<0x76, 0b1111, "esum">;
+def ESADD   : EFUVector<0x70, 0b1110, "esadd", IIC_VUEfu10>;
+def ERSADD  : EFUVector<0x71, 0b1110, "ersadd", IIC_VUEfu17>;
+def ELENG   : EFUVector<0x72, 0b1110, "eleng", IIC_VUEfu17>;
+def ERLENG  : EFUVector<0x73, 0b1110, "erleng", IIC_VUEfu23>;
+def EATANxy : EFUVector<0x74, 0b1100, "eatanxy", IIC_VUEfu53>;
+def EATANxz : EFUVector<0x75, 0b1010, "eatanxz", IIC_VUEfu53>;
+def ESUM    : EFUVector<0x76, 0b1111, "esum", IIC_VUEfu11>;
 
-class EFUScalar<bits<7> idx, string mn>
+class EFUScalar<bits<7> idx, string mn, InstrItinClass itin>
     : VULowerExt<idx, (outs), (ins VF:$fs, vufield:$fsf), mn # "\tp, $fs$fsf"> {
+  let Itinerary = itin;
   bits<5> fs;
   bits<2> fsf;
   let Inst{24-23} = 0;
@@ -778,12 +784,12 @@ class EFUScalar<bits<7> idx, string mn>
   let Defs = [P];
 }
 
-def ESQRT  : EFUScalar<0x78, "esqrt">;
-def ERSQRT : EFUScalar<0x79, "ersqrt">;
-def ERCPR  : EFUScalar<0x7a, "ercpr">;
-def ESIN   : EFUScalar<0x7c, "esin">;
-def EATAN  : EFUScalar<0x7d, "eatan">;
-def EEXP   : EFUScalar<0x7e, "eexp">;
+def ESQRT  : EFUScalar<0x78, "esqrt", IIC_VUEfu11>;
+def ERSQRT : EFUScalar<0x79, "ersqrt", IIC_VUEfu17>;
+def ERCPR  : EFUScalar<0x7a, "ercpr", IIC_VUEfu11>;
+def ESIN   : EFUScalar<0x7c, "esin", IIC_VUEfu28>;
+def EATAN  : EFUScalar<0x7d, "eatan", IIC_VUEfu53>;
+def EEXP   : EFUScalar<0x7e, "eexp", IIC_VUEfu43>;
 
 let hasSideEffects = 1 in
 def XTOP : VULowerExt<0x68, (outs VI:$it), (ins), "xtop\t$it"> {

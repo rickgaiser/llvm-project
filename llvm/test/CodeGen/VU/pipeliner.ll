@@ -199,8 +199,8 @@ define void @late_acc_term() {
 ; CHECK-NEXT:    nop ibeq vi3, vi1, .LBB3_6
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB3_1: ; %loop
-; CHECK-NEXT:    nop lq.xyzw vf5, 0(vi3)
-; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 iaddi vi4, vi3, 1
+; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 lq.xyzw vf5, 0(vi3)
+; CHECK-NEXT:    nop iaddi vi4, vi3, 1
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    mul.xyzw vf3, vf5, vf5 ibeq vi4, vi1, .LBB3_5
 ; CHECK-NEXT:    nop nop
@@ -213,14 +213,13 @@ define void @late_acc_term() {
 ; CHECK-NEXT:  .LBB3_3: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 iaddiu vi4, vi3, 0
-; CHECK-NEXT:    nop iaddi vi3, vi4, 1
-; CHECK-NEXT:    nop move.xyzw vf4, vf5
-; CHECK-NEXT:    mul.xyzw vf9, vf6, vf6 move.xyzw vf5, vf7
-; CHECK-NEXT:    maddx.xyzw vf10, vf2, vf8x lq.xyzw vf7, -1(vi3)
-; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf9, vf6, vf6 iaddi vi3, vi4, 1
+; CHECK-NEXT:    maddx.xyzw vf10, vf2, vf8x move.xyzw vf4, vf5
+; CHECK-NEXT:    mul.xyzw vf6, vf3, vf3 move.xyzw vf5, vf7
+; CHECK-NEXT:    nop lq.xyzw vf7, -1(vi3)
 ; CHECK-NEXT:    mul.xyzw vf8, vf9, vf9 nop
-; CHECK-NEXT:    mul.xyzw vf3, vf7, vf7 ibne vi3, vi1, .LBB3_3
-; CHECK-NEXT:    nop sq.xyzw vf10, 196(vi3)
+; CHECK-NEXT:    nop ibne vi3, vi1, .LBB3_3
+; CHECK-NEXT:    mul.xyzw vf3, vf7, vf7 sq.xyzw vf10, 196(vi3)
 ; CHECK-NEXT:  .LBB3_4:
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf4 iaddi vi2, vi3, -2
 ; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf8x nop

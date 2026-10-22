@@ -85,10 +85,10 @@ def DELAY_SLOT : VUPseudo<(outs), (ins)>;
 // f32 constant: LOI c; ADDi.x d, vf0, i
 let Defs = [I], isReMaterializable = 1, isAsCheapAsAMove = 1 in
 def LOADF32 : VUPseudo<(outs VF:$d), (ins f32imm:$c),
-                       [(set (f32 VF:$d), (f32 fpimm:$c))], IIC_VULower>;
+                       [(set (f32 VF:$d), (f32 fpimm:$c))], IIC_VULoi>;
 
 // Splat field f of s: ADD<f>.xyz d, vf0, s; MUL<f>.w d, vf0, s
-def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s, i32imm:$f), [], IIC_VUUpper>;
+def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s, i32imm:$f), [], IIC_VUUpper2>;
 def : Pat<(VUbcast (v4f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 def : Pat<(VUbcast (f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 
@@ -108,7 +108,7 @@ def INSERT_VI : VUPseudo<(outs VF:$d), (ins VF:$src, VI:$s, i32imm:$f),
 
 // Negation: LOI -1.0; MULi.xyzw d, s, i
 let Defs = [I] in
-def FNEG : VUPseudo<(outs VF:$d), (ins VF:$s), [], IIC_VULower>;
+def FNEG : VUPseudo<(outs VF:$d), (ins VF:$s), [], IIC_VULoi>;
 def : Pat<(fneg (v4f32 VF:$s)), (FNEG VF:$s)>;
 def : Pat<(fneg (f32 VF:$s)), (FNEG VF:$s)>;
 

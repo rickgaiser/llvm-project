@@ -1,16 +1,10 @@
-; RUN: llc -mtriple=vu -verify-machineinstrs -debug-only=pipeliner < %s \
-; RUN:   -o /dev/null 2>&1 | FileCheck %s
 ; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner < %s -o /dev/null 2>&1 \
-; RUN:   | FileCheck %s --check-prefix=MII
-; REQUIRES: asserts
+; RUN:   | FileCheck %s
 
-; MII: Minimal Initiation Interval: 7 (ResMII 7, RecMII 2)
-
-; A square root and two divisions per iteration, all through Q, which is not
-; renamed between iterations. A schedule in which an iteration writes Q while
-; the value of another iteration is still needed is rejected.
-
-; CHECK: Invalid schedule: $q is live from cycle
+; A square root and two divisions per iteration, all through Q. The FDIV unit
+; is busy for 7 cycles per operation, so an iteration takes at least 21
+; cycles.
+; CHECK: Minimal Initiation Interval: 21 (ResMII 21, RecMII 2)
 
 declare <4 x float> @llvm.vu.lq(i16)
 declare void @llvm.vu.sq(<4 x float>, i16)
