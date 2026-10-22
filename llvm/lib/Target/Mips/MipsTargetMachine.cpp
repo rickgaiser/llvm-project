@@ -17,6 +17,7 @@
 #include "Mips16ISelDAGToDAG.h"
 #include "MipsDAGMutations.h"
 #include "MipsMachineFunction.h"
+#include "MipsR5900VU0MatVec.h"
 #include "MipsSEISelDAGToDAG.h"
 #include "MipsSubtarget.h"
 #include "MipsTargetObjectFile.h"
@@ -40,6 +41,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/LibraryOptions.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
@@ -219,6 +221,17 @@ public:
 };
 
 } // end anonymous namespace
+
+void MipsTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
+#define GET_PASS_REGISTRY "MipsPassRegistry.def"
+#include "llvm/Passes/TargetPassRegistry.inc"
+
+  // Before the vectorizers, which do not make VU0 matrix times vector code.
+  PB.registerVectorizerStartEPCallback(
+      [this](FunctionPassManager &FPM, OptimizationLevel) {
+        FPM.addPass(MipsR5900VU0MatVecPass(*this));
+      });
+}
 
 TargetPassConfig *MipsTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new MipsPassConfig(*this, PM);

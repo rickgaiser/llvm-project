@@ -79,6 +79,7 @@ add_llvm_target(MipsCodeGen
   MipsR5900IssueModel.cpp
   MipsR5900IssuePass.cpp
   MipsR5900VU0AccChain.cpp
+  MipsR5900VU0MatVec.cpp
 
   LINK_COMPONENTS
   Analysis
@@ -91,6 +92,7 @@ add_llvm_target(MipsCodeGen
   MipsDesc
   MipsInfo
   Option
+  Passes
   SelectionDAG
   Support
   Target
