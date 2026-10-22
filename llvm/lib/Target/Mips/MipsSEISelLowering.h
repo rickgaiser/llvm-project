@@ -103,6 +103,7 @@ using TargetRegisterClass = MCRegisterClass;
     SDValue lowerFMA(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerVU0FP_TO_UINT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerVU0FSETCC(SDValue Op, SelectionDAG &DAG) const;
     /// Lower VECTOR_SHUFFLE into one of a number of instructions
     /// depending on the indices in the shuffle.
     SDValue lowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;

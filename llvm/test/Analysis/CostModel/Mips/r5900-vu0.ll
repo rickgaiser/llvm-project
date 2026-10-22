@@ -151,15 +151,15 @@ define void @casts_cmps(<4 x float> %a, <4 x float> %b, <4 x i32> %w) {
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 3 for instruction: %fptosi = fptosi <4 x float> %a to <4 x i32>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 3 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <4 x float>
-; VU0-NEXT:  Cost Model: Found an estimated cost of 62 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
-; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 22 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
 ; NOVU0-LABEL: 'casts_cmps'
 ; NOVU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %fptosi = fptosi <4 x float> %a to <4 x i32>
 ; NOVU0-NEXT:  Cost Model: Found an estimated cost of 7 for instruction: %sitofp = sitofp <4 x i32> %w to <4 x float>
 ; NOVU0-NEXT:  Cost Model: Found an estimated cost of 0 for instruction: %bc = bitcast <4 x i32> %w to <4 x float>
-; NOVU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %cmp = fcmp ogt <4 x float> %a, %b
 ; NOVU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sel = select <4 x i1> %cmp, <4 x float> %a, <4 x float> %b
 ; NOVU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
@@ -193,5 +193,43 @@ define void @conversions(<4 x float> %a, <4 x i32> %w, <8 x float> %a8, <4 x i16
   %fptosi8 = fptosi <8 x float> %a8 to <8 x i32>
   %fptosi16 = fptosi <4 x float> %a to <4 x i16>
   %sitofp16 = sitofp <4 x i16> %h to <4 x float>
+  ret void
+}
+
+define void @compares(<4 x float> %a, <4 x float> %b) {
+; VU0-LABEL: 'compares'
+; VU0-NEXT:  Cost Model: Found an estimated cost of 22 for instruction: %ogt = fcmp ogt <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %oge = fcmp oge <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %ogt0 = fcmp ogt <4 x float> %a, zeroinitializer
+; VU0-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %une = fcmp une <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %sel = select <4 x i1> %ogt, <4 x float> %a, <4 x float> %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+; NOVU0-LABEL: 'compares'
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %ogt = fcmp ogt <4 x float> %a, %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %oge = fcmp oge <4 x float> %a, %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %ogt0 = fcmp ogt <4 x float> %a, zeroinitializer
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %une = fcmp une <4 x float> %a, %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %sel = select <4 x i1> %ogt, <4 x float> %a, <4 x float> %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %ogt = fcmp ogt <4 x float> %a, %b
+  %oge = fcmp oge <4 x float> %a, %b
+  %ogt0 = fcmp ogt <4 x float> %a, zeroinitializer
+  %une = fcmp une <4 x float> %a, %b
+  %sel = select <4 x i1> %ogt, <4 x float> %a, <4 x float> %b
+  ret void
+}
+
+define void @scalar_compare(float %a, float %b) {
+; VU0-LABEL: 'scalar_compare'
+; VU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %ogt = fcmp ogt float %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+; NOVU0-LABEL: 'scalar_compare'
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 12 for instruction: %ogt = fcmp ogt float %a, %b
+; NOVU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
+;
+  %ogt = fcmp ogt float %a, %b
   ret void
 }

@@ -213,9 +213,9 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
     TTI::TargetCostKind CostKind, bool ForPoisonSrc, ArrayRef<Value *> VL,
     TTI::VectorInstrContext VIC) const {
   // Per v4f32 part: extracting is a qmfc2, a pcpyud for the upper two
-  // elements, a dsrl32 for an odd one and an mtc1 per element. Inserting is
-  // an mfc1 per element, a pextlw for an odd one, a pcpyld for the upper two
-  // and a qmtc2.
+  // elements, a dsrl32 for an odd one and an mtc1 per element, unless it is
+  // stored with sw. Inserting is an mfc1 per element, unless it is loaded with
+  // lw, a pextlw for an odd one, a pcpyld for the upper two and a qmtc2.
   if (auto Parts = getVU0Parts(Ty)) {
     InstructionCost Cost = 0;
     for (unsigned Part = 0; Part < *Parts; ++Part) {
@@ -232,9 +232,14 @@ InstructionCost MipsTTIImpl::getScalarizationOverhead(
       if (!Demanded)
         continue;
       if (Extract)
-        Cost += (1 + Upper + Demanded) * MMICycle + Odd;
+        Cost +=
+            (1 + Upper + (VIC != TTI::VectorInstrContext::Store) * Demanded) *
+                MMICycle +
+            Odd;
       if (Insert)
-        Cost += (Demanded + Odd + Upper + 1) * MMICycle;
+        Cost += ((VIC != TTI::VectorInstrContext::Load) * Demanded + Odd +
+                 Upper + 1) *
+                MMICycle;
     }
     return Cost;
   }
@@ -465,9 +470,13 @@ InstructionCost MipsTTIImpl::getVectorInstrCost(
       return (Opcode == Instruction::ExtractElement ? 3 : 4) * MMICycle;
     unsigned Elt = Index % 4;
     if (Opcode == Instruction::ExtractElement)
-      return (2 + (Elt >= 2)) * MMICycle + (Elt & 1);
+      return (1 + (VIC != TTI::VectorInstrContext::Store) + (Elt >= 2)) *
+                 MMICycle +
+             (Elt & 1);
     if (Opcode == Instruction::InsertElement)
-      return (2 + (Elt & 1) + (Elt >= 2)) * MMICycle +
+      return (1 + (VIC != TTI::VectorInstrContext::Load) + (Elt & 1) +
+              (Elt >= 2)) *
+                 MMICycle +
              !(Op0 && isa<UndefValue>(Op0));
   }
 
@@ -769,6 +778,12 @@ InstructionCost MipsTTIImpl::getCmpSelInstrCost(
     return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy, VecPred, CostKind,
                                      Op1Info, Op2Info, I);
 
+  // An FPU compare is read by a branch (or a branch over a li) 6 cycles later
+  // (measured). The branch follows the compare, so the wait is rarely filled.
+  if (Opcode == Instruction::FCmp && ValTy->isFloatTy() &&
+      CostKind == TTI::TCK_RecipThroughput)
+    return 6 * MMICycle;
+
   auto *VTy = dyn_cast<FixedVectorType>(ValTy);
   if (!VTy)
     return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy, VecPred, CostKind,
@@ -804,20 +819,37 @@ InstructionCost MipsTTIImpl::getCmpSelInstrCost(
     return getR5900ScalarizedCost(VTy, 2, ScalarCost, CostKind);
   }
 
-  // VU0 v4f32 compares are scalarized, each a c.cond.s and a branch over a
-  // li, to an MMI mask. A select with a mask is qmfc2 of both operands, pand,
-  // pnor, pand, por and qmtc2.
+  // VU0 v4f32 compares are MMI compares of the bits in a 128-bit GPR: qmfc2
+  // and pand, psraw, pxor and psubw for an operand that is not constant,
+  // pcgtw or pceqw, and pnor for an inverted condition. A select with a mask
+  // is qmfc2 of both operands, pxor, pand, pxor and qmtc2.
   if (auto Parts = getVU0Parts(VTy)) {
     if (Opcode == Instruction::FCmp) {
-      auto *MaskTy = VectorType::getInteger(VTy);
-      return 2 * getScalarizationOverhead(VTy, /*Insert=*/false,
-                                          /*Extract=*/true, CostKind) +
-             NumElts * 3 * MMICycle +
-             getScalarizationOverhead(MaskTy, /*Insert=*/true,
-                                      /*Extract=*/false, CostKind);
+      unsigned Ops = 1 + 5 * !Op1Info.isConstant() + 5 * !Op2Info.isConstant();
+      switch (VecPred) {
+      case CmpInst::FCMP_ONE:
+      case CmpInst::FCMP_UNE:
+      case CmpInst::FCMP_OGE:
+      case CmpInst::FCMP_UGE:
+      case CmpInst::FCMP_OLE:
+      case CmpInst::FCMP_ULE:
+        ++Ops;
+        break;
+      default:
+        break;
+      }
+      return *Parts * Ops * MMICycle;
     }
     if (Opcode == Instruction::Select && CondTy && CondTy->isVectorTy())
-      return *Parts * 7 * MMICycle;
+      return *Parts * 6 * MMICycle;
+  }
+
+  // Other float vector compares, such as without VU0, are FPU compares.
+  if (Opcode == Instruction::FCmp && EltTy->isFloatTy()) {
+    InstructionCost ScalarCost = getCmpSelInstrCost(
+        Opcode, EltTy, CondTy ? CondTy->getScalarType() : nullptr, VecPred,
+        CostKind, Op1Info.getNoProps(), Op2Info.getNoProps());
+    return getR5900ScalarizedCost(VTy, 2, ScalarCost, CostKind);
   }
 
   return BaseT::getCmpSelInstrCost(Opcode, ValTy, CondTy, VecPred, CostKind,

@@ -294,6 +294,10 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::SINT_TO_FP, MVT::v4i32, Legal);
     setOperationAction(ISD::FP_TO_UINT, MVT::v4i32, Custom);
 
+    // Compares of the bits as ordered integers with MMI.
+    setOperationAction(ISD::SETCC, MVT::v4f32, Custom);
+    setOperationAction(ISD::VSELECT, MVT::v4f32, Custom);
+
     // Enable VU0 arithmetic operations (VADD, VSUB, VMUL)
     setOperationAction(ISD::FADD, MVT::v4f32, Legal);
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
@@ -321,7 +325,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
 
     // Enable DAG combine for broadcast multiply patterns and load optimization
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
-    setTargetDAGCombine({ISD::FMUL, ISD::BITCAST});
+    setTargetDAGCombine({ISD::FMUL, ISD::BITCAST, ISD::SETCC});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -1867,6 +1871,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performXORCombine(N, DAG, Subtarget);
     break;
   case ISD::SETCC:
+    // Before legalization, constant operands are still folded.
+    if (Subtarget.hasVU0() && N->getOperand(0).getValueType() == MVT::v4f32)
+      return lowerVU0FSETCC(SDValue(N, 0), DAG);
     Val = performSETCCCombine(N, DAG);
     break;
   case ISD::FP_TO_UINT:
@@ -2316,6 +2323,8 @@ SDValue MipsSETargetLowering::lowerVectorShift(SDValue Op,
 SDValue MipsSETargetLowering::lowerR5900SETCC(SDValue Op,
                                               SelectionDAG &DAG) const {
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
+  if (Op.getOperand(0).getValueType() == MVT::v4f32)
+    return lowerVU0FSETCC(Op, DAG);
   ISD::CondCode SignedCC;
   switch (CC) {
   case ISD::SETUGT:
@@ -2342,6 +2351,76 @@ SDValue MipsSETargetLowering::lowerR5900SETCC(SDValue Op,
   return DAG.getSetCC(DL, Op.getValueType(), A, B, SignedCC);
 }
 
+/// VU0: a v4f32 compare as the signed compare of the bits of the operands in
+/// a 128-bit GPR, with the magnitude of a negative one negated, so that -0
+/// and +0 are equal. There are no NaNs: the FPU and VU0 order the bits of one
+/// as a large magnitude too, so ordered and unordered conditions are the
+/// same.
+SDValue MipsSETargetLowering::lowerVU0FSETCC(SDValue Op,
+                                             SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  EVT VT = Op.getValueType();
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
+  ISD::CondCode IntCC;
+  switch (CC) {
+  case ISD::SETFALSE:
+  case ISD::SETFALSE2:
+  case ISD::SETUO:
+    return DAG.getConstant(0, DL, VT);
+  case ISD::SETTRUE:
+  case ISD::SETTRUE2:
+  case ISD::SETO:
+    return DAG.getAllOnesConstant(DL, VT);
+  case ISD::SETEQ:
+  case ISD::SETOEQ:
+  case ISD::SETUEQ:
+    IntCC = ISD::SETEQ;
+    break;
+  case ISD::SETNE:
+  case ISD::SETONE:
+  case ISD::SETUNE:
+    IntCC = ISD::SETNE;
+    break;
+  case ISD::SETGT:
+  case ISD::SETOGT:
+  case ISD::SETUGT:
+    IntCC = ISD::SETGT;
+    break;
+  case ISD::SETGE:
+  case ISD::SETOGE:
+  case ISD::SETUGE:
+    IntCC = ISD::SETGE;
+    break;
+  case ISD::SETLT:
+  case ISD::SETOLT:
+  case ISD::SETULT:
+    IntCC = ISD::SETLT;
+    break;
+  case ISD::SETLE:
+  case ISD::SETOLE:
+  case ISD::SETULE:
+    IntCC = ISD::SETLE;
+    break;
+  default:
+    llvm_unreachable("Unexpected condition code");
+  }
+  auto Key = [&](SDValue X) {
+    if (ISD::isBuildVectorAllZeros(X.getNode()))
+      return DAG.getConstant(0, DL, MVT::v4i32);
+    SDValue Bits = DAG.getBitcast(MVT::v4i32, X);
+    SDValue Sign = DAG.getNode(ISD::SRA, DL, MVT::v4i32, Bits,
+                               DAG.getConstant(31, DL, MVT::v4i32));
+    SDValue Magnitude = DAG.getNode(
+        ISD::AND, DL, MVT::v4i32, Bits,
+        DAG.getConstant(APInt::getSignedMaxValue(32), DL, MVT::v4i32));
+    return DAG.getNode(ISD::SUB, DL, MVT::v4i32,
+                       DAG.getNode(ISD::XOR, DL, MVT::v4i32, Magnitude, Sign),
+                       Sign);
+  };
+  return DAG.getSetCC(DL, VT, Key(Op.getOperand(0)), Key(Op.getOperand(1)),
+                      IntCC);
+}
+
 /// R5900: (vselect M, T, F) with a mask M of all ones or all zeros in each
 /// element as F ^ ((F ^ T) & M), which needs no inverted mask. An inverted
 /// mask, also that of a compare that is legalized to an inverted one, swaps
@@ -2352,6 +2431,11 @@ SDValue MipsSETargetLowering::lowerR5900VSELECT(SDValue Op,
   EVT VT = Op.getValueType();
   SDValue Mask = Op.getOperand(0);
   SDValue T = Op.getOperand(1), F = Op.getOperand(2);
+  // VU0: select the bits in a 128-bit GPR.
+  if (VT == MVT::v4f32)
+    return DAG.getBitcast(VT, DAG.getNode(ISD::VSELECT, DL, MVT::v4i32, Mask,
+                                          DAG.getBitcast(MVT::v4i32, T),
+                                          DAG.getBitcast(MVT::v4i32, F)));
   if (isBitwiseNot(Mask)) {
     Mask = Mask.getOperand(0);
     std::swap(T, F);
