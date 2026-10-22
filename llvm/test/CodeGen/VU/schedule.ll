@@ -12,16 +12,16 @@ define void @div_overlap() {
 ; CHECK:       ; %bb.0:
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf3, 2(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf4, 3(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 3(vi0)
 ; CHECK-NEXT:    nop div q, vf1x, vf2x
-; CHECK-NEXT:    mul.xyzw vf5, vf3, vf4 nop
-; CHECK-NEXT:    add.xyzw vf3, vf5, vf3 nop
-; CHECK-NEXT:    addq.x vf2, vf0, q waitq
-; CHECK-NEXT:    mul.xyzw vf3, vf3, vf4 nop
-; CHECK-NEXT:    addx.xyz vf2, vf0, vf2x nop
-; CHECK-NEXT:    add.xyzw vf1, vf3, vf1 nop
-; CHECK-NEXT:    mulx.w vf2, vf0, vf2x nop
+; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    mula.xyzw acc, vf2, vf3 nop
+; CHECK-NEXT:    maddw.xyzw vf2, vf2, vf0w nop
+; CHECK-NEXT:    addq.x vf4, vf0, q waitq
+; CHECK-NEXT:    mula.xyzw acc, vf2, vf3 nop
+; CHECK-NEXT:    maddw.xyzw vf1, vf1, vf0w nop
+; CHECK-NEXT:    addx.xyz vf2, vf0, vf4x nop
+; CHECK-NEXT:    mulx.w vf2, vf0, vf4x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf2, 5(vi0)
 ; CHECK-NEXT:    nop[e] nop

@@ -20,13 +20,11 @@ define void @scalar_ops() {
 ; CHECK:       ; %bb.0:
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop loi 0x3f000000
-; CHECK-NEXT:    addi.x vf3, vf0, i nop
-; CHECK-NEXT:    addy.x vf2, vf0, vf1y nop
-; CHECK-NEXT:    nop div q, vf1x, vf2x
+; CHECK-NEXT:    nop div q, vf1x, vf1y
 ; CHECK-NEXT:    addq.x vf2, vf0, q waitq
-; CHECK-NEXT:    nop sqrt q, vf2x
-; CHECK-NEXT:    addq.x vf2, vf0, q waitq
-; CHECK-NEXT:    mul.xyzw vf2, vf2, vf3 nop
+; CHECK-NEXT:    addi.x vf2, vf0, i sqrt q, vf2x
+; CHECK-NEXT:    addq.x vf3, vf0, q waitq
+; CHECK-NEXT:    mul.xyzw vf2, vf3, vf2 nop
 ; CHECK-NEXT:    mulx.w vf1, vf0, vf2x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop

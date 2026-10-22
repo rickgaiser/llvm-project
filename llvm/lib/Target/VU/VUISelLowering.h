@@ -25,6 +25,7 @@ public:
                          EVT VT) const override;
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+  SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
   void getTgtMemIntrinsic(SmallVectorImpl<IntrinsicInfo> &Infos,
                           const CallBase &I, MachineFunction &MF,
@@ -56,6 +57,7 @@ private:
   SDValue lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerUnsupported(SDValue Op, SelectionDAG &DAG,
                            const char *What) const;
+  SDValue combineAccSum(SDNode *N, SelectionDAG &DAG) const;
 };
 
 } // namespace llvm

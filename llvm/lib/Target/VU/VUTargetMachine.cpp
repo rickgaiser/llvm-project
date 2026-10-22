@@ -31,6 +31,8 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUDAGToDAGISelLegacyPass(PR);
   initializeVUDelaySlotFillerPass(PR);
   initializeVUPacketizerPass(PR);
+  initializeVUFoldQPass(PR);
+  initializeVUHazardsPass(PR);
 }
 
 VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
@@ -80,13 +82,16 @@ public:
   }
 
   void addPreRegAlloc() override {
-    if (getOptLevel() != CodeGenOptLevel::None)
+    if (getOptLevel() != CodeGenOptLevel::None) {
+      addPass(createVUFoldQPass());
       addPass(&MachinePipelinerID);
+    }
   }
 
   void addPreEmitPass() override {
     if (getOptLevel() != CodeGenOptLevel::None)
       addPass(createVUPacketizerPass());
+    addPass(createVUHazardsPass());
     addPass(createVUDelaySlotFillerPass());
   }
 };

@@ -107,6 +107,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   for (unsigned Op : {ISD::INTRINSIC_VOID, ISD::INTRINSIC_W_CHAIN})
     setOperationAction(Op, MVT::Other, Custom);
 
+  setTargetDAGCombine({ISD::FADD, ISD::FSUB});
+
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
     setOperationAction(Op, MVT::i16, Custom);
@@ -235,6 +237,129 @@ SDValue VUTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   default:
     llvm_unreachable("unexpected custom lowering");
   }
+}
+
+/// Returns true if \p V broadcasts one field of a VF register, and sets
+/// \p Src and \p Field.
+static bool isBroadcast(SDValue V, SDValue &Src, unsigned &Field) {
+  if (V.getOpcode() == VUISD::BCAST) {
+    Src = V.getOperand(0);
+    Field = V.getConstantOperandVal(1);
+    return true;
+  }
+  if (V.getOpcode() != VUISD::SPLAT)
+    return false;
+  SDValue S = V.getOperand(0);
+  if (S.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+      isa<ConstantSDNode>(S.getOperand(1))) {
+    Src = S.getOperand(0);
+    Field = S.getConstantOperandVal(1);
+  } else {
+    Src = S;
+    Field = 0;
+  }
+  return true;
+}
+
+namespace {
+/// A term a * b of a sum computed through ACC. Field selects a broadcast
+/// field of b (0-3), or all fields (VUISD::AccSumFull).
+struct AccTerm {
+  SDValue A, B;
+  unsigned Field;
+  bool Neg;
+};
+} // namespace
+
+static bool isAccChain(SDValue V) {
+  return (V.getOpcode() == ISD::FADD || V.getOpcode() == ISD::FSUB) &&
+         V.getValueType() == MVT::v4f32 && V.hasOneUse();
+}
+
+static void addAccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
+                       SmallVectorImpl<AccTerm> &Terms) {
+  if (V.getOpcode() == ISD::FMUL && V.hasOneUse()) {
+    SDValue X = V.getOperand(0), Y = V.getOperand(1), Src;
+    unsigned Field;
+    if (isBroadcast(Y, Src, Field))
+      Terms.push_back({X, Src, Field, Neg});
+    else if (isBroadcast(X, Src, Field))
+      Terms.push_back({Y, Src, Field, Neg});
+    else
+      Terms.push_back({X, Y, VUISD::AccSumFull, Neg});
+    return;
+  }
+  // c = c * vf0.w
+  Terms.push_back({V, DAG.getRegister(VU::VF0, MVT::v4f32), 3, Neg});
+}
+
+/// Collects the terms of a left-linear chain of FADD and FSUB nodes, in
+/// evaluation order.
+static void collectAccTerms(SDValue V, SelectionDAG &DAG,
+                            SmallVectorImpl<AccTerm> &Terms) {
+  SDValue L = V.getOperand(0), R = V.getOperand(1);
+  if (V.getOpcode() == ISD::FADD && !isAccChain(L) && isAccChain(R))
+    std::swap(L, R);
+  if (isAccChain(L))
+    collectAccTerms(L, DAG, Terms);
+  else
+    addAccLeaf(L, /*Neg=*/false, DAG, Terms);
+  addAccLeaf(R, V.getOpcode() == ISD::FSUB, DAG, Terms);
+}
+
+// Computes a sum of products as MULA, MADDA..., MADD, which forwards the
+// accumulator between the steps:
+//   (m0 * v.x + m1 * v.y) + m2 * v.z + m3
+//   -> MULAx acc, m0, v; MADDAy acc, m1, v; MADDAz acc, m2, v;
+//      MADDw d, m3, vf0
+// The terms are accumulated in the original order, so the result is the
+// same.
+SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
+  if (N->getValueType(0) != MVT::v4f32)
+    return SDValue();
+  // Only the root of a chain.
+  if (N->hasOneUse() && isAccChain(SDValue(*N->user_begin(), 0)))
+    return SDValue();
+
+  SmallVector<AccTerm, 8> Terms;
+  collectAccTerms(SDValue(N, 0), DAG, Terms);
+  // MULA can not negate; it is only worth it with a product.
+  if (Terms[0].Neg || none_of(Terms, [](const AccTerm &T) {
+        return T.B.getOpcode() != ISD::Register;
+      }))
+    return SDValue();
+
+  SDLoc DL(N);
+  SmallVector<SDValue, 16> Ops;
+  for (const AccTerm &T : Terms) {
+    Ops.push_back(T.A);
+    Ops.push_back(T.B);
+    Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
+    Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
+  }
+  return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+}
+
+SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
+                                            DAGCombinerInfo &DCI) const {
+  SelectionDAG &DAG = DCI.DAG;
+  switch (N->getOpcode()) {
+  case VUISD::SPLAT: {
+    // Broadcast straight from the field: no move to the x field first.
+    SDValue Src;
+    unsigned Field;
+    isBroadcast(SDValue(N, 0), Src, Field);
+    SDLoc DL(N);
+    return DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Src,
+                       DAG.getTargetConstant(Field, DL, MVT::i32));
+  }
+  case ISD::FADD:
+  case ISD::FSUB:
+    if (DCI.isAfterLegalizeDAG())
+      return combineAccSum(N, DAG);
+    break;
+  }
+  return SDValue();
 }
 
 SDValue VUTargetLowering::LowerFormalArguments(

@@ -21,9 +21,20 @@
 def VUret : SDNode<"VUISD::RET", SDTNone,
                    [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 
-// Broadcast the x field of a VF register to all four fields.
+// Broadcast the x field of a VF register to all four fields. Combined into
+// VUISD::BCAST before selection.
 def SDT_VUSplat : SDTypeProfile<1, 1, [SDTCisVT<0, v4f32>, SDTCisVT<1, f32>]>;
 def VUsplat : SDNode<"VUISD::SPLAT", SDT_VUSplat>;
+
+// Broadcast field $f (x = 0 ... w = 3) of a VF register (v4f32 or f32).
+def SDT_VUBcast : SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>, SDTCisFP<1>,
+                                       SDTCisVT<2, i32>]>;
+def VUbcast : SDNode<"VUISD::BCAST", SDT_VUBcast>;
+
+// A sum of products computed through ACC: MULA, MADDA/MSUBA..., MADD/MSUB.
+// The operands are (a, b, field, negate) for each term; see
+// VUTargetLowering::combineAccSum. Selected in VUDAGToDAGISel.
+def VUaccsum : SDNode<"VUISD::ACCSUM", SDTypeProfile<1, -1, [SDTCisVT<0, v4f32>]>>;
 
 //===----------------------------------------------------------------------===//
 // Pseudo instructions
@@ -58,9 +69,10 @@ let Defs = [I], isReMaterializable = 1, isAsCheapAsAMove = 1 in
 def LOADF32 : VUPseudo<(outs VF:$d), (ins f32imm:$c),
                        [(set (f32 VF:$d), (f32 fpimm:$c))], IIC_VULower>;
 
-// Splat: ADDx.xyz d, vf0, s.x; MULx.w d, vf0, s.x
-def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s),
-                     [(set (v4f32 VF:$d), (VUsplat (f32 VF:$s)))], IIC_VUUpper>;
+// Splat field f of s: ADD<f>.xyz d, vf0, s; MUL<f>.w d, vf0, s
+def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s, i32imm:$f), [], IIC_VUUpper>;
+def : Pat<(VUbcast (v4f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
+def : Pat<(VUbcast (f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 
 // Insert s.x into one field of src: ADDx.<field> d, vf0, s.x for x, y and
 // z, MULx.w d, vf0, s.x for w.
@@ -76,15 +88,10 @@ def FNEG : VUPseudo<(outs VF:$d), (ins VF:$s), [], IIC_VULower>;
 def : Pat<(fneg (v4f32 VF:$s)), (FNEG VF:$s)>;
 def : Pat<(fneg (f32 VF:$s)), (FNEG VF:$s)>;
 
-// Division and square root through Q:
-//   DIV q, a.x, b.x / SQRT q, a.x; WAITQ; ADDq.x d, vf0, q
-let Defs = [Q] in {
-def FDIV32 : VUPseudo<(outs VF:$d), (ins VF:$a, VF:$b),
-                      [(set (f32 VF:$d), (fdiv (f32 VF:$a), (f32 VF:$b)))],
-                      IIC_VULower>;
-def FSQRT32 : VUPseudo<(outs VF:$d), (ins VF:$a),
-                       [(set (f32 VF:$d), (fsqrt (f32 VF:$a)))], IIC_VULower>;
-}
+// Division and square root through Q are selected in VUDAGToDAGISel:
+//   DIV q, a.f, b.f / SQRT q, a.f; ADDq.x d, vf0, q
+// VUFoldQ folds the ADDq into the instructions that use the result, and
+// VUHazards inserts WAITQ where Q is read too early.
 
 //===----------------------------------------------------------------------===//
 // Floating-point arithmetic
@@ -101,10 +108,25 @@ foreach VT = [v4f32, f32] in {
             (ADD 15, (MUL 15, VF:$a, VF:$b), VF:$c)>;
 }
 
-// Broadcast forms: fs op ft.x
-def : Pat<(fmul (v4f32 VF:$a), (VUsplat (f32 VF:$b))), (MULx 15, VF:$a, VF:$b)>;
-def : Pat<(fadd (v4f32 VF:$a), (VUsplat (f32 VF:$b))), (ADDx 15, VF:$a, VF:$b)>;
-def : Pat<(fsub (v4f32 VF:$a), (VUsplat (f32 VF:$b))), (SUBx 15, VF:$a, VF:$b)>;
+// Broadcast forms: fs op ft.<field>
+foreach F = Fields in
+  def FieldImm # F.Value : TImmLeaf<i32, "return Imm == " # F.Value # ";">;
+
+foreach F = Fields in {
+  defvar Imm = !cast<TImmLeaf>("FieldImm" # F.Value);
+  foreach VT = [v4f32, f32] in {
+    def : Pat<(fmul (v4f32 VF:$a), (VUbcast (VT VF:$b), Imm)),
+              (!cast<Instruction>("MUL" # F.Name) 15, VF:$a, VF:$b)>;
+    def : Pat<(fadd (v4f32 VF:$a), (VUbcast (VT VF:$b), Imm)),
+              (!cast<Instruction>("ADD" # F.Name) 15, VF:$a, VF:$b)>;
+    def : Pat<(fsub (v4f32 VF:$a), (VUbcast (VT VF:$b), Imm)),
+              (!cast<Instruction>("SUB" # F.Name) 15, VF:$a, VF:$b)>;
+    def : Pat<(fmaxnum (v4f32 VF:$a), (VUbcast (VT VF:$b), Imm)),
+              (!cast<Instruction>("MAX" # F.Name) 15, VF:$a, VF:$b)>;
+    def : Pat<(fminnum (v4f32 VF:$a), (VUbcast (VT VF:$b), Imm)),
+              (!cast<Instruction>("MINI" # F.Name) 15, VF:$a, VF:$b)>;
+  }
+}
 
 // All-zero vector: SUB.xyzw d, vf0, vf0
 def : Pat<(v4f32 immAllZerosV), (SUB 15, (v4f32 VF0), (v4f32 VF0))>;

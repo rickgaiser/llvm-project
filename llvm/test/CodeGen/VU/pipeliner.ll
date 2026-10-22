@@ -13,51 +13,34 @@ define void @far_dependence() {
 ; CHECK-LABEL: far_dependence:
 ; CHECK:       ; %bb.0: ; %entry
 ; CHECK-NEXT:    nop iaddiu vi1, vi0, 65
-; CHECK-NEXT:    nop iaddiu vi4, vi0, 97
-; CHECK-NEXT:    nop lq.xyzw vf4, -64(vi1)
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 97
+; CHECK-NEXT:    nop lq.xyzw vf1, -64(vi1)
 ; CHECK-NEXT:    nop iaddi vi2, vi1, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi2, vi4, .LBB0_6
+; CHECK-NEXT:    nop ibeq vi2, vi3, .LBB0_4
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop
-; CHECK-NEXT:    nop lq.xyzw vf2, -64(vi2)
-; CHECK-NEXT:    mul.xyzw vf1, vf4, vf4 iaddi vi3, vi2, 1
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi3, vi4, .LBB0_5
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddi vi4, vi2, 1
+; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w lq.xyzw vf1, -64(vi2)
+; CHECK-NEXT:    nop ibeq vi4, vi3, .LBB0_3
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
-; CHECK-NEXT:    nop lq.xyzw vf5, -64(vi3)
-; CHECK-NEXT:    add.xyzw vf3, vf1, vf4 iaddi vi5, vi3, 1
-; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 nop
-; CHECK-NEXT:    nop ibeq vi5, vi4, .LBB0_4
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB0_3: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop move.xyzw vf4, vf2
-; CHECK-NEXT:    nop move.xyzw vf2, vf5
-; CHECK-NEXT:    nop iaddiu vi6, vi1, 0
+; CHECK-NEXT:    nop iaddiu vi5, vi1, 0
 ; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
-; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
-; CHECK-NEXT:    nop iaddiu vi3, vi5, 0
-; CHECK-NEXT:    nop lq.xyzw vf5, -64(vi3)
-; CHECK-NEXT:    mul.xyzw vf6, vf2, vf2 iaddi vi5, vi3, 1
-; CHECK-NEXT:    add.xyzw vf3, vf1, vf4 sq.xyzw vf3, 0(vi6)
-; CHECK-NEXT:    nop move.xyzw vf1, vf6
-; CHECK-NEXT:    nop ibne vi5, vi4, .LBB0_3
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 iaddiu vi2, vi4, 0
+; CHECK-NEXT:    nop lq.xyzw vf3, -64(vi2)
+; CHECK-NEXT:    nop iaddi vi4, vi2, 1
+; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w sq.xyzw vf2, 0(vi5)
+; CHECK-NEXT:    nop move.xyzw vf1, vf3
+; CHECK-NEXT:    nop ibne vi4, vi3, .LBB0_2
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB0_3:
+; CHECK-NEXT:    nop sq.xyzw vf2, 0(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
 ; CHECK-NEXT:  .LBB0_4:
-; CHECK-NEXT:    nop move.xyzw vf4, vf2
-; CHECK-NEXT:    nop sq.xyzw vf3, 0(vi1)
-; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
-; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
-; CHECK-NEXT:    nop move.xyzw vf2, vf5
-; CHECK-NEXT:  .LBB0_5:
-; CHECK-NEXT:    add.xyzw vf1, vf1, vf4 move.xyzw vf4, vf2
-; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
-; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
-; CHECK-NEXT:  .LBB0_6:
-; CHECK-NEXT:    mul.xyzw vf1, vf4, vf4 nop
-; CHECK-NEXT:    add.xyzw vf1, vf1, vf4 nop
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 nop
+; CHECK-NEXT:    maddw.xyzw vf1, vf1, vf0w nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 0(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

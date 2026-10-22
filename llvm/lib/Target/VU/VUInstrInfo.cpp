@@ -93,11 +93,14 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   }
 
   case VU::SPLAT: {
-    // ADDx.xyz d, vf0, s; MULx.w d, vf0, s (vf0.w is 1)
+    // ADD<f>.xyz d, vf0, s; MUL<f>.w d, vf0, s (vf0.w is 1)
+    static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw};
+    static constexpr unsigned Mul[] = {VU::MULx, VU::MULy, VU::MULz, VU::MULw};
     Register D = MI.getOperand(0).getReg();
     Register S = MI.getOperand(1).getReg();
-    BuildDef(VU::ADDx, D).addImm(MaskXYZ).addReg(VU::VF0).addReg(S);
-    BuildDef(VU::MULx, D)
+    unsigned Field = MI.getOperand(2).getImm();
+    BuildDef(Add[Field], D).addImm(MaskXYZ).addReg(VU::VF0).addReg(S);
+    BuildDef(Mul[Field], D)
         .addImm(MaskW)
         .addReg(VU::VF0)
         .addReg(S)
@@ -125,22 +128,6 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
         .addImm(MaskXYZW)
         .add(MI.getOperand(1));
     break;
-
-  case VU::FDIV32:
-  case VU::FSQRT32: {
-    // DIV q, a.x, b.x / SQRT q, a.x; WAITQ; ADDq.x d, vf0, q
-    if (MI.getOpcode() == VU::FDIV32)
-      Build(VU::DIV)
-          .add(MI.getOperand(1))
-          .addImm(0)
-          .add(MI.getOperand(2))
-          .addImm(0);
-    else
-      Build(VU::SQRT).add(MI.getOperand(1)).addImm(0);
-    Build(VU::WAITQ);
-    BuildDef(VU::ADDq, MI.getOperand(0).getReg()).addImm(MaskX).addReg(VU::VF0);
-    break;
-  }
   }
 
   MI.eraseFromParent();
@@ -189,12 +176,8 @@ static unsigned getResultLatency(const MachineInstr &MI, Register Reg) {
     return 5; // LOI; FMAC
   case VU::SPLAT:
     return 5; // FMAC; FMAC
-  case VU::FDIV32:
-  case VU::FSQRT32:
-    return 12; // DIV/SQRT; WAITQ; FMAC
-
-  // Q and P are only read after a WAITQ or WAITP, which waits for the result
-  // and may share its word with the reader.
+  // Q and P are read after the latency, or after a WAITQ or WAITP, which
+  // waits for the result and may share its word with the reader.
   case VU::DIV:
   case VU::SQRT:
     return 7;

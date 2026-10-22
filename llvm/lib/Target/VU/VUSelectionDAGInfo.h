@@ -16,6 +16,11 @@
 
 namespace llvm {
 
+namespace VUISD {
+/// The field operand of an ACCSUM term that uses all fields of b.
+constexpr unsigned AccSumFull = 4;
+} // namespace VUISD
+
 class VUSelectionDAGInfo : public SelectionDAGGenTargetInfo {
 public:
   VUSelectionDAGInfo();
