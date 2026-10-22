@@ -235,13 +235,13 @@ define void @late_acc_term() {
 ; CHECK-NEXT:  .LBB3_3: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 move.xyzw vf3, vf5
-; CHECK-NEXT:    mul.xyzw vf10, vf4, vf4 move.xyzw vf5, vf7
-; CHECK-NEXT:    maddx.xyzw vf9, vf2, vf8x lq.xyzw vf7, 0(vi3)
+; CHECK-NEXT:    maddx.xyzw vf9, vf2, vf8x move.xyzw vf5, vf7
+; CHECK-NEXT:    mul.xyzw vf10, vf4, vf4 lq.xyzw vf7, 0(vi3)
 ; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 iaddiu vi4, vi3, 0
 ; CHECK-NEXT:    nop iaddi vi3, vi4, 1
-; CHECK-NEXT:    mul.xyzw vf6, vf10, vf10 nop
-; CHECK-NEXT:    mul.xyzw vf4, vf7, vf7 ibne vi3, vi1, .LBB3_3
 ; CHECK-NEXT:    nop sq.xyzw vf9, 196(vi3)
+; CHECK-NEXT:    mul.xyzw vf4, vf7, vf7 ibne vi3, vi1, .LBB3_3
+; CHECK-NEXT:    mul.xyzw vf6, vf10, vf10 nop
 ; CHECK-NEXT:  .LBB3_4:
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 iaddi vi2, vi3, -2
 ; CHECK-NEXT:    maddx.xyzw vf3, vf2, vf8x nop

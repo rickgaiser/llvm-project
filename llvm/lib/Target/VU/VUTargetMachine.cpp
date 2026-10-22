@@ -35,6 +35,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUFoldQPass(PR);
   initializeVUHazardsPass(PR);
   initializeVULoopCopiesPass(PR);
+  initializeVULoopSchedulerPass(PR);
 }
 
 VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
@@ -202,6 +203,8 @@ public:
     if (getOptLevel() != CodeGenOptLevel::None)
       addPass(createVUPacketizerPass());
     addPass(createVUDelaySlotFillerPass());
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createVULoopSchedulerPass());
     addPass(createVUHazardsPass());
   }
 };

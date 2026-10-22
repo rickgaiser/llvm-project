@@ -25,6 +25,7 @@ add_llvm_target(VUCodeGen
   VUISelDAGToDAG.cpp
   VUISelLowering.cpp
   VULoopCopies.cpp
+  VULoopScheduler.cpp
   VUPacketizer.cpp
   VURegisterInfo.cpp
   VUSelectionDAGInfo.cpp

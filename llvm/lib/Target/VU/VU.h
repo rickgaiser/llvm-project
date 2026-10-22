@@ -22,6 +22,7 @@ FunctionPass *createVUPacketizerPass();
 FunctionPass *createVUFoldQPass();
 FunctionPass *createVUHazardsPass();
 FunctionPass *createVULoopCopiesPass();
+FunctionPass *createVULoopSchedulerPass();
 
 void initializeVUAsmPrinterPass(PassRegistry &);
 void initializeVUDAGToDAGISelLegacyPass(PassRegistry &);
@@ -30,6 +31,7 @@ void initializeVUPacketizerPass(PassRegistry &);
 void initializeVUFoldQPass(PassRegistry &);
 void initializeVUHazardsPass(PassRegistry &);
 void initializeVULoopCopiesPass(PassRegistry &);
+void initializeVULoopSchedulerPass(PassRegistry &);
 } // namespace llvm
 
 #endif // LLVM_LIB_TARGET_VU_VU_H
