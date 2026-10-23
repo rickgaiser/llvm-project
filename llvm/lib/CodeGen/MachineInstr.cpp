@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/MemoryLocation.h"
+#include "llvm/Analysis/ScopedNoAliasAA.h"
 #include "llvm/CodeGen/LiveRegUnits.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -1524,8 +1525,11 @@ static bool MemOperandsHaveAlias(const MachineFrameInfo &MFI,
   if (!AA)
     return true;
 
+  // Without IR values only the scoped alias metadata, which does not need
+  // the pointers, can tell the accesses apart.
   if (!ValA || !ValB)
-    return true;
+    return ScopedNoAliasAAResult::alias(MMOa->getAAInfo(), MMOb->getAAInfo()) !=
+           AliasResult::NoAlias;
 
   assert((OffsetA >= 0) && "Negative MachineMemOperand offset");
   assert((OffsetB >= 0) && "Negative MachineMemOperand offset");

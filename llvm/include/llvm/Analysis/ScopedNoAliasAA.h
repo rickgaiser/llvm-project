@@ -40,6 +40,9 @@ public:
 
   LLVM_ABI static AliasResult alias(const MemoryLocation &LocA,
                                     const MemoryLocation &LocB);
+  /// The same for accesses known only by their metadata, such as memory
+  /// operands without an IR value.
+  LLVM_ABI static AliasResult alias(const AAMDNodes &A, const AAMDNodes &B);
   LLVM_ABI AliasResult alias(const MemoryLocation &LocA,
                              const MemoryLocation &LocB, AAQueryInfo &,
                              const Instruction *);

@@ -68,6 +68,9 @@ struct MachinePipelinerPolicy {
   /// Limit the register pressure of the scheduled loop, retrying at a higher
   /// II when a schedule needs too many registers.
   bool ShouldLimitRegPressure = false;
+  /// The percentage of each register limit that a schedule must leave free,
+  /// for the estimate of the pressure to be safe.
+  unsigned RegPressureMargin = 5;
   /// Use iterative modulo scheduling, which unschedules instructions when an
   /// instruction does not fit, instead of the swing modulo scheduler. It
   /// requires the processor resources instead of the DFA.
@@ -78,6 +81,13 @@ struct MachinePipelinerPolicy {
   /// Loops with a larger minimal initiation interval are not pipelined, or -1
   /// for no limit.
   int MaxMII = 27;
+  /// How far above the minimal initiation interval a schedule is searched
+  /// for, such as one that leaves enough registers.
+  unsigned IISearchRange = 10;
+  /// Expand the schedule with modulo variable expansion, which unrolls the
+  /// kernel instead of copying values that live longer than one iteration,
+  /// where the target supports it (PipelinerLoopInfo::isMVEExpanderSupported).
+  bool UseMVE = false;
 };
 
 class LLVM_ABI MachinePipelinerLegacy : public MachineFunctionPass {

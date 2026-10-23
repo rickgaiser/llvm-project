@@ -69,13 +69,18 @@ static cl::opt<bool> EnableScopedNoAlias("enable-scoped-noalias",
 
 AliasResult ScopedNoAliasAAResult::alias(const MemoryLocation &LocA,
                                          const MemoryLocation &LocB) {
+  return alias(LocA.AATags, LocB.AATags);
+}
+
+AliasResult ScopedNoAliasAAResult::alias(const AAMDNodes &A,
+                                         const AAMDNodes &B) {
   if (!EnableScopedNoAlias)
     return AliasResult::MayAlias;
 
   // Get the attached MDNodes.
-  const MDNode *AScopes = LocA.AATags.Scope, *BScopes = LocB.AATags.Scope;
+  const MDNode *AScopes = A.Scope, *BScopes = B.Scope;
 
-  const MDNode *ANoAlias = LocA.AATags.NoAlias, *BNoAlias = LocB.AATags.NoAlias;
+  const MDNode *ANoAlias = A.NoAlias, *BNoAlias = B.NoAlias;
 
   if (!mayAliasInScopes(AScopes, BNoAlias))
     return AliasResult::NoAlias;

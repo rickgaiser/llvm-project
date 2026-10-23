@@ -45,6 +45,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/ScopedNoAliasAA.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/LiveIntervals.h"
@@ -876,7 +877,7 @@ void SwingSchedulerDAG::setMAX_II() {
   else if (II_setByPragma > 0)
     MAX_II = II_setByPragma;
   else
-    MAX_II = MII + SwpIISearchRange;
+    MAX_II = MII + Policy.IISearchRange;
 }
 
 SwingSchedulerDAG::SwingSchedulerDAG(MachineFunction &MF,
@@ -1081,7 +1082,7 @@ void SwingSchedulerDAG::schedule() {
   if (ExperimentalCodeGen && NewInstrChanges.empty()) {
     PeelingModuloScheduleExpander MSE(MF, MS, &LIS);
     MSE.expand();
-  } else if (MVECodeGen && NewInstrChanges.empty() &&
+  } else if (Policy.UseMVE && NewInstrChanges.empty() &&
              LoopPipelinerInfo->isMVEExpanderSupported() &&
              ModuloScheduleExpanderMVE::canApply(Loop)) {
     ModuloScheduleExpanderMVE MSE(MF, MS, LIS);
@@ -1183,15 +1184,14 @@ bool SUnitWithMemInfo::getUnderlyingObjects() {
   if (!MI->hasOneMemOperand())
     return false;
   MachineMemOperand *MM = *MI->memoperands_begin();
+  // TODO: A no alias scope may be valid only in a single iteration. In this
+  // case we need to peel off it like LoopAccessAnalysis does.
+  AATags = MM->getAAInfo();
   if (!MM->getValue())
     return false;
   MemOpValue = MM->getValue();
   MemOpOffset = MM->getOffset();
   llvm::getUnderlyingObjects(MemOpValue, UnderlyingObjs);
-
-  // TODO: A no alias scope may be valid only in a single iteration. In this
-  // case we need to peel off it like LoopAccessAnalysis does.
-  AATags = MM->getAAInfo();
   return true;
 }
 
@@ -1217,8 +1217,11 @@ static bool hasLoopCarriedMemDep(const SUnitWithMemInfo &Src,
   // Second, the more expensive check that uses alias analysis on the
   // base registers. If they alias, and the load offset is less than
   // the store offset, the mark the dependence as loop carried.
+  // Without IR values only the scoped alias metadata, which does not need
+  // the pointers, can tell the accesses apart.
   if (Src.isUnknown() || Dst.isUnknown())
-    return true;
+    return ScopedNoAliasAAResult::alias(Src.AATags, Dst.AATags) !=
+           AliasResult::NoAlias;
   if (Src.MemOpValue == Dst.MemOpValue && Src.MemOpOffset <= Dst.MemOpOffset)
     return true;
 
@@ -2017,8 +2020,8 @@ public:
   // Calculate the maximum register pressures of the loop and check if they
   // exceed the limit
   bool detect(const SwingSchedulerDAG *SSD, SMSchedule &Schedule,
-              const unsigned MaxStage) const {
-    assert(0 <= RegPressureMargin && RegPressureMargin <= 100 &&
+              const unsigned MaxStage, unsigned MarginPercent) const {
+    assert(MarginPercent <= 100 &&
            "the percentage of the margin must be between 0 to 100");
 
     OrderedInstsTy OrderedInsts;
@@ -2037,7 +2040,7 @@ public:
 
     for (unsigned PSet = 0; PSet < PSetNum; PSet++) {
       unsigned Limit = PressureSetLimit[PSet];
-      unsigned Margin = Limit * RegPressureMargin / 100;
+      unsigned Margin = Limit * MarginPercent / 100;
       LLVM_DEBUG(dbgs() << "PSet=" << PSet << " Limit=" << Limit
                         << " Margin=" << Margin << "\n");
       if (Limit < MaxSetPressure[PSet] + Margin) {
@@ -2909,12 +2912,18 @@ void SwingSchedulerDAG::initPolicy() {
   // After subtarget overrides, apply command line options.
   if (LimitRegPressure.getNumOccurrences())
     Policy.ShouldLimitRegPressure = LimitRegPressure;
+  if (RegPressureMargin.getNumOccurrences())
+    Policy.RegPressureMargin = RegPressureMargin;
   if (SwpIterative.getNumOccurrences())
     Policy.UseIterativeScheduler = SwpIterative;
   if (SwpMaxStages.getNumOccurrences())
     Policy.MaxStages = SwpMaxStages;
   if (SwpMaxMii.getNumOccurrences())
     Policy.MaxMII = SwpMaxMii;
+  if (MVECodeGen.getNumOccurrences())
+    Policy.UseMVE = MVECodeGen;
+  if (SwpIISearchRange.getNumOccurrences())
+    Policy.IISearchRange = SwpIISearchRange;
 }
 
 /// Process the nodes in the computed order and create the pipelined schedule
@@ -3032,7 +3041,8 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
     // schedule might generate additional register spills/fills.
     if (scheduleFound && HRPDetector)
       scheduleFound =
-          !HRPDetector->detect(this, Schedule, Schedule.getMaxStageCount());
+          !HRPDetector->detect(this, Schedule, Schedule.getMaxStageCount(),
+                               Policy.RegPressureMargin);
 
     if (scheduleFound &&
         !LoopPipelinerInfo->isScheduleAcceptable(*this, Schedule)) {
