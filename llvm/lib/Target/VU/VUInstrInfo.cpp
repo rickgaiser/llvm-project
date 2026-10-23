@@ -385,6 +385,8 @@ public:
   }
 
   bool isScheduleAcceptable(SwingSchedulerDAG &SSD, SMSchedule &SMS) override;
+  std::optional<unsigned> getScheduleCost(SwingSchedulerDAG &SSD,
+                                          SMSchedule &SMS) override;
 
   // The branch "if (Cond) goto epilogue" is inserted after a copy of the
   // loop condition computation; Cond is normalized for that use.
@@ -401,11 +403,10 @@ public:
 } // namespace
 
 /// Without unrolling, a value that lives longer than one iteration is copied
-/// in every iteration: MOVE for VF registers and IADDIU for VI registers, in
-/// the lower slot. The schedule is only accepted if the instructions and the
-/// copies fit in II words, with the branch.
-bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
-                                               SMSchedule &SMS) {
+/// in every iteration: MOVE for VF registers, in the lower slot. Returns the
+/// number of copies, and counts the words that the instructions need.
+static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
+                           unsigned &Upper, unsigned &Lower) {
   const MachineFunction &MF = SSD.MF;
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   const TargetSubtargetInfo &STI = MF.getSubtarget();
@@ -416,7 +417,9 @@ bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
            (int)SMS.cycleScheduled(SU);
   };
 
-  unsigned Upper = 0, Lower = 1; // The branch.
+  unsigned Copies = 0;
+  Upper = 0;
+  Lower = 1; // The branch.
   for (SUnit &SU : SSD.SUnits) {
     const MachineInstr &MI = *SU.getInstr();
     if (MI.isPHI() || MI.isMetaInstruction() || MI.isCopy())
@@ -461,12 +464,31 @@ bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
       }
       // A use in the cycle of the next definition reads the old value.
       if (End > Def)
-        Lower += (End - Def - 1) / II;
+        Copies += (End - Def - 1) / II;
     }
   }
+  return Copies;
+}
+
+/// The schedule is only accepted if the instructions and the copies fit in
+/// II words, with the branch.
+bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
+                                               SMSchedule &SMS) {
+  unsigned Upper, Lower;
+  unsigned Copies = countWords(SSD, SMS, Upper, Lower);
+  Lower += Copies;
+  unsigned II = SMS.getInitiationInterval();
   LLVM_DEBUG(dbgs() << "VU: II " << II << " needs " << Upper << " upper and "
                     << Lower << " lower words with copies\n");
-  return Upper <= (unsigned)II && Lower <= (unsigned)II;
+  return Upper <= II && Lower <= II;
+}
+
+/// The cost of a schedule is the number of copies. The copies of pointers do
+/// not count: VULoopCopies removes them.
+std::optional<unsigned>
+VUPipelinerLoopInfo::getScheduleCost(SwingSchedulerDAG &SSD, SMSchedule &SMS) {
+  unsigned Upper, Lower;
+  return countWords(SSD, SMS, Upper, Lower);
 }
 
 std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>

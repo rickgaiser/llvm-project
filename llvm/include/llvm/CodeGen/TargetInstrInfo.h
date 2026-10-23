@@ -867,6 +867,15 @@ public:
       return true;
     }
 
+    /// Returns the cost of the values in the schedule, which the pipeliner
+    /// lowers by moving instructions within their dependences, or
+    /// std::nullopt for the number of registers that the values need beyond
+    /// the first.
+    virtual std::optional<unsigned> getScheduleCost(SwingSchedulerDAG &SSD,
+                                                    SMSchedule &SMS) {
+      return std::nullopt;
+    }
+
     /// Create a condition to determine if the trip count of the loop is greater
     /// than TC, where TC is always one more than for the previous prologue or
     /// 0 if this is being called for the outermost prologue.

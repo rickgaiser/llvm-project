@@ -767,6 +767,9 @@ public:
   /// Return the last cycle in the finalized schedule.
   int getFinalCycle() const { return FirstCycle + InitiationInterval - 1; }
 
+  /// Return the last cycle with an instruction.
+  int getLastCycle() const { return LastCycle; }
+
   LLVM_ABI void computeStart(SUnit *SU, int *MaxEarlyStart, int *MinLateStart,
                              int II, SwingSchedulerDAG *DAG);
   LLVM_ABI bool insert(SUnit *SU, int StartCycle, int EndCycle, int II);
@@ -783,6 +786,10 @@ public:
     Register Reg;
     return getOverlappingSingleRegValue(SU, Cycle, Reg).isValid();
   }
+
+  /// The number of registers that the values defined in the loop need beyond
+  /// the first, because they live longer than one iteration.
+  LLVM_ABI unsigned getExtraRegisters() const;
 
   /// Returns true if \p SU fits the resources in \p Cycle.
   LLVM_ABI bool fitsResources(SUnit *SU, int Cycle);

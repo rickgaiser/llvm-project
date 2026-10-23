@@ -167,6 +167,11 @@ static cl::opt<unsigned> SwpIterativeBudget(
     cl::desc("The number of times that iterative modulo scheduling may "
              "schedule each instruction for one II"));
 
+static cl::opt<bool> SwpReduceLifetimes(
+    "pipeliner-reduce-lifetimes", cl::Hidden, cl::init(true),
+    cl::desc("Move instructions of an iterative modulo schedule within their "
+             "dependences to lower the cost of its values"));
+
 static cl::opt<bool> SwpIgnoreRecMII("pipeliner-ignore-recmii",
                                      cl::ReallyHidden,
                                      cl::desc("Ignore RecMII"));
@@ -3561,6 +3566,17 @@ Register SMSchedule::getOverlappingSingleRegValue(SUnit *SU, int Cycle,
   return Register();
 }
 
+unsigned SMSchedule::getExtraRegisters() const {
+  unsigned Extra = 0;
+  for (const auto &[SU, Cycle] : InstrToCycle)
+    for (const MachineOperand &MO : SU->getInstr()->all_defs())
+      if (MO.getReg().isVirtual())
+        if (auto Live = getLiveCycles(MO.getReg(), nullptr, 0))
+          if (Live->second > Live->first)
+            Extra += (Live->second - Live->first - 1) / InitiationInterval;
+  return Extra;
+}
+
 bool SMSchedule::fitsResources(SUnit *SU, int Cycle) {
   return ST.getInstrInfo()->isZeroCost(SU->getInstr()->getOpcode()) ||
          ProcItinResources.canReserveResources(*SU, Cycle);
@@ -3855,6 +3871,109 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
         if (std::optional<int> Src = Schedule.getCycle(C.Src))
           if (Cycle < *Src + C.Latency)
             Unschedule(C.Src, "predecessor");
+  }
+
+  // The schedule fits; now the values that live longer than they have to
+  // are shortened. One instruction at a time moves to the cycle within its
+  // dependences where it fits and the cost of the schedule is lowest, until
+  // no move lowers the cost. If the cycle would lower the cost but its
+  // resources are taken, the instruction in the way may move as well.
+  if (!SwpReduceLifetimes)
+    return true;
+  auto Cost = [&] {
+    if (std::optional<unsigned> C =
+            LoopPipelinerInfo->getScheduleCost(*this, Schedule))
+      return *C;
+    return Schedule.getExtraRegisters();
+  };
+  auto StagesFit = [&] {
+    return SwpMaxStages < 0 ||
+           Schedule.getMaxStageCount() <= (unsigned)SwpMaxStages;
+  };
+  // The cycles where SU keeps its dependences, within one stage more on
+  // each side of the schedule.
+  auto Window = [&](SUnit &SU) {
+    int Early = Schedule.getFirstCycle() - (int)II;
+    int Late = Schedule.getLastCycle() + (int)II;
+    for (const Constraint &C : In[SU.NodeNum])
+      if (C.Src != &SU)
+        if (std::optional<int> Src = Schedule.getCycle(C.Src))
+          Early = std::max(Early, *Src + C.Latency);
+    for (const Constraint &C : Out[SU.NodeNum])
+      if (C.Dst != &SU)
+        if (std::optional<int> Dst = Schedule.getCycle(C.Dst))
+          Late = std::min(Late, *Dst - C.Latency);
+    return std::make_pair(Early, Late);
+  };
+  struct Move {
+    int Cycle;
+    SUnit *Other = nullptr;
+    int OtherCycle = 0;
+  };
+  unsigned Best = Cost();
+  for (bool Changed = true; Changed && Best != 0;) {
+    Changed = false;
+    for (SUnit &SU : SUnits) {
+      if (SU.getInstr()->isPHI())
+        continue;
+      int Old = *Schedule.getCycle(&SU);
+      Schedule.remove(&SU);
+      auto [Early, Late] = Window(SU);
+      Move BestMove{Old};
+      for (int Cycle = Early; Cycle <= Late; ++Cycle) {
+        if (Cycle == Old || Schedule.overlapsSingleRegValue(&SU, Cycle))
+          continue;
+        bool Fits = Schedule.fitsResources(&SU, Cycle);
+        // Placed even if overbooked, to see if the cycle is worth making room
+        // for.
+        Schedule.place(&SU, Cycle);
+        unsigned NewCost = StagesFit() ? Cost() : Best;
+        Schedule.remove(&SU);
+        if (NewCost >= Best)
+          continue;
+        if (Fits) {
+          Best = NewCost;
+          BestMove = {Cycle};
+          continue;
+        }
+        for (SUnit &Other : SUnits) {
+          std::optional<int> OtherOld = Schedule.getCycle(&Other);
+          if (!OtherOld || Other.getInstr()->isPHI())
+            continue;
+          Schedule.remove(&Other);
+          if (Schedule.canPlace(&SU, Cycle)) {
+            Schedule.place(&SU, Cycle);
+            auto [OtherEarly, OtherLate] = Window(Other);
+            for (int C = OtherEarly; C <= OtherLate; ++C) {
+              if (C == *OtherOld || !Schedule.canPlace(&Other, C))
+                continue;
+              Schedule.place(&Other, C);
+              if (StagesFit())
+                if (unsigned NewCost = Cost(); NewCost < Best) {
+                  Best = NewCost;
+                  BestMove = {Cycle, &Other, C};
+                }
+              Schedule.remove(&Other);
+            }
+            Schedule.remove(&SU);
+          }
+          Schedule.place(&Other, *OtherOld);
+        }
+      }
+      if (BestMove.Other) {
+        Schedule.remove(BestMove.Other);
+        Schedule.place(BestMove.Other, BestMove.OtherCycle);
+        LLVM_DEBUG(dbgs() << "\tSU(" << BestMove.Other->NodeNum
+                          << ") moves to cycle " << BestMove.OtherCycle
+                          << "\n");
+      }
+      Schedule.place(&SU, BestMove.Cycle);
+      if (BestMove.Cycle != Old) {
+        LLVM_DEBUG(dbgs() << "\tSU(" << SU.NodeNum << ") moves to cycle "
+                          << BestMove.Cycle << ", cost " << Best << "\n");
+        Changed = true;
+      }
+    }
   }
   return true;
 }
