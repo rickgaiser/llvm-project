@@ -44,15 +44,23 @@ define void @in_loop() {
 ; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    nop lq.xyzw vf3, 0(vi1)
-; CHECK-NEXT:    mul.xyzw vf4, vf1, vf3 nop
-; CHECK-NEXT:    addaz.xyzw acc, vf4, vf4z nop
-; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf4x nop
-; CHECK-NEXT:    muly.w vf3, vf0, vf4y nop
-; CHECK-NEXT:    nop sq.xyzw vf3, 100(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 1
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibne vi1, vi2, .LBB1_1
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    mul.xyzw vf4, vf1, vf3 nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    addaz.xyzw acc, vf4, vf4z nop
+; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf4x nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    muly.w vf3, vf0, vf4y nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibne vi1, vi2, .LBB1_1
+; CHECK-NEXT:    nop sq.xyzw vf3, 99(vi1)
 ; CHECK-NEXT:  .LBB1_2: ; %exit
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

@@ -26,10 +26,9 @@ define void @far_dependence() {
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 sq.xyzw vf2, -2(vi2)
-; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w lq.xyzw vf1, -64(vi2)
 ; CHECK-NEXT:    nop iaddi vi2, vi2, 1
-; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf1 sq.xyzw vf2, -3(vi2)
+; CHECK-NEXT:    maddw.xyzw vf2, vf1, vf0w lq.xyzw vf1, -65(vi2)
 ; CHECK-NEXT:    nop ibne vi2, vi1, .LBB0_2
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_3:
@@ -135,10 +134,10 @@ define void @two_acc_chains() {
 ; CHECK-NEXT:  .LBB2_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    mulax.xyzw acc, vf1, vf9x sq.xyzw vf10, 196(vi2)
-; CHECK-NEXT:    madday.xyzw acc, vf2, vf9y nop
-; CHECK-NEXT:    maddaz.xyzw acc, vf3, vf9z lq.xyzw vf9, 0(vi2)
-; CHECK-NEXT:    maddw.xyzw vf10, vf4, vf0w iaddi vi2, vi2, 2
-; CHECK-NEXT:    mulax.xyzw acc, vf5, vf8x sq.xyzw vf11, 195(vi2)
+; CHECK-NEXT:    madday.xyzw acc, vf2, vf9y iaddi vi2, vi2, 2
+; CHECK-NEXT:    maddaz.xyzw acc, vf3, vf9z lq.xyzw vf9, -2(vi2)
+; CHECK-NEXT:    maddw.xyzw vf10, vf4, vf0w sq.xyzw vf11, 195(vi2)
+; CHECK-NEXT:    mulax.xyzw acc, vf5, vf8x nop
 ; CHECK-NEXT:    madday.xyzw acc, vf6, vf8y ibne vi2, vi1, .LBB2_2
 ; CHECK-NEXT:    maddz.xyzw vf11, vf7, vf8z lq.xyzw vf8, -1(vi2)
 ; CHECK-NEXT:  .LBB2_3:
