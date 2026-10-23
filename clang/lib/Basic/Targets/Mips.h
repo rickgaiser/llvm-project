@@ -218,8 +218,12 @@ public:
         "$w28", "$w29", "$w30", "$w31",
         // MSA control register names
         "$msair", "$msacsr", "$msaaccess", "$msasave", "$msamodify",
-        "$msarequest", "$msamap", "$msaunmap"
-    };
+        "$msarequest", "$msamap", "$msaunmap",
+        // R5900 VU0 vector float register names
+        "$vf0", "$vf1", "$vf2", "$vf3", "$vf4", "$vf5", "$vf6", "$vf7", "$vf8",
+        "$vf9", "$vf10", "$vf11", "$vf12", "$vf13", "$vf14", "$vf15", "$vf16",
+        "$vf17", "$vf18", "$vf19", "$vf20", "$vf21", "$vf22", "$vf23", "$vf24",
+        "$vf25", "$vf26", "$vf27", "$vf28", "$vf29", "$vf30", "$vf31"};
     return llvm::ArrayRef(GCCRegNames);
   }
 

@@ -220,3 +220,13 @@ vrsqrt $Q, $vf11w, $vf2y
 vsqrt $Q, $vf2x
 # CHECK: vsqrt	$q, $vf7w                      # encoding: [0xbd,0x03,0x87,0x4b]
 vsqrt $Q, $vf7w
+
+# The interlocked moves (.i, bit 0): they wait for a VU0 micro program to end.
+# CHECK: qmfc2.i $8, $vf25               # encoding: [0x01,0xc8,0x28,0x48]
+qmfc2.i $8, $vf25
+# CHECK: qmtc2.i $8, $vf25               # encoding: [0x01,0xc8,0xa8,0x48]
+qmtc2.i $8, $vf25
+# CHECK: cfc2.i  $8, $29                 # encoding: [0x01,0xe8,0x48,0x48]
+cfc2.i $8, $29
+# CHECK: ctc2.i  $8, $27                 # encoding: [0x01,0xd8,0xc8,0x48]
+ctc2.i $8, $27

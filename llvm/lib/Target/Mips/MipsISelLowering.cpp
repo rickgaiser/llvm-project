@@ -4766,6 +4766,15 @@ parseRegForInlineAsmConstraint(StringRef C, MVT VT) const {
     RC = TRI->getRegClass(Mips::FCCRegClassID);
   else if (Prefix == "$w") { // Parse $w0-$w31.
     RC = getRegClassFor((VT == MVT::Other) ? MVT::v16i8 : VT);
+  } else if (Prefix == "$vf") { // Parse $vf0-$vf31 (R5900 VU0).
+    if (!Subtarget.hasVU0() || Reg > 31)
+      return std::make_pair(0U, nullptr);
+    // The class is in allocation order: find the register by its number.
+    RC = TRI->getRegClass(Mips::VFRegsRegClassID);
+    for (MCPhysReg R : *RC)
+      if (TRI->getEncodingValue(R) == Reg)
+        return std::make_pair(R, RC);
+    return std::make_pair(0U, nullptr);
   } else { // Parse $0-$31.
     assert(Prefix == "$");
     RC = getRegClassFor((VT == MVT::Other) ? MVT::i32 : VT);

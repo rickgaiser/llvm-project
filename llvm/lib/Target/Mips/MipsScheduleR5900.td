@@ -213,9 +213,9 @@ def R5900WriteVU0MoveIn : R5900Write<[R5900Pipe1, R5900C2], 2>;
 def R5900WriteVU0MoveOut : R5900Write<[R5900Pipe1, R5900C2], 2>;
 def R5900WriteVU0Store : R5900Write<[R5900Pipe1, R5900C2]>;
 
-def : InstRW<[R5900WriteVU0MoveIn], (instrs LQC2, CTC2, QMTC2)>;
-def : InstRW<[R5900WriteVU0MoveOut], (instrs CFC2)>;
-def : InstRW<[R5900WriteVU0MoveOut, R5900ReadFPRLate], (instrs QMFC2)>;
+def : InstRW<[R5900WriteVU0MoveIn], (instrs LQC2, CTC2, QMTC2, CTC2_I, QMTC2_I)>;
+def : InstRW<[R5900WriteVU0MoveOut], (instrs CFC2, CFC2_I)>;
+def : InstRW<[R5900WriteVU0MoveOut, R5900ReadFPRLate], (instrs QMFC2, QMFC2_I)>;
 def : InstRW<[R5900WriteVU0Store, R5900ReadFPRLate], (instrs SQC2)>;
 
 // Branches and jumps

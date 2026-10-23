@@ -822,6 +822,23 @@ let Predicates = [HasVU0] in {
     let DecoderNamespace = "R5900";
   }
 
+  // The interlocked moves (.i): they wait for a VU0 micro program to end
+  // first (a micro program and macro code share the VU0 registers).
+  let DecoderNamespace = "R5900", hasSideEffects = 1 in {
+  def CFC2_I : InstSE<(outs GPR32Opnd:$rt), (ins COP2Opnd:$rd),
+                      "cfc2.i\t$rt, $rd", [], FrmFR, "cfc2.i">,
+               MFC2_FM<0b00010, 1>;
+  def CTC2_I : InstSE<(outs COP2Opnd:$rd), (ins GPR32Opnd:$rt),
+                      "ctc2.i\t$rt, $rd", [], FrmFR, "ctc2.i">,
+               MFC2_FM<0b00110, 1>;
+  def QMFC2_I : InstSE<(outs GPR128Opnd:$rt), (ins VFOpnd:$rd),
+                       "qmfc2.i\t$rt, $rd", [], FrmFR, "qmfc2.i">,
+                MFC2_FM<0b00001, 1>;
+  def QMTC2_I : InstSE<(outs VFOpnd:$rd), (ins GPR128Opnd:$rt),
+                       "qmtc2.i\t$rt, $rd", [], FrmFR, "qmtc2.i">,
+                MFC2_FM<0b00101, 1>;
+  }
+
   // Bitcast patterns between v4f32 (VF register) and v4i32 (GPR128)
   // Used for EXTRACT_VECTOR_ELT and INSERT_VECTOR_ELT lowering
   def : Pat<(v4i32 (bitconvert v4f32:$src)), (QMFC2 v4f32:$src)>;

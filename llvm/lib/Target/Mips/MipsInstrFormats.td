@@ -750,8 +750,9 @@ class MFC1_FM<bits<5> funct> : StdArch {
 }
 
 // R5900 COP2 control register move format (CFC2/CTC2)
-// Format: COP2(6) | funct(5) | rt(5) | rd(5) | 0(11)
-class MFC2_FM<bits<5> funct> : StdArch {
+// Format: COP2(6) | funct(5) | rt(5) | rd(5) | 0(10) | I(1)
+// I (.i): interlock, the move waits for a VU0 micro program to end.
+class MFC2_FM<bits<5> funct, bit interlock = 0> : StdArch {
   bits<5> rt;
   bits<5> rd;
 
@@ -761,7 +762,8 @@ class MFC2_FM<bits<5> funct> : StdArch {
   let Inst{25 -21} = funct; // sub-opcode: 2=CFC2, 6=CTC2
   let Inst{20 -16} = rt;    // GPR
   let Inst{15 -11} = rd;    // COP2 control register
-  let Inst{10 -0} = 0;
+  let Inst{10 -1} = 0;
+  let Inst{0} = interlock;
 }
 
 class LW_FM<bits<6> op> : StdArch {
