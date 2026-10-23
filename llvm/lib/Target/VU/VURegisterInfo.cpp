@@ -58,6 +58,19 @@ VURegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   return RC;
 }
 
+unsigned VURegisterInfo::getRegPressureSetLimit(const MachineFunction &MF,
+                                                unsigned Idx) const {
+  // ACCVF and QVF put ACC and Q in the pressure sets of VF, which counts them
+  // as two more registers for VF values. They hold their own values, and the
+  // values of ACC and Q count in these sets too, so only the VF registers are
+  // available.
+  for (const int *PSet = getRegClassPressureSets(&VU::VFRegClass); *PSet != -1;
+       ++PSet)
+    if (static_cast<unsigned>(*PSet) == Idx)
+      return VU::VFRegClass.getNumRegs();
+  return VUGenRegisterInfo::getRegPressureSetLimit(MF, Idx);
+}
+
 Register VURegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   return VU::VI0;
 }

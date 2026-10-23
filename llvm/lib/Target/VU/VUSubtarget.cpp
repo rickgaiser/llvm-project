@@ -45,6 +45,9 @@ void VUSubtarget::overridePipelinerPolicy(
   // and the loops are short, so the chain of one iteration spans more stages
   // than on other targets.
   Policy.MaxStages = 8;
+  // A micro program is mostly its loops, and a loop body of many FMAC
+  // instructions, such as a polynomial, is the common case, not the exception.
+  Policy.MaxMII = -1;
 }
 
 namespace {
