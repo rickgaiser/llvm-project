@@ -7,6 +7,40 @@
 # a word before it.
 
 ---
+# The word of the read is a bundle with a free lower half already: the read in
+# a delay slot.
+name: bundled_word
+tracksRegLiveness: true
+body: |
+  ; CHECK-LABEL: name: bundled_word
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.1(0x80000000)
+  ; CHECK-NEXT:   liveins: $vf1, $vf2, $vi1
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $q = DIV $vf1, 3, $vf1, 3
+  ; CHECK-NEXT:   IBNE $vi1, $vi0, %bb.1
+  ; CHECK-NEXT:   BUNDLE implicit-def $q, implicit-def $vf3, implicit $q, implicit $vf2 {
+  ; CHECK-NEXT:     WAITQ implicit-def $q, implicit $q
+  ; CHECK-NEXT:     $vf3 = MULq 15, $vf2, internal $q
+  ; CHECK-NEXT:     DELAY_SLOT
+  ; CHECK-NEXT:   }
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   PROGRAM_END
+  bb.0:
+    successors: %bb.1
+    liveins: $vf1, $vf2, $vi1
+    $q = DIV $vf1, 3, $vf1, 3
+    IBNE $vi1, $vi0, %bb.1
+    BUNDLE implicit-def $vf3, implicit $vf2, implicit $q {
+      $vf3 = MULq 15, $vf2, $q
+      DELAY_SLOT
+    }
+  bb.1:
+    PROGRAM_END
+...
+
+---
 # The DIV of the previous iteration is only 2 words before the read.
 name: loop_carried
 tracksRegLiveness: true

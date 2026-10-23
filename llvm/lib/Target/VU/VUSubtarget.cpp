@@ -37,6 +37,9 @@ VUSubtarget::VUSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
 void VUSubtarget::overridePipelinerPolicy(
     MachinePipelinerPolicy &Policy) const {
   Policy.ShouldLimitRegPressure = true;
+  // There is no spilling: a kernel that needs more registers than estimated
+  // can not be compiled. Leave 3 of the 31 VF registers.
+  Policy.RegPressureMargin = 10;
   // Iterative modulo scheduling unschedules instructions to make room, which
   // places the values of ACC and Q, with a single register each, much better
   // than swing modulo scheduling.
@@ -48,6 +51,14 @@ void VUSubtarget::overridePipelinerPolicy(
   // A micro program is mostly its loops, and a loop body of many FMAC
   // instructions, such as a polynomial, is the common case, not the exception.
   Policy.MaxMII = -1;
+  // Unrolling the kernel instead of copying long lived values: micro memory
+  // has room for it, and a copy takes a lower slot and lengthens the
+  // recurrence that it is on.
+  Policy.UseMVE = true;
+  // A long loop body that needs more registers when its iterations overlap
+  // more is still much faster at a somewhat larger initiation interval than
+  // not pipelined.
+  Policy.IISearchRange = 40;
 }
 
 namespace {

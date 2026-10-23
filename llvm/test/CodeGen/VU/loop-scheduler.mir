@@ -25,19 +25,19 @@ body: |
   ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; CHECK-NEXT:   liveins: $vf1, $vf6, $vi3, $vi6
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf2, implicit-def $vi3, implicit $vf1, implicit $vi3 {
+  ; CHECK-NEXT:   BUNDLE implicit-def $vf2, implicit-def $vi3, implicit $vf1, implicit killed $vi3 {
   ; CHECK-NEXT:     $vf2 = MUL 15, $vf1, $vf1
-  ; CHECK-NEXT:     $vi3 = IADDI $vi3, 1
+  ; CHECK-NEXT:     $vi3 = IADDI killed $vi3, 1
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   $vf5 = MUL 15, $vf6, $vf6
   ; CHECK-NEXT:   NOP
   ; CHECK-NEXT:   NOP
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf4, implicit $vf2, implicit $vi3, implicit $vi6 {
-  ; CHECK-NEXT:     $vf4 = ADD 15, $vf2, $vf2
+  ; CHECK-NEXT:   BUNDLE implicit-def dead $vf4, implicit killed $vf2, implicit $vi3, implicit $vi6 {
+  ; CHECK-NEXT:     dead $vf4 = ADD 15, killed $vf2, killed $vf2
   ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.1
   ; CHECK-NEXT:   }
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf7, implicit $vf5 {
-  ; CHECK-NEXT:     $vf7 = ADD 15, $vf5, $vf5
+  ; CHECK-NEXT:   BUNDLE implicit-def dead $vf7, implicit killed $vf5 {
+  ; CHECK-NEXT:     dead $vf7 = ADD 15, killed $vf5, killed $vf5
   ; CHECK-NEXT:     DELAY_SLOT
   ; CHECK-NEXT:   }
   ; CHECK-NEXT: {{  $}}
@@ -76,20 +76,20 @@ body: |
   ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; CHECK-NEXT:   liveins: $vf1, $vf6, $vi3, $vi6
   ; CHECK-NEXT: {{  $}}
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf31, implicit-def $vi3, implicit $vf1, implicit $vi3 {
+  ; CHECK-NEXT:   BUNDLE implicit-def $vf31, implicit-def $vi3, implicit $vf1, implicit killed $vi3 {
   ; CHECK-NEXT:     $vf31 = MUL 15, $vf1, $vf1
-  ; CHECK-NEXT:     $vi3 = IADDI $vi3, 1
+  ; CHECK-NEXT:     $vi3 = IADDI killed $vi3, 1
   ; CHECK-NEXT:   }
   ; CHECK-NEXT:   $vf30 = MUL 15, $vf6, $vf6
   ; CHECK-NEXT:   NOP
   ; CHECK-NEXT:   NOP
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf4, implicit $vf31, implicit $vi3, implicit $vi6 {
-  ; CHECK-NEXT:     $vf4 = ADD 15, $vf31, $vf31
+  ; CHECK-NEXT:   BUNDLE implicit-def dead $vf4, implicit $vf31, implicit $vi3, implicit $vi6 {
+  ; CHECK-NEXT:     dead $vf4 = ADD 15, $vf31, $vf31
   ; CHECK-NEXT:     IBNE $vi3, $vi6, %bb.1
   ; CHECK-NEXT:   }
-  ; CHECK-NEXT:   BUNDLE implicit-def $vf7, implicit $vf30, implicit $vf31, implicit $vi3 {
-  ; CHECK-NEXT:     $vf7 = ADD 15, $vf30, $vf30
-  ; CHECK-NEXT:     SQ 15, $vf31, -1, $vi3
+  ; CHECK-NEXT:   BUNDLE implicit-def dead $vf7, implicit killed $vf30, implicit killed $vf31, implicit $vi3 {
+  ; CHECK-NEXT:     dead $vf7 = ADD 15, killed $vf30, killed $vf30
+  ; CHECK-NEXT:     SQ 15, killed $vf31, -1, $vi3
   ; CHECK-NEXT:     DELAY_SLOT
   ; CHECK-NEXT:   }
   ; CHECK-NEXT: {{  $}}

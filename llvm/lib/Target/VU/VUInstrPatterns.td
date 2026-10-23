@@ -101,10 +101,27 @@ def INSERT_FIELD : VUPseudo<(outs VF:$d),
                             IIC_VUUpper>;
 def : Pat<(vector_insert (v4f32 VF:$src), (f32 VF:$s), imm:$f),
           (INSERT_FIELD VF:$src, VF:$s, imm:$f, 0)>;
-let AddedComplexity = 1 in
+// Into w only from x or w: see INSERT_FIELD in VUInstrInfo.cpp. Field y or z
+// is extracted to x first.
+def FieldXYZ : PatLeaf<(imm), [{ return N->getZExtValue() < 3; }]>;
+def FieldXW : PatLeaf<(imm), [{
+  return N->getZExtValue() == 0 || N->getZExtValue() == 3;
+}]>;
+let AddedComplexity = 1 in {
 def : Pat<(vector_insert (v4f32 VF:$src),
-                         (f32 (vector_extract (v4f32 VF:$v), imm:$sf)), imm:$f),
+                         (f32 (vector_extract (v4f32 VF:$v), imm:$sf)),
+                         FieldXYZ:$f),
           (INSERT_FIELD VF:$src, VF:$v, imm:$f, imm:$sf)>;
+def : Pat<(vector_insert (v4f32 VF:$src),
+                         (f32 (vector_extract (v4f32 VF:$v), FieldXW:$sf)), 3),
+          (INSERT_FIELD VF:$src, VF:$v, 3, imm:$sf)>;
+}
+
+// Insert Q into field f of src: ADDq.<f> d, vf0, q, MULq.w d, vf0, q for w.
+// VUFoldQ makes it from an INSERT_FIELD of a division result.
+let Constraints = "$d = $src" in
+def INSERT_Q : VUPseudo<(outs VF:$d), (ins VF:$src, QR:$q, i16imm:$f), [],
+                        IIC_VUUpper>;
 
 // Insert a VI register into one field: MFIR.<field> d, s
 let Constraints = "$d = $src" in

@@ -13,12 +13,13 @@ declare void @llvm.vu.sq(<4 x float>, i16)
 define void @no_loop() {
 ; CHECK-LABEL: no_loop:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    maxw.xyzw vf3, vf0, vf0w lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
-; CHECK-NEXT:    addaz.xyzw acc, vf2, vf2z nop
-; CHECK-NEXT:    maddx.xyzw vf2, vf3, vf2x nop
-; CHECK-NEXT:    muly.w vf1, vf0, vf2y nop
+; CHECK-NEXT:    addz.xyzw vf3, vf2, vf2z nop
+; CHECK-NEXT:    addx.xyzw vf2, vf3, vf2x nop
+; CHECK-NEXT:    addy.x vf2, vf0, vf2y nop
+; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -38,29 +39,36 @@ define void @no_loop() {
 define void @in_loop() {
 ; CHECK-LABEL: in_loop:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    maxw.xyzw vf2, vf0, vf0w lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop iaddiu vi1, vi0, 10
 ; CHECK-NEXT:    nop iaddiu vi2, vi0, 50
 ; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop lq.xyzw vf3, 0(vi1)
+; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 1
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    mul.xyzw vf4, vf1, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf1, vf2 nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    addaz.xyzw acc, vf4, vf4z nop
-; CHECK-NEXT:    maddx.xyzw vf4, vf2, vf4x nop
+; CHECK-NEXT:    addz.xyzw vf4, vf3, vf3z nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    muly.w vf3, vf0, vf4y nop
+; CHECK-NEXT:    addx.xyzw vf3, vf4, vf3x nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    addy.x vf3, vf0, vf3y nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop mr32.w vf2, vf3
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop ibne vi1, vi2, .LBB1_1
-; CHECK-NEXT:    nop sq.xyzw vf3, 99(vi1)
+; CHECK-NEXT:    nop sq.xyzw vf2, 99(vi1)
 ; CHECK-NEXT:  .LBB1_2: ; %exit
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -94,9 +102,8 @@ define void @w_field() {
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
-; CHECK-NEXT:    adday.xyzw acc, vf2, vf2y nop
-; CHECK-NEXT:    maddx.xyzw vf2, vf0, vf2x nop
-; CHECK-NEXT:    mulw.w vf1, vf0, vf2w nop
+; CHECK-NEXT:    addy.xyzw vf3, vf2, vf2y nop
+; CHECK-NEXT:    addx.w vf1, vf3, vf2x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -119,9 +126,9 @@ define void @w_field_second() {
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
-; CHECK-NEXT:    addax.xyzw acc, vf2, vf2x nop
-; CHECK-NEXT:    maddy.xyzw vf2, vf0, vf2y nop
-; CHECK-NEXT:    mulw.w vf1, vf0, vf2w nop
+; CHECK-NEXT:    addw.xyzw vf3, vf2, vf2w nop
+; CHECK-NEXT:    addy.xyzw vf2, vf3, vf2y nop
+; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -145,7 +152,8 @@ define void @two_terms() {
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
 ; CHECK-NEXT:    addz.xyzw vf2, vf2, vf2z nop
-; CHECK-NEXT:    muly.w vf1, vf0, vf2y nop
+; CHECK-NEXT:    addy.x vf2, vf0, vf2y nop
+; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -167,7 +175,8 @@ define void @difference() {
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
 ; CHECK-NEXT:    subw.xyzw vf2, vf2, vf2w nop
-; CHECK-NEXT:    muly.w vf1, vf0, vf2y nop
+; CHECK-NEXT:    addy.x vf2, vf0, vf2y nop
+; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
@@ -185,13 +194,13 @@ define void @difference() {
 define void @four_terms() {
 ; CHECK-LABEL: four_terms:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    maxw.xyzw vf3, vf0, vf0w lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf2, vf1, vf2 nop
-; CHECK-NEXT:    subay.xyzw acc, vf2, vf2y nop
-; CHECK-NEXT:    msubaz.xyzw acc, vf3, vf2z nop
-; CHECK-NEXT:    maddw.xyzw vf2, vf3, vf2w nop
-; CHECK-NEXT:    mulx.w vf1, vf0, vf2x nop
+; CHECK-NEXT:    suby.xyzw vf3, vf2, vf2y nop
+; CHECK-NEXT:    subz.xyzw vf3, vf3, vf2z nop
+; CHECK-NEXT:    addw.xyzw vf2, vf3, vf2w nop
+; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

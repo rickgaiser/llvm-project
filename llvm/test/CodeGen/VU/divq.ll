@@ -74,7 +74,7 @@ define void @fields() {
 ; CHECK-NEXT:    addq.x vf1, vf0, q waitq
 ; CHECK-NEXT:    add.xyzw vf1, vf2, vf1 nop
 ; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
-; CHECK-NEXT:    mulx.w vf1, vf0, vf1x nop
+; CHECK-NEXT:    nop mr32.w vf1, vf1
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

@@ -157,6 +157,21 @@ bool VUHazards::runOnMachineFunction(MachineFunction &MF) {
         Changed = true;
         continue;
       }
+      if (!W.HasLower && I->isBundle()) {
+        // Share the word of the reader, which is a bundle already: an upper
+        // instruction and a marker such as DELAY_SLOT. It is bundled again
+        // with the WAITQ first.
+        MachineBasicBlock::instr_iterator B = std::next(I->getIterator()),
+                                          E = B;
+        while (E != MBB.instr_end() && E->isBundledWithPred())
+          (E++)->unbundleFromPred();
+        I->eraseFromParent();
+        MachineInstr *Wait = BuildMI(MBB, B, DL, TII.get(VU::WAITQ));
+        finalizeBundle(MBB, Wait->getIterator(), E);
+        I = MachineBasicBlock::iterator(&*std::prev(Wait->getIterator()));
+        Changed = true;
+        continue;
+      }
       MachineInstr *Wait = BuildMI(MBB, I, DL, TII.get(VU::WAITQ));
       if (!W.HasLower) {
         // Share the word of the reader.

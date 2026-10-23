@@ -99,7 +99,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
     setOperationAction(Op, MVT::Other, Custom);
 
   setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
-                       ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT});
+                       ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT,
+                       ISD::EXTRACT_VECTOR_ELT});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -304,12 +305,32 @@ static bool isAccChain(SDValue V) {
          V.getValueType() == MVT::v4f32 && V.hasOneUse();
 }
 
+static SDValue getAsBroadcast(SDValue V, SelectionDAG &DAG);
+
 static void addAccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
                        SmallVectorImpl<AccTerm> &Terms) {
   if (V.getOpcode() == ISD::FMUL && V.hasOneUse()) {
     SDValue X = V.getOperand(0), Y = V.getOperand(1), Src;
+    // An operand that is not combined yet, such as max(v.x, 0), may be a
+    // broadcast too.
+    if (SDValue B = getAsBroadcast(Y, DAG))
+      Y = B;
+    else if (SDValue B = getAsBroadcast(X, DAG))
+      X = B;
     unsigned Field;
-    if (isBroadcast(Y, Src, Field))
+    // With two broadcasts, the one from outside the block is the full
+    // operand: its splat can be hoisted out of a loop, and the value made
+    // here is read by its field.
+    SDValue XSrc;
+    unsigned XField;
+    auto IsOutside = [](SDValue V) {
+      return V.getOpcode() == ISD::CopyFromReg ||
+             V.getOpcode() == ISD::Register || isConstOrConstSplatFP(V);
+    };
+    if (isBroadcast(Y, Src, Field) && isBroadcast(X, XSrc, XField) &&
+        IsOutside(Src) && !IsOutside(XSrc))
+      Terms.push_back({Y, XSrc, XField, Neg});
+    else if (isBroadcast(Y, Src, Field))
       Terms.push_back({X, Src, Field, Neg});
     else if (isBroadcast(X, Src, Field))
       Terms.push_back({Y, Src, Field, Neg});
@@ -317,7 +338,22 @@ static void addAccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
       Terms.push_back({X, Y, VUISD::AccSumFull, Neg});
     return;
   }
-  // c = c * vf0.w
+  // A constant c = ones * c.x, which combineAccSum turns into an exact form
+  // (the PS2's multiplier is 1 ULP low with 1.0 in fs). Other values
+  // c = c * vf0.w: 1.0 in ft is exact.
+  // (also a splat of it that is a broadcast already)
+  ConstantFPSDNode *C = isConstOrConstSplatFP(V);
+  if (!C && (V.getOpcode() == VUISD::SPLAT || V.getOpcode() == VUISD::BCAST))
+    C = dyn_cast<ConstantFPSDNode>(V.getOperand(0));
+  if (C) {
+    SDLoc DL(V);
+    SDValue Ones = DAG.getNode(VUISD::BCAST, DL, MVT::v4f32,
+                               DAG.getRegister(VU::VF0, MVT::v4f32),
+                               DAG.getTargetConstant(3, DL, MVT::i32));
+    Terms.push_back(
+        {Ones, DAG.getConstantFP(C->getValueAPF(), DL, MVT::f32), 0, Neg});
+    return;
+  }
   Terms.push_back({V, DAG.getRegister(VU::VF0, MVT::v4f32), 3, Neg});
 }
 
@@ -351,13 +387,34 @@ SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
 
   SmallVector<AccTerm, 8> Terms;
   collectAccTerms(SDValue(N, 0), DAG, Terms);
-  // MULA can not negate; it is only worth it with a product.
-  if (Terms[0].Neg || none_of(Terms, [](const AccTerm &T) {
+  // A constant term ones * c.x would have 1.0 in fs, which the PS2's
+  // multiplier gets 1 ULP low: the last one is added after the products by a
+  // broadcast ADD (the same instruction count, and the constant is still
+  // read by its field), others are c * vf0.w with a splat of c.
+  // (a product with a constant, a * c.x, is not one)
+  auto IsConst = [](const AccTerm &T) {
+    auto *R = T.A.getOpcode() == VUISD::BCAST
+                  ? dyn_cast<RegisterSDNode>(T.A.getOperand(0))
+                  : nullptr;
+    return T.B.getOpcode() == ISD::ConstantFP && R && R->getReg() == VU::VF0 &&
+           T.A.getConstantOperandVal(1) == 3;
+  };
+  SDLoc DL(N);
+  std::optional<AccTerm> Last;
+  if (IsConst(Terms.back())) {
+    Last = Terms.back();
+    Terms.pop_back();
+  }
+  for (AccTerm &T : Terms)
+    if (IsConst(T))
+      T = {DAG.getNode(VUISD::SPLAT, DL, MVT::v4f32, T.B),
+           DAG.getRegister(VU::VF0, MVT::v4f32), 3, T.Neg};
+  // MULA can not negate; it is only worth it with two terms and a product.
+  if (Terms.size() < 2 || Terms[0].Neg || none_of(Terms, [](const AccTerm &T) {
         return T.B.getOpcode() != ISD::Register;
       }))
     return SDValue();
 
-  SDLoc DL(N);
   SmallVector<SDValue, 16> Ops;
   for (const AccTerm &T : Terms) {
     Ops.push_back(T.A);
@@ -365,7 +422,13 @@ SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
     Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
     Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
   }
-  return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+  SDValue Sum = DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+  if (!Last)
+    return Sum;
+  SDValue C = DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Last->B,
+                          DAG.getTargetConstant(0, DL, MVT::i32));
+  return DAG.getNode(Last->Neg ? ISD::FSUB : ISD::FADD, DL, MVT::v4f32, Sum, C,
+                     N->getFlags());
 }
 
 /// Returns true if \p V is field 1-3 of a vector, which a scalar operation
@@ -405,13 +468,11 @@ static void collectLaneTerms(SDValue V, SelectionDAG &DAG,
 }
 
 // Adds fields of vectors, like a dot product, in the field of the first
-// term, which ADDA adds the second one to as a broadcast. The other terms are
-// added through ACC with a vector of ones, which is vf0 for the w field:
-//   (t.y + t.z) + t.x  ->  ADDAz.y acc, t, t.z; MADDx.y d, ones, t.x
-// Two terms are one ADD. The scalar result is d.y; selection reads it from
-// there, so no field is moved to x. The products are exact and the sum is
-// rounded as before; the first two terms are swapped for the w field, which
-// gives the same sum.
+// term, the others added as broadcasts:
+//   (t.y + t.z) + t.x  ->  ADDz.y d, t, t.z; ADDx.y d, d, t.x
+// The scalar result is d.y; selection reads it from there, so no field is
+// moved to x. Each step rounds like the scalar sum. (Through ACC the others
+// would be ones * t.k, with 1.0 in fs: 1 ULP low on the PS2.)
 static SDValue combineLaneSum(SDNode *N, SelectionDAG &DAG) {
   if (N->getValueType(0) != MVT::f32 ||
       (N->hasOneUse() && isScalarSum(SDValue(*N->user_begin(), 0))))
@@ -421,25 +482,16 @@ static SDValue combineLaneSum(SDNode *N, SelectionDAG &DAG) {
   if (Terms[0].Neg || Terms.size() < 2 || Terms.size() > 4 ||
       none_of(Terms, [](const AccTerm &T) { return T.Field != 0; }))
     return SDValue();
-  if (Terms[0].Field != 3 && Terms[1].Field == 3 && !Terms[1].Neg)
-    std::swap(Terms[0], Terms[1]);
   SDLoc DL(N);
   unsigned Field = Terms[0].Field;
-  SDValue VF0 = DAG.getRegister(VU::VF0, MVT::v4f32);
-  SDValue Ones = Field == 3
-                     ? VF0
-                     : DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, VF0,
-                                   DAG.getTargetConstant(3, DL, MVT::i32));
-  Terms[0].A = Terms[0].B;
-  Terms[0].Field = VUISD::AccSumAdd;
-  SmallVector<SDValue, 16> Ops;
-  for (const AccTerm &T : Terms) {
-    Ops.push_back(T.Field == VUISD::AccSumAdd ? T.A : Ones);
-    Ops.push_back(T.B);
-    Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
-    Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
-  }
-  SDValue Sum = DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
+  SDValue Sum = Terms[0].B;
+  if (Sum.getValueType() != MVT::v4f32)
+    Sum = DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, MVT::v4f32, Sum);
+  for (const AccTerm &T : drop_begin(Terms))
+    Sum = DAG.getNode(T.Neg ? ISD::FSUB : ISD::FADD, DL, MVT::v4f32, Sum,
+                      DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, T.B,
+                                  DAG.getTargetConstant(T.Field, DL, MVT::i32)),
+                      N->getFlags());
   return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Sum,
                      DAG.getVectorIdxConstant(Field, DL));
 }
@@ -486,6 +538,56 @@ static unsigned getFractionBits(SDValue C, bool Inverse) {
   return 0;
 }
 
+static bool isBroadcastPairOp(unsigned Opc) {
+  return Opc == ISD::FADD || Opc == ISD::FSUB || Opc == ISD::FMUL ||
+         Opc == ISD::FMAXNUM || Opc == ISD::FMINNUM;
+}
+
+static SDValue combineBroadcastPair(SDNode *N, SelectionDAG &DAG);
+
+/// \p V as a broadcast of one field: V itself, or an operation on two
+/// broadcasts made into one (combineBroadcastPair). The combiner may visit
+/// an operation before its operands.
+static SDValue getAsBroadcast(SDValue V, SelectionDAG &DAG) {
+  if (V.getOpcode() == VUISD::BCAST &&
+      V.getOperand(0).getValueType() == MVT::v4f32)
+    return V;
+  if (isBroadcastPairOp(V.getOpcode()) && V.hasOneUse())
+    return combineBroadcastPair(V.getNode(), DAG);
+  return SDValue();
+}
+
+// An operation on two broadcasts, or on a broadcast and a constant splat, is
+// one on a field, broadcast:
+//   op (bcast a, i), (bcast b, j)  ->  bcast (op a, (bcast b, j)), i
+// The operation reads b.j by its broadcast field, and the result keeps the
+// value in field i, which later instructions read by their broadcast field
+// too, instead of making the two splats (two instructions each).
+static SDValue combineBroadcastPair(SDNode *N, SelectionDAG &DAG) {
+  if (N->getValueType(0) != MVT::v4f32 || !isBroadcastPairOp(N->getOpcode()))
+    return SDValue();
+  SDValue A = N->getOperand(0), B = N->getOperand(1);
+  bool Commutes = N->getOpcode() != ISD::FSUB;
+  auto IsSplat = [](SDValue V) { return isConstOrConstSplatFP(V) != nullptr; };
+  SDValue BA = getAsBroadcast(A, DAG);
+  if (!BA && Commutes && IsSplat(A)) {
+    std::swap(A, B);
+    BA = getAsBroadcast(A, DAG);
+  }
+  if (!BA)
+    return SDValue();
+  // The other operand is read by its broadcast field: any broadcast does,
+  // also one of a scalar.
+  SDValue BB =
+      IsSplat(B) || B.getOpcode() == VUISD::BCAST ? B : getAsBroadcast(B, DAG);
+  if (!BB)
+    return SDValue();
+  SDLoc DL(N);
+  SDValue Op = DAG.getNode(N->getOpcode(), DL, MVT::v4f32, BA.getOperand(0), BB,
+                           N->getFlags());
+  return DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Op, BA.getOperand(1));
+}
+
 SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
                                             DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
@@ -506,6 +608,8 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::FMUL: {
     if (DCI.isAfterLegalizeDAG() && N->getValueType(0) == MVT::f32)
       return combineLaneOp(N, DAG);
+    if (SDValue R = combineBroadcastPair(N, DAG))
+      return R;
     // sint_to_fp (v) * 2^-n -> ITOF<n> v
     if (N->getValueType(0) != MVT::v4f32)
       break;
@@ -533,6 +637,19 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
     return DAG.getNode(
         VUISD::INSERT_VI, DL, MVT::v4i32, N->getOperand(0), Elt.getOperand(0),
         DAG.getTargetConstant(Idx->getZExtValue(), DL, MVT::i32));
+  }
+  case ISD::EXTRACT_VECTOR_ELT: {
+    // A field of a broadcast is the broadcast field.
+    SDValue Src = N->getOperand(0);
+    if (Src.getOpcode() != VUISD::BCAST ||
+        !isa<ConstantSDNode>(N->getOperand(1)))
+      break;
+    SDValue V = Src.getOperand(0);
+    if (V.getValueType() == MVT::f32)
+      return V;
+    return DAG.getNode(
+        ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, V,
+        DAG.getVectorIdxConstant(Src.getConstantOperandVal(1), DL));
   }
   case VUISD::BCAST: {
     // The x field of a field of a vector is that field of the vector.
@@ -575,6 +692,8 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
   }
   case ISD::FADD:
   case ISD::FSUB:
+    if (SDValue R = combineBroadcastPair(N, DAG))
+      return R;
     if (!DCI.isAfterLegalizeDAG())
       break;
     if (N->getValueType(0) == MVT::f32) {
@@ -587,7 +706,7 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::FMINNUM:
     if (DCI.isAfterLegalizeDAG() && N->getValueType(0) == MVT::f32)
       return combineLaneOp(N, DAG);
-    break;
+    return combineBroadcastPair(N, DAG);
   }
   return SDValue();
 }

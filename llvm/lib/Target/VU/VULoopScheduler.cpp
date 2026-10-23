@@ -32,6 +32,7 @@
 #include "VUWords.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/MC/MCSchedule.h"
@@ -88,7 +89,7 @@ public:
         SM(STI.getSchedModel()), STI(STI) {}
 
   bool build(MachineBasicBlock &MBB);
-  bool schedule(int L, SmallVectorImpl<int> &Cycles) const;
+  bool schedule(int L, SmallVectorImpl<int> &Cycles, unsigned &Steps) const;
 
 private:
   int getLatency(unsigned Def, Register Reg, unsigned Use,
@@ -316,8 +317,9 @@ static bool propagate(ArrayRef<Edge> Edges, int L, std::vector<int> &Release,
 /// Schedules the instructions into \p L words with the branch in word L-2,
 /// by a search over the cycles of the instructions with the fewest choices
 /// first. Returns false if there is no such schedule, or if the search takes
-/// too long.
-bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles) const {
+/// more than \p Steps steps, which are taken off.
+bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
+                         unsigned &Steps) const {
   unsigned N = Instrs.size();
   std::vector<int> Release(N, 0), Deadline(N, L - 1);
   Release[Branch] = Deadline[Branch] = L - 2;
@@ -371,11 +373,11 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles) const {
     }
     return true;
   };
-  unsigned Steps = 0;
+  unsigned Taken = 0;
   std::function<bool(unsigned)> Search = [&](unsigned NumPlaced) -> bool {
     if (NumPlaced == N)
       return true;
-    if (++Steps > 1000000)
+    if (++Taken > Steps)
       return false;
     unsigned Op = N;
     for (unsigned I = 0; I != N; ++I)
@@ -397,7 +399,7 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles) const {
       Placed[Op] = false;
       Release = std::move(SavedRelease);
       Deadline = std::move(SavedDeadline);
-      if (Steps > 1000000)
+      if (Taken > Steps)
         break;
     }
     return false;
@@ -407,11 +409,13 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles) const {
     return false;
   Placed[Branch] = true;
   Reserve(Branch, L - 2, 1);
-  if (!Narrow() || !Search(1)) {
-    LLVM_DEBUG(dbgs() << "  no schedule found in " << Steps << " steps\n");
+  bool Found = Narrow() && Search(1);
+  Steps -= std::min(Steps, Taken);
+  if (!Found) {
+    LLVM_DEBUG(dbgs() << "  no schedule found in " << Taken << " steps\n");
     return false;
   }
-  LLVM_DEBUG(dbgs() << "  schedule in " << L << " words found in " << Steps
+  LLVM_DEBUG(dbgs() << "  schedule in " << L << " words found in " << Taken
                     << " steps\n");
   Cycles.assign(Release.begin(), Release.end());
   return true;
@@ -584,9 +588,13 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
 
       LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << MaxCycles
                         << " cycles, at least " << MinL << " words\n");
+      // Each step narrows the windows of all instructions, so the search of
+      // a large loop, such as an unrolled kernel, takes fewer of them.
+      uint64_t N = G.Instrs.size();
+      unsigned Steps = std::clamp<uint64_t>(200000000 / (N * N), 1000, 1000000);
       SmallVector<int, 32> Cycles;
-      for (int L = MinL; L < MaxCycles; ++L) {
-        if (!G.schedule(L, Cycles)) {
+      for (int L = MinL; L < MaxCycles && Steps; ++L) {
+        if (!G.schedule(L, Cycles, Steps)) {
           LLVM_DEBUG(dbgs() << "  no schedule in " << L << " words\n");
           continue;
         }
@@ -646,6 +654,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
     VU::rebuildWords(MBB, Best->Words, TII, Best->DL);
     for (MachineInstr *MI : Old)
       MI->eraseFromParent();
+    // The order changed, and with it the last reads of the registers.
+    recomputeLivenessFlags(MBB);
     Changed = true;
   }
   return Changed;

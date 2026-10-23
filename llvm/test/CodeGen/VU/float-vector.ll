@@ -50,7 +50,7 @@ define void @splat_store() {
 ; CHECK-NEXT:    sub.xyzw vf3, vf0, vf0 nop
 ; CHECK-NEXT:    addz.xyz vf1, vf0, vf1z sq.xyzw vf2, 2(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
-; CHECK-NEXT:    mulz.w vf1, vf0, vf1z nop
+; CHECK-NEXT:    nop mr32.w vf1, vf1
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop

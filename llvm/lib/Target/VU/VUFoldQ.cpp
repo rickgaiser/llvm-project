@@ -8,8 +8,9 @@
 //
 // A division is selected as DIV followed by ADDq.x t, vf0, q, which moves Q
 // into a VF register. Instructions that broadcast the x field of t are
-// rewritten to read Q instead:
+// rewritten to read Q instead, and so is an insertion of t.x into a field:
 //   ADDq.x t, vf0, q; MULx.xyzw d, a, t   ->   MULq.xyzw d, a, q
+//   ADDq.x t, vf0, q; INSERT_FIELD d, v, t, z, x   ->   INSERT_Q d, v, q, z
 // The ADDq is removed when it has no uses left. The rewritten instruction
 // must be in the same block, without another write of Q in between: the two
 // Q values would then be live at the same time.
@@ -127,6 +128,20 @@ bool VUFoldQ::runOnMachineFunction(MachineFunction &MF) {
         unsigned QOpc = getQForm(MI.getOpcode());
         // ft is the last explicit operand.
         unsigned FtIdx = MI.getNumExplicitOperands() - 1;
+        // Not into w: no instruction inserts Q there exactly.
+        if (MI.getOpcode() == VU::INSERT_FIELD &&
+            MI.getOperand(2).getReg() == T && MI.getOperand(4).getImm() == 0 &&
+            MI.getOperand(3).getImm() != 3) {
+          BuildMI(MBB, MI, MI.getDebugLoc(), TII.get(VU::INSERT_Q))
+              .add(MI.getOperand(0))
+              .add(MI.getOperand(1))
+              .addReg(Q.getReg())
+              .add(MI.getOperand(3));
+          MRI.clearKillFlags(Q.getReg());
+          MI.eraseFromParent();
+          Changed = true;
+          continue;
+        }
         if (QOpc && MI.getOperand(FtIdx).getReg() == T) {
           MachineInstrBuilder MIB =
               BuildMI(MBB, MI, MI.getDebugLoc(), TII.get(QOpc));

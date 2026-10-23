@@ -37,39 +37,26 @@ define void @horner16() {
 ; CHECK-NEXT:    nop lq.xyzw vf18, 6(vi2)
 ; CHECK-NEXT:    addx.xyz vf22, vf0, vf17x iaddi vi3, vi2, 1
 ; CHECK-NEXT:    addx.xyz vf1, vf0, vf4x nop
+; CHECK-NEXT:    addx.xyz vf5, vf0, vf8x nop
+; CHECK-NEXT:    addx.xyz vf9, vf0, vf12x nop
+; CHECK-NEXT:    addw.xyz vf21, vf0, vf16w nop
 ; CHECK-NEXT:    addy.xyz vf2, vf0, vf4y nop
 ; CHECK-NEXT:    addz.xyz vf3, vf0, vf4z nop
-; CHECK-NEXT:    addx.xyz vf5, vf0, vf8x nop
-; CHECK-NEXT:    addy.xyz vf6, vf0, vf8y nop
-; CHECK-NEXT:    addz.xyz vf7, vf0, vf8z nop
-; CHECK-NEXT:    addx.xyz vf9, vf0, vf12x nop
+; CHECK-NEXT:    addy.xyz vf6, vf0, vf8y mr32.w vf22, vf17
+; CHECK-NEXT:    addz.xyz vf7, vf0, vf8z mr32.w vf1, vf4
+; CHECK-NEXT:    addw.xyz vf4, vf0, vf4w mr32.w vf5, vf8
+; CHECK-NEXT:    addw.xyz vf8, vf0, vf8w mr32.w vf9, vf12
 ; CHECK-NEXT:    addy.xyz vf10, vf0, vf12y nop
-; CHECK-NEXT:    addz.xyz vf11, vf0, vf12z nop
-; CHECK-NEXT:    addw.xyz vf21, vf0, vf16w nop
-; CHECK-NEXT:    mulx.w vf22, vf0, vf17x nop
-; CHECK-NEXT:    mulx.w vf1, vf0, vf4x nop
-; CHECK-NEXT:    muly.w vf2, vf0, vf4y nop
-; CHECK-NEXT:    mulz.w vf3, vf0, vf4z nop
-; CHECK-NEXT:    addw.xyz vf4, vf0, vf4w nop
-; CHECK-NEXT:    mulx.w vf5, vf0, vf8x nop
-; CHECK-NEXT:    muly.w vf6, vf0, vf8y nop
-; CHECK-NEXT:    mulz.w vf7, vf0, vf8z nop
-; CHECK-NEXT:    addw.xyz vf8, vf0, vf8w nop
-; CHECK-NEXT:    mulx.w vf9, vf0, vf12x nop
-; CHECK-NEXT:    muly.w vf10, vf0, vf12y nop
-; CHECK-NEXT:    mulz.w vf11, vf0, vf12z nop
-; CHECK-NEXT:    addw.xyz vf12, vf0, vf12w nop
-; CHECK-NEXT:    mulw.w vf21, vf0, vf16w nop
-; CHECK-NEXT:    addx.xyz vf13, vf0, vf16x nop
-; CHECK-NEXT:    addy.xyz vf14, vf0, vf16y nop
-; CHECK-NEXT:    addz.xyz vf15, vf0, vf16z nop
-; CHECK-NEXT:    mula.xyzw acc, vf22, vf18 nop
-; CHECK-NEXT:    mulw.w vf4, vf0, vf4w nop
-; CHECK-NEXT:    mulw.w vf8, vf0, vf8w nop
-; CHECK-NEXT:    mulw.w vf12, vf0, vf12w nop
-; CHECK-NEXT:    mulx.w vf13, vf0, vf16x nop
-; CHECK-NEXT:    muly.w vf14, vf0, vf16y nop
-; CHECK-NEXT:    mulz.w vf15, vf0, vf16z ibeq vi1, vi3, .LBB0_9
+; CHECK-NEXT:    addz.xyz vf11, vf0, vf12z mr32.w vf2, vf2
+; CHECK-NEXT:    addw.xyz vf12, vf0, vf12w mr32.w vf3, vf3
+; CHECK-NEXT:    addy.xyz vf14, vf0, vf16y mr32.w vf6, vf6
+; CHECK-NEXT:    addz.xyz vf15, vf0, vf16z mr32.w vf7, vf7
+; CHECK-NEXT:    mulw.w vf21, vf16, vf0w mr32.w vf10, vf10
+; CHECK-NEXT:    addx.xyz vf13, vf0, vf16x mr32.w vf11, vf11
+; CHECK-NEXT:    mula.xyzw acc, vf22, vf18 mr32.w vf13, vf16
+; CHECK-NEXT:    mulw.w vf4, vf4, vf0w mr32.w vf14, vf14
+; CHECK-NEXT:    mulw.w vf8, vf8, vf0w mr32.w vf15, vf15
+; CHECK-NEXT:    mulw.w vf12, vf12, vf0w ibeq vi1, vi3, .LBB0_9
 ; CHECK-NEXT:    maddw.xyzw vf17, vf21, vf0w nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
 ; CHECK-NEXT:    mula.xyzw acc, vf17, vf18 iaddi vi5, vi3, 1

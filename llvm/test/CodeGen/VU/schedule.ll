@@ -21,7 +21,7 @@ define void @div_overlap() {
 ; CHECK-NEXT:    mula.xyzw acc, vf2, vf3 nop
 ; CHECK-NEXT:    maddw.xyzw vf1, vf1, vf0w nop
 ; CHECK-NEXT:    addx.xyz vf2, vf0, vf4x nop
-; CHECK-NEXT:    mulx.w vf2, vf0, vf4x nop
+; CHECK-NEXT:    nop mr32.w vf2, vf4
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf2, 5(vi0)
 ; CHECK-NEXT:    nop[e] nop

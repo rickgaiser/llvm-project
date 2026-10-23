@@ -130,33 +130,71 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   }
 
   case VU::SPLAT: {
-    // ADD<f>.xyz d, vf0, s; MUL<f>.w d, vf0, s (vf0.w is 1)
+    // ADD<f>.xyz d, vf0, s (vf0.xyz is 0), then the w field exactly: MULw.w
+    // d, s, vf0w for w (vf0.w is 1), MR32.w (d.w = x) for the others. Not
+    // MUL<f>.w d, vf0, s: the PS2's multiplier is 1 ULP low with 1.0 in fs
+    // (probe/p10_vucopy.c).
     static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw};
-    static constexpr unsigned Mul[] = {VU::MULx, VU::MULy, VU::MULz, VU::MULw};
     Register D = MI.getOperand(0).getReg();
     Register S = MI.getOperand(1).getReg();
     unsigned Field = MI.getOperand(2).getImm();
     BuildDef(Add[Field], D).addImm(MaskXYZ).addReg(VU::VF0).addReg(S);
-    BuildDef(Mul[Field], D)
-        .addImm(MaskW)
-        .addReg(VU::VF0)
-        .addReg(S)
-        .addReg(D, RegState::Implicit);
+    if (Field == 3)
+      BuildDef(VU::MULw, D)
+          .addImm(MaskW)
+          .addReg(S)
+          .addReg(VU::VF0)
+          .addReg(D, RegState::Implicit);
+    else
+      BuildDef(VU::MR32, D)
+          .addImm(MaskW)
+          .addReg(Field ? D : S)
+          .addReg(D, RegState::Implicit);
     break;
   }
 
   case VU::INSERT_FIELD: {
-    // ADD<sf>.<field> d, vf0, s, or MUL<sf>.w d, vf0, s for the w field.
+    // ADD<sf>.<field> d, vf0, s for x, y and z (vf0.xyz is 0). For the w
+    // field, MULw.w d, s, vf0w from w and MR32.w d, s from x: exact, unlike
+    // MUL<sf>.w d, vf0, s (see SPLAT). Selection inserts no other field into w.
     static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw};
-    static constexpr unsigned Mul[] = {VU::MULx, VU::MULy, VU::MULz, VU::MULw};
     Register D = MI.getOperand(0).getReg();
     Register S = MI.getOperand(2).getReg();
     unsigned Field = MI.getOperand(3).getImm();
     unsigned SrcField = MI.getOperand(4).getImm();
-    BuildDef(Field == 3 ? Mul[SrcField] : Add[SrcField], D)
+    if (Field != 3)
+      BuildDef(Add[SrcField], D)
+          .addImm(8 >> Field)
+          .addReg(VU::VF0)
+          .addReg(S)
+          .addReg(D, RegState::Implicit);
+    else if (SrcField == 3)
+      BuildDef(VU::MULw, D)
+          .addImm(MaskW)
+          .addReg(S)
+          .addReg(VU::VF0)
+          .addReg(D, RegState::Implicit);
+    else if (SrcField == 0)
+      BuildDef(VU::MR32, D)
+          .addImm(MaskW)
+          .addReg(S)
+          .addReg(D, RegState::Implicit);
+    else
+      report_fatal_error("VU: no exact insertion of field y or z into w");
+    break;
+  }
+
+  case VU::INSERT_Q: {
+    // ADDq.<field> d, vf0, q for x, y and z. Not for w: MULq.w d, vf0, q has
+    // 1.0 in fs (see SPLAT); VUFoldQ does not make it.
+    Register D = MI.getOperand(0).getReg();
+    unsigned Field = MI.getOperand(3).getImm();
+    if (Field == 3)
+      report_fatal_error("VU: INSERT_Q of the w field");
+    BuildDef(VU::ADDq, D)
         .addImm(8 >> Field)
         .addReg(VU::VF0)
-        .addReg(S)
+        .add(MI.getOperand(2))
         .addReg(D, RegState::Implicit);
     break;
   }
@@ -369,15 +407,29 @@ bool VUInstrInfo::areMemAccessesTriviallyDisjoint(
 }
 
 namespace {
+/// A loop counter for modulo variable expansion: the loop ends when
+/// Update = IADDI/IADDIU/ISUBIU (Phi, Step) reaches Limit, a register that the
+/// loop does not change.
+struct VULoopCounter {
+  const MachineInstr *Update = nullptr;
+  Register Init, Limit;
+  int Step = 0;
+};
+
 /// A single block loop that ends in a conditional branch back to itself.
 class VUPipelinerLoopInfo : public TargetInstrInfo::PipelinerLoopInfo {
   SmallVector<const MachineInstr *, 2> CondDefs;
   SmallVector<MachineOperand, 3> Cond;
+  std::optional<VULoopCounter> Counter;
+  /// The accepted schedule keeps values longer than one iteration, and the
+  /// kernel is unrolled for them instead of copying them.
+  bool UseMVE = false;
 
 public:
   VUPipelinerLoopInfo(ArrayRef<const MachineInstr *> CondDefs,
-                      ArrayRef<MachineOperand> Cond)
-      : CondDefs(CondDefs), Cond(Cond) {}
+                      ArrayRef<MachineOperand> Cond,
+                      std::optional<VULoopCounter> Counter)
+      : CondDefs(CondDefs), Cond(Cond), Counter(Counter) {}
 
   // Keep the instructions that compute the loop condition in stage 0.
   bool shouldIgnoreForPipelining(const MachineInstr *MI) const override {
@@ -399,14 +451,90 @@ public:
 
   void setPreheader(MachineBasicBlock *NewPreheader) override {}
   void adjustTripCount(int TripCountAdjust) override {}
+
+  // An unrolled kernel needs no copies, which take a lower slot each and
+  // lengthen the recurrences that they are on.
+  bool isMVEExpanderSupported() override { return UseMVE; }
+  void createRemainingIterationsGreaterCondition(
+      int TC, MachineBasicBlock &MBB, SmallVectorImpl<MachineOperand> &Cond,
+      DenseMap<MachineInstr *, MachineInstr *> &LastStage0Insts) override;
 };
 } // namespace
 
+/// The iterations after the one that set the counter to V are
+/// (Limit - V) / Step, so more than TC remain if
+/// (Limit - V) * sign(Step) - TC * |Step| > 0.
+void VUPipelinerLoopInfo::createRemainingIterationsGreaterCondition(
+    int TC, MachineBasicBlock &MBB, SmallVectorImpl<MachineOperand> &Cond,
+    DenseMap<MachineInstr *, MachineInstr *> &LastStage0Insts) {
+  MachineFunction &MF = *MBB.getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  const DebugLoc &DL = Counter->Update->getDebugLoc();
+  auto NewVI = [&] { return MRI.createVirtualRegister(&VU::VIRegClass); };
+
+  Register V;
+  if (LastStage0Insts.empty()) {
+    // Before the loop: the counter after the first iteration.
+    V = NewVI();
+    MachineInstr *MI = MF.CloneMachineInstr(Counter->Update);
+    MI->getOperand(0).setReg(V);
+    MI->getOperand(1).setReg(Counter->Init);
+    MBB.insert(MBB.end(), MI);
+  } else {
+    V = LastStage0Insts[const_cast<MachineInstr *>(Counter->Update)]
+            ->getOperand(0)
+            .getReg();
+  }
+
+  // A counter down to zero is the difference itself.
+  Register Diff = V;
+  if (Counter->Step > 0 || Counter->Limit != VU::VI0) {
+    Diff = NewVI();
+    BuildMI(MBB, MBB.end(), DL, TII.get(VU::ISUB), Diff)
+        .addReg(Counter->Step > 0 ? Counter->Limit : V)
+        .addReg(Counter->Step > 0 ? V : Counter->Limit);
+  }
+  int64_t Sub = (int64_t)TC * std::abs(Counter->Step);
+  assert(isUInt<15>(Sub) && "trip count out of range");
+  if (Sub) {
+    Register Rest = NewVI();
+    BuildMI(MBB, MBB.end(), DL, TII.get(VU::ISUBIU), Rest)
+        .addReg(Diff)
+        .addImm(Sub);
+    Diff = Rest;
+  }
+  Cond.clear();
+  Cond.push_back(MachineOperand::CreateImm(VU::IBGTZ));
+  Cond.push_back(MachineOperand::CreateReg(Diff, /*isDef=*/false));
+}
+
+/// Returns true if \p MI starts a value of ACC, Q or P: it writes one of
+/// them without reading it.
+static bool startsSingleRegValue(const MachineInstr &MI,
+                                 const MachineRegisterInfo &MRI) {
+  auto IsSingle = [&](const MachineOperand &MO) {
+    Register Reg = MO.getReg();
+    if (Reg == VU::P)
+      return true;
+    if (!Reg.isVirtual())
+      return false;
+    const TargetRegisterClass *RC = MRI.getRegClass(Reg);
+    return RC == &VU::ACCRRegClass || RC == &VU::QRRegClass;
+  };
+  return any_of(MI.all_defs(), IsSingle) && none_of(MI.all_uses(), IsSingle);
+}
+
 /// Without unrolling, a value that lives longer than one iteration is copied
 /// in every iteration: MOVE for VF registers, in the lower slot. Returns the
-/// number of copies, and counts the words that the instructions need.
+/// number of copies, and counts the words that the instructions need and the
+/// copies of the kernel that modulo variable expansion makes (Unroll).
+/// \p CopyStartsGroup is set if a copied value is read by an instruction that
+/// starts a value of ACC, Q or P: the register allocator may give it the
+/// copy, whose latency then delays that value and the ones after it.
 static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
-                           unsigned &Upper, unsigned &Lower) {
+                           unsigned &Upper, unsigned &Lower, unsigned &Unroll,
+                           bool &CopyStartsGroup) {
   const MachineFunction &MF = SSD.MF;
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   const TargetSubtargetInfo &STI = MF.getSubtarget();
@@ -420,6 +548,8 @@ static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
   unsigned Copies = 0;
   Upper = 0;
   Lower = 1; // The branch.
+  Unroll = 1;
+  CopyStartsGroup = false;
   for (SUnit &SU : SSD.SUnits) {
     const MachineInstr &MI = *SU.getInstr();
     if (MI.isPHI() || MI.isMetaInstruction() || MI.isCopy())
@@ -445,6 +575,7 @@ static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
         continue;
       // The last use, II cycles later per Phi on the way.
       int Def = CycleOf(&SU), End = Def;
+      bool ReadByStart = false;
       SmallVector<std::pair<Register, int>, 4> Worklist = {{Reg, 0}};
       SmallSet<Register, 4> Visited;
       while (!Worklist.empty()) {
@@ -460,11 +591,16 @@ static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
           }
           if (SUnit *UseSU = SSD.getSUnit(&UseMI))
             End = std::max(End, CycleOf(UseSU) + Distance * II);
+          ReadByStart |= startsSingleRegValue(UseMI, MRI);
         }
       }
       // A use in the cycle of the next definition reads the old value.
-      if (End > Def)
-        Copies += (End - Def - 1) / II;
+      if (End > Def) {
+        unsigned ValueCopies = (End - Def - 1) / II;
+        Copies += ValueCopies;
+        Unroll = std::max(Unroll, ValueCopies + 1);
+        CopyStartsGroup |= ValueCopies && ReadByStart;
+      }
     }
   }
   return Copies;
@@ -474,12 +610,35 @@ static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
 /// II words, with the branch.
 bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
                                                SMSchedule &SMS) {
-  unsigned Upper, Lower;
-  unsigned Copies = countWords(SSD, SMS, Upper, Lower);
-  Lower += Copies;
+  unsigned Upper, Lower, Unroll;
+  bool CopyStartsGroup;
+  unsigned Copies = countWords(SSD, SMS, Upper, Lower, Unroll, CopyStartsGroup);
   unsigned II = SMS.getInitiationInterval();
-  LLVM_DEBUG(dbgs() << "VU: II " << II << " needs " << Upper << " upper and "
-                    << Lower << " lower words with copies\n");
+  // Modulo variable expansion repeats the kernel, and the stages before and
+  // after it, Unroll times, and keeps the loop for the remaining iterations.
+  // It is used while that takes at most a quarter of micro memory (VU0 512
+  // words, VU1 2048). A copy takes a lower slot, and its latency is on the
+  // way from the value to the uses that read it, which may be a recurrence.
+  // When the upper instructions fill the II words, the copies cost nothing
+  // if they fit the lower slots and start no value of ACC, Q or P: the loop
+  // can not be faster anyway.
+  unsigned Stages = SMS.getMaxStageCount() + 1;
+  unsigned Words = (Unroll + 2 * Stages) * II + SSD.SUnits.size();
+  unsigned Budget =
+      SSD.MF.getSubtarget<VUSubtarget>().hasVU1() ? 2048 / 4 : 512 / 4;
+  bool CopiesFree = Upper >= II && Lower + Copies <= II && !CopyStartsGroup;
+  UseMVE = Copies && !CopiesFree && Counter && Words <= Budget;
+  if (!UseMVE)
+    Lower += Copies;
+  LLVM_DEBUG({
+    dbgs() << "VU: II " << II << " needs " << Upper << " upper and " << Lower
+           << " lower words";
+    if (UseMVE)
+      dbgs() << ", unrolled for " << Copies << " copies";
+    else if (Copies)
+      dbgs() << " with " << Copies << " copies";
+    dbgs() << "\n";
+  });
   return Upper <= II && Lower <= II;
 }
 
@@ -487,8 +646,57 @@ bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
 /// not count: VULoopCopies removes them.
 std::optional<unsigned>
 VUPipelinerLoopInfo::getScheduleCost(SwingSchedulerDAG &SSD, SMSchedule &SMS) {
-  unsigned Upper, Lower;
-  return countWords(SSD, SMS, Upper, Lower);
+  unsigned Upper, Lower, Unroll;
+  bool CopyStartsGroup;
+  return countWords(SSD, SMS, Upper, Lower, Unroll, CopyStartsGroup);
+}
+
+/// The loop exits when "IBEQ Update, Limit" is true (Cond), where
+/// Update = IADDI/IADDIU/ISUBIU (Phi, Step) and Phi takes Update around the
+/// loop.
+static std::optional<VULoopCounter>
+findLoopCounter(const MachineBasicBlock &LoopBB, ArrayRef<MachineOperand> Cond,
+                ArrayRef<const MachineInstr *> CondDefs,
+                const MachineRegisterInfo &MRI) {
+  if (Cond.size() != 3 || Cond[0].getImm() != VU::IBEQ || CondDefs.size() != 1)
+    return std::nullopt;
+  const MachineInstr *Update = CondDefs[0];
+  int Step;
+  switch (Update->getOpcode()) {
+  case VU::IADDI:
+  case VU::IADDIU:
+    Step = Update->getOperand(2).getImm();
+    break;
+  case VU::ISUBIU:
+    Step = -Update->getOperand(2).getImm();
+    break;
+  default:
+    return std::nullopt;
+  }
+  Register Reg = Update->getOperand(0).getReg();
+  Register Limit =
+      Cond[1].getReg() == Reg ? Cond[2].getReg() : Cond[1].getReg();
+  if (!Step || Limit == Reg)
+    return std::nullopt;
+  if (Limit.isVirtual() && MRI.getVRegDef(Limit)->getParent() == &LoopBB)
+    return std::nullopt;
+  const MachineInstr *Phi = MRI.getVRegDef(Update->getOperand(1).getReg());
+  if (!Phi || !Phi->isPHI() || Phi->getParent() != &LoopBB ||
+      Phi->getNumOperands() != 5)
+    return std::nullopt;
+  VULoopCounter C;
+  for (unsigned I = 1; I < 5; I += 2) {
+    if (Phi->getOperand(I + 1).getMBB() == &LoopBB) {
+      if (Phi->getOperand(I).getReg() != Reg)
+        return std::nullopt;
+    } else {
+      C.Init = Phi->getOperand(I).getReg();
+    }
+  }
+  C.Update = Update;
+  C.Limit = Limit;
+  C.Step = Step;
+  return C;
 }
 
 std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
@@ -513,7 +721,8 @@ VUInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
     if (Def->getParent() == LoopBB)
       CondDefs.push_back(Def);
   }
-  return std::make_unique<VUPipelinerLoopInfo>(CondDefs, Cond);
+  return std::make_unique<VUPipelinerLoopInfo>(
+      CondDefs, Cond, findLoopCounter(*LoopBB, Cond, CondDefs, MRI));
 }
 
 /// Returns the opposite condition of a conditional branch, or 0.

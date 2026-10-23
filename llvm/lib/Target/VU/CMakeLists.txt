@@ -18,6 +18,7 @@ add_public_tablegen_target(VUCommonTableGen)
 add_llvm_target(VUCodeGen
   VUAsmPrinter.cpp
   VUDelaySlotFiller.cpp
+  VUFoldInsertField.cpp
   VUFoldQ.cpp
   VUFrameLowering.cpp
   VUHazards.cpp
@@ -26,6 +27,7 @@ add_llvm_target(VUCodeGen
   VUISelLowering.cpp
   VULoopCopies.cpp
   VULoopScheduler.cpp
+  VUPackConstants.cpp
   VUPacketizer.cpp
   VURegisterInfo.cpp
   VUSelectionDAGInfo.cpp

@@ -32,11 +32,13 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
+#include "llvm/InitializePasses.h"
 
 using namespace llvm;
 
@@ -53,6 +55,7 @@ class VULoopCopies : public MachineFunctionPass {
   const TargetInstrInfo *TII = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
   MachineRegisterInfo *MRI = nullptr;
+  MachineDominatorTree *MDT = nullptr;
   /// Phis that are another phi in the same block plus a constant.
   DenseMap<Register, RegOffset> PhiOffsets;
 
@@ -66,6 +69,7 @@ class VULoopCopies : public MachineFunctionPass {
                     Register Src, int64_t Imm);
   bool rebaseExitPhis(MachineBasicBlock &MBB);
   bool rewriteBases(MachineBasicBlock &MBB);
+  bool collapseIncrements(MachineBasicBlock &MBB);
 
 public:
   static char ID;
@@ -75,6 +79,8 @@ public:
   bool runOnMachineFunction(MachineFunction &MF) override;
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.setPreservesCFG();
+    AU.addRequired<MachineDominatorTreeWrapperPass>();
+    AU.addPreserved<MachineDominatorTreeWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 };
@@ -82,7 +88,9 @@ public:
 
 char VULoopCopies::ID = 0;
 
-INITIALIZE_PASS(VULoopCopies, DEBUG_TYPE, "VU Loop Copies", false, false)
+INITIALIZE_PASS_BEGIN(VULoopCopies, DEBUG_TYPE, "VU Loop Copies", false, false)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTreeWrapperPass)
+INITIALIZE_PASS_END(VULoopCopies, DEBUG_TYPE, "VU Loop Copies", false, false)
 
 FunctionPass *llvm::createVULoopCopiesPass() { return new VULoopCopies(); }
 
@@ -500,6 +508,66 @@ bool VULoopCopies::rewriteBases(MachineBasicBlock &MBB) {
   return Changed;
 }
 
+/// An unrolled kernel increments a pointer or counter once per copy of the
+/// loop body: S = T + D; R = S + C. When S is otherwise only the base of
+/// memory instructions, they use T with D added to the offset, and R becomes
+/// T + (D + C), so one increment is left of the chain. Uses after the loop
+/// use R, which is live out anyway, with C subtracted.
+bool VULoopCopies::collapseIncrements(MachineBasicBlock &MBB) {
+  bool Changed = false;
+  for (MachineInstr &MI : make_early_inc_range(MBB)) {
+    std::optional<int64_t> C = getIncrement(MI);
+    Register S = getSource(MI);
+    if (!C || !S || !MRI->hasOneDef(S))
+      continue;
+    MachineInstr *SDef = MRI->getVRegDef(S);
+    std::optional<int64_t> D = getIncrement(*SDef);
+    Register T = getSource(*SDef);
+    if (!D || !T || SDef->getParent() != &MBB)
+      continue;
+    // The other uses of S must be bases that can take the difference in
+    // their offsets: D in this block, -C in the blocks it dominates.
+    SmallVector<std::pair<MachineInstr *, bool>, 4> Mems;
+    bool OK = true;
+    for (MachineOperand &Use : MRI->use_nodbg_operands(S)) {
+      MachineInstr &U = *Use.getParent();
+      if (&U == &MI)
+        continue;
+      bool Inside = U.getParent() == &MBB;
+      unsigned BasePos, OffsetPos;
+      if ((!Inside && !MDT->dominates(&MBB, U.getParent())) ||
+          !TII->getBaseAndOffsetPosition(U, BasePos, OffsetPos) ||
+          U.getOperandNo(&Use) != BasePos ||
+          !isInt<11>(U.getOperand(OffsetPos).getImm() + (Inside ? *D : -*C))) {
+        OK = false;
+        break;
+      }
+      Mems.push_back({&U, Inside});
+    }
+    if (!OK)
+      continue;
+    Register New = buildAdd(MBB, MI, T, *D + *C);
+    if (!New)
+      continue;
+    Register R = MI.getOperand(0).getReg();
+    MRI->constrainRegClass(New, MRI->getRegClass(R));
+    for (auto [U, Inside] : Mems) {
+      unsigned BasePos, OffsetPos;
+      TII->getBaseAndOffsetPosition(*U, BasePos, OffsetPos);
+      MachineOperand &Offset = U->getOperand(OffsetPos);
+      U->getOperand(BasePos).setReg(Inside ? T : New);
+      Offset.setImm(Offset.getImm() + (Inside ? *D : -*C));
+    }
+    LLVM_DEBUG(dbgs() << "Collapsing " << *SDef << "  and " << MI);
+    MRI->replaceRegWith(R, New);
+    MI.eraseFromParent();
+    if (MRI->use_nodbg_empty(S))
+      SDef->eraseFromParent();
+    Changed = true;
+  }
+  return Changed;
+}
+
 bool VULoopCopies::runOnMachineFunction(MachineFunction &MF) {
   if (skipFunction(MF.getFunction()))
     return false;
@@ -507,6 +575,7 @@ bool VULoopCopies::runOnMachineFunction(MachineFunction &MF) {
   TII = MF.getSubtarget().getInstrInfo();
   TRI = MF.getSubtarget().getRegisterInfo();
   MRI = &MF.getRegInfo();
+  MDT = &getAnalysis<MachineDominatorTreeWrapperPass>().getDomTree();
   PhiOffsets.clear();
 
   ReversePostOrderTraversal<MachineFunction *> RPOT(&MF);
@@ -526,20 +595,35 @@ bool VULoopCopies::runOnMachineFunction(MachineFunction &MF) {
     Changed |= rewriteBases(MBB);
 
   // Remove the phis and copies that are no longer used.
-  bool Erased = true;
-  while (Erased) {
-    Erased = false;
-    for (MachineBasicBlock &MBB : MF)
-      for (MachineInstr &MI : make_early_inc_range(MBB)) {
-        if ((!MI.isPHI() && !getSource(MI)) || !MI.getOperand(0).isReg())
-          continue;
-        Register Reg = MI.getOperand(0).getReg();
-        if (Reg.isVirtual() && MRI->use_nodbg_empty(Reg)) {
-          PhiOffsets.erase(Reg);
-          MI.eraseFromParent();
-          Erased = Changed = true;
+  auto EraseUnused = [&] {
+    bool Erased = true;
+    while (Erased) {
+      Erased = false;
+      for (MachineBasicBlock &MBB : MF)
+        for (MachineInstr &MI : make_early_inc_range(MBB)) {
+          if ((!MI.isPHI() && !getSource(MI)) || !MI.getOperand(0).isReg())
+            continue;
+          Register Reg = MI.getOperand(0).getReg();
+          if (Reg.isVirtual() && MRI->use_nodbg_empty(Reg)) {
+            PhiOffsets.erase(Reg);
+            MI.eraseFromParent();
+            Erased = Changed = true;
+          }
         }
-      }
+    }
+  };
+  EraseUnused();
+
+  // With the phis of the later stages gone, the increments of an unrolled
+  // kernel are only used by memory instructions and each other.
+  bool Collapsed = false;
+  for (MachineBasicBlock &MBB : MF)
+    Collapsed |= collapseIncrements(MBB);
+  if (Collapsed) {
+    Changed = true;
+    for (MachineBasicBlock &MBB : MF)
+      rewriteBases(MBB);
+    EraseUnused();
   }
   return Changed;
 }

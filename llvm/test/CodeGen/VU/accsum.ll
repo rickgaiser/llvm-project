@@ -122,7 +122,7 @@ define void @broadcast_y() {
 ; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi0)
 ; CHECK-NEXT:    addw.xyz vf3, vf0, vf1w nop
-; CHECK-NEXT:    mulw.w vf3, vf0, vf1w nop
+; CHECK-NEXT:    mulw.w vf3, vf1, vf0w nop
 ; CHECK-NEXT:    muly.xyzw vf1, vf2, vf1y nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
@@ -147,9 +147,8 @@ define void @dot3() {
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    mul.xyzw vf1, vf1, vf2 nop
-; CHECK-NEXT:    maxw.xyzw vf2, vf0, vf0w nop
-; CHECK-NEXT:    addaz.xyzw acc, vf1, vf1z nop
-; CHECK-NEXT:    maddx.xyzw vf1, vf2, vf1x lq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    addz.xyzw vf2, vf1, vf1z nop
+; CHECK-NEXT:    addx.xyzw vf1, vf2, vf1x lq.xyzw vf2, 2(vi0)
 ; CHECK-NEXT:    maxx.xyzw vf1, vf1, vf0x nop
 ; CHECK-NEXT:    muly.xyzw vf1, vf2, vf1y nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)

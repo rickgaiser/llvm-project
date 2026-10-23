@@ -11,12 +11,17 @@ class VUReg<bits<16> Enc, string n> : Register<n> {
   let Namespace = "VU";
 }
 
-// 128-bit floating-point registers. VF0 is hardwired to (0, 0, 0, 1).
-foreach i = 0...31 in
+// 128-bit floating-point registers. VF0 is hardwired to (0, 0, 0, 1), a
+// constant: reading it does not keep an instruction in a loop.
+let isConstant = true in
+def VF0 : VUReg<0, "vf0">, DwarfRegNum<[0]>;
+foreach i = 1...31 in
   def VF#i : VUReg<i, "vf"#i>, DwarfRegNum<[i]>;
 
 // 16-bit integer registers. VI0 is hardwired to 0.
-foreach i = 0...15 in
+let isConstant = true in
+def VI0 : VUReg<0, "vi0">, DwarfRegNum<[32]>;
+foreach i = 1...15 in
   def VI#i : VUReg<i, "vi"#i>, DwarfRegNum<[!add(i, 32)]>;
 
 // Special registers. They only appear as fixed operands in the assembly
