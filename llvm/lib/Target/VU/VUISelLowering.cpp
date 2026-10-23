@@ -404,12 +404,14 @@ static void collectLaneTerms(SDValue V, SelectionDAG &DAG,
   addLeaf(R, V.getOpcode() == ISD::FSUB);
 }
 
-// Adds fields of vectors in the w field of ACC, like a dot product:
-//   (t.y + t.z) + t.x  ->  MULAy.w acc, vf0, t; MADDAz.w acc, vf0, t;
-//                         MADDx.w d, vf0, t
-// The scalar result is d.w; selection reads it from there, so no field is
-// moved to x. vf0 is (0, 0, 0, 1), so the products are exact and the sum is
-// rounded as before.
+// Adds fields of vectors, like a dot product, in the field of the first
+// term, which ADDA adds the second one to as a broadcast. The other terms are
+// added through ACC with a vector of ones, which is vf0 for the w field:
+//   (t.y + t.z) + t.x  ->  ADDAz.y acc, t, t.z; MADDx.y d, ones, t.x
+// Two terms are one ADD. The scalar result is d.y; selection reads it from
+// there, so no field is moved to x. The products are exact and the sum is
+// rounded as before; the first two terms are swapped for the w field, which
+// gives the same sum.
 static SDValue combineLaneSum(SDNode *N, SelectionDAG &DAG) {
   if (N->getValueType(0) != MVT::f32 ||
       (N->hasOneUse() && isScalarSum(SDValue(*N->user_begin(), 0))))
@@ -419,17 +421,27 @@ static SDValue combineLaneSum(SDNode *N, SelectionDAG &DAG) {
   if (Terms[0].Neg || Terms.size() < 2 || Terms.size() > 4 ||
       none_of(Terms, [](const AccTerm &T) { return T.Field != 0; }))
     return SDValue();
+  if (Terms[0].Field != 3 && Terms[1].Field == 3 && !Terms[1].Neg)
+    std::swap(Terms[0], Terms[1]);
   SDLoc DL(N);
+  unsigned Field = Terms[0].Field;
+  SDValue VF0 = DAG.getRegister(VU::VF0, MVT::v4f32);
+  SDValue Ones = Field == 3
+                     ? VF0
+                     : DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, VF0,
+                                   DAG.getTargetConstant(3, DL, MVT::i32));
+  Terms[0].A = Terms[0].B;
+  Terms[0].Field = VUISD::AccSumAdd;
   SmallVector<SDValue, 16> Ops;
   for (const AccTerm &T : Terms) {
-    Ops.push_back(T.A);
+    Ops.push_back(T.Field == VUISD::AccSumAdd ? T.A : Ones);
     Ops.push_back(T.B);
     Ops.push_back(DAG.getTargetConstant(T.Field, DL, MVT::i32));
     Ops.push_back(DAG.getTargetConstant(T.Neg, DL, MVT::i32));
   }
   SDValue Sum = DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
   return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Sum,
-                     DAG.getVectorIdxConstant(3, DL));
+                     DAG.getVectorIdxConstant(Field, DL));
 }
 
 // A scalar operation on field k of a vector is done on the whole vector,
@@ -548,6 +560,12 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
     return DAG.getNode(VUISD::ACCSUM, DL, MVT::v4f32, Ops);
   }
   case VUISD::SPLAT: {
+    // 1.0 is vf0.w.
+    if (auto *C = dyn_cast<ConstantFPSDNode>(N->getOperand(0)))
+      if (C->isExactlyValue(1.0))
+        return DAG.getNode(VUISD::BCAST, DL, MVT::v4f32,
+                           DAG.getRegister(VU::VF0, MVT::v4f32),
+                           DAG.getTargetConstant(3, DL, MVT::i32));
     // Broadcast straight from the field: no move to the x field first.
     SDValue Src;
     unsigned Field;

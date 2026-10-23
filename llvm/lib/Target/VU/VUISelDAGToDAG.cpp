@@ -71,6 +71,17 @@ void VUDAGToDAGISel::Select(SDNode *N) {
   case VUISD::ACCSUM:
     selectAccSum(N);
     return;
+  case VUISD::BCAST:
+    // Ones: MAXw d, vf0, vf0w
+    if (auto *R = dyn_cast<RegisterSDNode>(N->getOperand(0));
+        R && R->getReg() == VU::VF0 && N->getConstantOperandVal(1) == 3) {
+      SDLoc DL(N);
+      SDValue Ops[] = {CurDAG->getTargetConstant(15, DL, MVT::i32),
+                       N->getOperand(0), N->getOperand(0)};
+      ReplaceNode(N, CurDAG->getMachineNode(VU::MAXw, DL, MVT::v4f32, Ops));
+      return;
+    }
+    break;
   case ISD::FDIV:
   case ISD::FSQRT:
     if (N->getValueType(0) == MVT::f32) {
@@ -83,7 +94,8 @@ void VUDAGToDAGISel::Select(SDNode *N) {
 }
 
 // MULA, MADDA/MSUBA..., MADD/MSUB. Each instruction reads the ACC value of
-// the one before it.
+// the one before it. A sum whose first term is AccSumAdd starts with ADDA or
+// SUBA instead of MULA and MADDA, or is an ADD or SUB for two terms.
 void VUDAGToDAGISel::selectAccSum(SDNode *N) {
   // Opcodes for the x, y, z and w broadcasts and for all fields.
   static constexpr unsigned MulA[] = {VU::MULAx, VU::MULAy, VU::MULAz,
@@ -96,12 +108,34 @@ void VUDAGToDAGISel::selectAccSum(SDNode *N) {
                                       VU::MADDw, VU::MADD};
   static constexpr unsigned Msub[] = {VU::MSUBx, VU::MSUBy, VU::MSUBz,
                                       VU::MSUBw, VU::MSUB};
+  static constexpr unsigned AddA[] = {VU::ADDAx, VU::ADDAy, VU::ADDAz,
+                                      VU::ADDAw, VU::ADDA};
+  static constexpr unsigned SubA[] = {VU::SUBAx, VU::SUBAy, VU::SUBAz,
+                                      VU::SUBAw, VU::SUBA};
+  static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw,
+                                     VU::ADD};
+  static constexpr unsigned Sub[] = {VU::SUBx, VU::SUBy, VU::SUBz, VU::SUBw,
+                                     VU::SUB};
 
   SDLoc DL(N);
   SDValue Mask = CurDAG->getTargetConstant(15, DL, MVT::i32);
   unsigned NumTerms = N->getNumOperands() / 4;
   SDValue Acc;
-  for (unsigned I = 0; I != NumTerms; ++I) {
+  unsigned First = 0;
+  if (N->getConstantOperandVal(2) == VUISD::AccSumAdd) {
+    SDValue Ops[] = {Mask, N->getOperand(1), N->getOperand(5)};
+    unsigned Field = N->getConstantOperandVal(6);
+    bool Neg = N->getConstantOperandVal(7);
+    if (NumTerms == 2) {
+      unsigned Opc = Neg ? Sub[Field] : Add[Field];
+      ReplaceNode(N, CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops));
+      return;
+    }
+    unsigned Opc = Neg ? SubA[Field] : AddA[Field];
+    Acc = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops), 0);
+    First = 2;
+  }
+  for (unsigned I = First; I != NumTerms; ++I) {
     SDValue A = N->getOperand(4 * I), B = N->getOperand(4 * I + 1);
     unsigned Field = N->getConstantOperandVal(4 * I + 2);
     bool Neg = N->getConstantOperandVal(4 * I + 3);
@@ -114,7 +148,7 @@ void VUDAGToDAGISel::selectAccSum(SDNode *N) {
       ReplaceNode(N, CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops));
       return;
     }
-    unsigned Opc = I == 0 ? MulA[Field] : Neg ? MsubA[Field] : MaddA[Field];
+    unsigned Opc = !Acc ? MulA[Field] : Neg ? MsubA[Field] : MaddA[Field];
     Acc = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops), 0);
   }
 }

@@ -22,7 +22,6 @@ FunctionPass *createVUPacketizerPass();
 FunctionPass *createVUFoldQPass();
 FunctionPass *createVUFoldQCopiesPass();
 FunctionPass *createVUHazardsPass();
-FunctionPass *createVULaneSumsPass();
 FunctionPass *createVULoopCopiesPass();
 FunctionPass *createVULoopSchedulerPass();
 
@@ -33,7 +32,6 @@ void initializeVUPacketizerPass(PassRegistry &);
 void initializeVUFoldQPass(PassRegistry &);
 void initializeVUFoldQCopiesPass(PassRegistry &);
 void initializeVUHazardsPass(PassRegistry &);
-void initializeVULaneSumsPass(PassRegistry &);
 void initializeVULoopCopiesPass(PassRegistry &);
 void initializeVULoopSchedulerPass(PassRegistry &);
 } // namespace llvm

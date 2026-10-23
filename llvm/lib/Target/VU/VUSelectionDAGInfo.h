@@ -19,6 +19,11 @@ namespace llvm {
 namespace VUISD {
 /// The field operand of an ACCSUM term that uses all fields of b.
 constexpr unsigned AccSumFull = 4;
+/// The field operand of the first ACCSUM term when the term is b itself and
+/// the second term is added to it: ADDA (or ADD for two terms) instead of
+/// MULA and MADDA. a of the following terms is 1.0 in the fields of the
+/// result.
+constexpr unsigned AccSumAdd = 5;
 } // namespace VUISD
 
 class VUSelectionDAGInfo : public SelectionDAGGenTargetInfo {

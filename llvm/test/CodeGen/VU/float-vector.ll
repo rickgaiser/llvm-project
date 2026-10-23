@@ -46,15 +46,12 @@ define void @vec_ops() {
 define void @splat_store() {
 ; CHECK-LABEL: splat_store:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    sub.xyzw vf3, vf0, vf0 loi 0x3f800000
-; CHECK-NEXT:    addi.x vf2, vf0, i lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    maxw.xyzw vf2, vf0, vf0w lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    sub.xyzw vf3, vf0, vf0 nop
+; CHECK-NEXT:    addz.xyz vf1, vf0, vf1z sq.xyzw vf2, 2(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
-; CHECK-NEXT:    addz.xyz vf1, vf0, vf1z nop
-; CHECK-NEXT:    addx.xyz vf2, vf0, vf2x nop
 ; CHECK-NEXT:    mulz.w vf1, vf0, vf1z nop
-; CHECK-NEXT:    mulx.w vf2, vf0, vf2x nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
-; CHECK-NEXT:    nop sq.xyzw vf2, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)

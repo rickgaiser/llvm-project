@@ -24,7 +24,6 @@ add_llvm_target(VUCodeGen
   VUInstrInfo.cpp
   VUISelDAGToDAG.cpp
   VUISelLowering.cpp
-  VULaneSums.cpp
   VULoopCopies.cpp
   VULoopScheduler.cpp
   VUPacketizer.cpp
@@ -36,7 +35,6 @@ add_llvm_target(VUCodeGen
   VUWords.cpp
 
   LINK_COMPONENTS
-  Analysis
   AsmPrinter
   CodeGen
   CodeGenTypes
