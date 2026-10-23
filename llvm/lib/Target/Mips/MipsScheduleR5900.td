@@ -266,7 +266,7 @@ def : InstRW<[R5900WriteFPU], (instrs FADD_S, FSUB_S, FMUL_S, FABS_S, FNEG_S,
 def R5900WriteFPUCmp : R5900Write<[R5900Pipe0, R5900C1], 6>;
 def : InstRW<[R5900WriteFPUCmp], (instrs FCMP_S32, C_F_S, C_EQ_S, C_OLT_S,
                                   C_OLE_S)>;
-def : InstRW<[R5900WriteFPUDivSqrt], (instrs FDIV_S, FSQRT_S)>;
+def : InstRW<[R5900WriteFPUDivSqrt], (instrs FDIV_S, FSQRT_S, R5900_SQRT_S)>;
 def : InstRW<[R5900WriteFPU], (instrs R5900_MAX_S, R5900_MIN_S)>;
 
 def R5900WriteFPURsqrt : R5900Write<[R5900Pipe0, R5900C1, R5900FDiv], 13,

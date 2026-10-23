@@ -591,9 +591,11 @@ let AdditionalPredicates = [NotInMicroMips] in {
   defm FNEG : ABSS_M<"neg.d", fneg>, ABSS_FM<0x7, 17>, ISA_MIPS1;
 }
 
-let AdditionalPredicates = [NotInMicroMips], mayRaiseFPException = 1, Uses = [FCR31] in {
+let AdditionalPredicates = [NotInMicroMips, NotR5900], mayRaiseFPException = 1,
+    Uses = [FCR31] in
   def FSQRT_S : MMRel, StdMMR6Rel, ABSS_FT<"sqrt.s", FGR32Opnd, FGR32Opnd,
                 any_fsqrt>, ABSS_FM<0x4, 16>, ISA_MIPS2;
+let AdditionalPredicates = [NotInMicroMips], mayRaiseFPException = 1, Uses = [FCR31] in {
   defm FSQRT : ABSS_M<"sqrt.d", any_fsqrt>, ABSS_FM<0x4, 17>, ISA_MIPS2;
 }
 
@@ -1179,6 +1181,20 @@ let Predicates = [IsR5900, IsNotSoftFloat], DecoderNamespace = "R5900" in {
                     ADDS_FM<0x28, 16>;
   def R5900_MIN_S : ADDS_FT<"min.s", FGR32Opnd, 1, fminnum>,
                     ADDS_FM<0x29, 16>;
+
+  //===----------------------------------------------------------------------===//
+  // R5900 SQRT.S
+  //===----------------------------------------------------------------------===//
+  // The R5900 reads the operand of SQRT.S from ft (binutils: "sqrt.s D,T");
+  // the MIPS II encoding with it in fs would take the root of another
+  // register.
+
+  let mayRaiseFPException = 1, Uses = [FCR31] in
+  def R5900_SQRT_S
+      : InstSE<(outs FGR32Opnd:$fd), (ins FGR32Opnd:$ft), "sqrt.s\t$fd, $ft",
+               [(set FGR32Opnd:$fd, (any_fsqrt FGR32Opnd:$ft))], FrmFR,
+               "sqrt.s">,
+        R5900_SQRT_FM;
 
   //===----------------------------------------------------------------------===//
   // R5900 RSQRT.S (Reciprocal Square Root)

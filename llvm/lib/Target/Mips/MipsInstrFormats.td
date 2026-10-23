@@ -720,6 +720,22 @@ class R5900_FPUACC_FM<bits<6> funct> : StdArch {
   let Inst{5 -0} = funct;
 }
 
+// R5900 SQRT.S: the operand is in the ft field and fs is 0 (MIPS II has it
+// in fs).
+class R5900_SQRT_FM : StdArch {
+  bits<5> fd;
+  bits<5> ft;
+
+  bits<32> Inst;
+
+  let Inst{31 -26} = 0x11; // COP1
+  let Inst{25 -21} = 0x10; // fmt = S
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = 0;
+  let Inst{10 -6} = fd;
+  let Inst{5 -0} = 0x04;
+}
+
 class MFC1_FM<bits<5> funct> : StdArch {
   bits<5> rt;
   bits<5> fs;
