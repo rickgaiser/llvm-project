@@ -75,6 +75,9 @@ struct MachinePipelinerPolicy {
   /// The maximum stage of a schedule, or -1 for no limit. Iterations that are
   /// further apart are also assumed to access memory at different times.
   int MaxStages = 3;
+  /// Loops with a larger minimal initiation interval are not pipelined, or -1
+  /// for no limit.
+  int MaxMII = 27;
 };
 
 class LLVM_ABI MachinePipelinerLegacy : public MachineFunctionPass {

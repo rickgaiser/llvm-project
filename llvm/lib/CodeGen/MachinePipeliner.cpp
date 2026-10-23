@@ -954,8 +954,8 @@ void SwingSchedulerDAG::schedule() {
   }
 
   // Don't pipeline large loops.
-  if (SwpMaxMii != -1 && (int)MII > SwpMaxMii) {
-    LLVM_DEBUG(dbgs() << "MII > " << SwpMaxMii
+  if (Policy.MaxMII != -1 && (int)MII > Policy.MaxMII) {
+    LLVM_DEBUG(dbgs() << "MII > " << Policy.MaxMII
                       << ", we don't pipeline large loops\n");
     NumFailLargeMaxMII++;
     ORE->emit([&]() {
@@ -963,7 +963,7 @@ void SwingSchedulerDAG::schedule() {
                  DEBUG_TYPE, "schedule", Loop.getStartLoc(), Loop.getHeader())
              << "Minimal Initiation Interval too large: "
              << ore::NV("MII", (int)MII) << " > "
-             << ore::NV("SwpMaxMii", SwpMaxMii) << "."
+             << ore::NV("SwpMaxMii", Policy.MaxMII) << "."
              << "Refer to -pipeliner-max-mii.";
     });
     return;
@@ -2913,6 +2913,8 @@ void SwingSchedulerDAG::initPolicy() {
     Policy.UseIterativeScheduler = SwpIterative;
   if (SwpMaxStages.getNumOccurrences())
     Policy.MaxStages = SwpMaxStages;
+  if (SwpMaxMii.getNumOccurrences())
+    Policy.MaxMII = SwpMaxMii;
 }
 
 /// Process the nodes in the computed order and create the pipelined schedule
