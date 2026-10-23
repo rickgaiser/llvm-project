@@ -212,19 +212,19 @@ define void @late_acc_term() {
 ; CHECK-NEXT:    nop lq.xyzw vf3, 0(vi2)
 ; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
 ; CHECK-NEXT:    nop iaddiu vi1, vi0, 50
-; CHECK-NEXT:    nop iaddi vi3, vi2, 1
+; CHECK-NEXT:    nop iaddi vi4, vi2, 1
 ; CHECK-NEXT:    mul.xyzw vf4, vf3, vf3 nop
-; CHECK-NEXT:    nop ibeq vi3, vi1, .LBB3_6
+; CHECK-NEXT:    nop ibeq vi4, vi1, .LBB3_6
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB3_1: ; %loop
-; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 lq.xyzw vf5, 0(vi3)
-; CHECK-NEXT:    nop iaddi vi4, vi3, 1
+; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 lq.xyzw vf5, 0(vi4)
+; CHECK-NEXT:    nop iaddi vi3, vi4, 1
 ; CHECK-NEXT:    mul.xyzw vf6, vf4, vf4 nop
-; CHECK-NEXT:    mul.xyzw vf4, vf5, vf5 ibeq vi4, vi1, .LBB3_5
+; CHECK-NEXT:    mul.xyzw vf4, vf5, vf5 ibeq vi3, vi1, .LBB3_5
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB3_2: ; %loop
-; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 lq.xyzw vf7, 0(vi4)
-; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 iaddi vi3, vi4, 1
+; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 lq.xyzw vf7, 0(vi3)
+; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 iaddi vi3, vi3, 1
 ; CHECK-NEXT:    mul.xyzw vf6, vf4, vf4 nop
 ; CHECK-NEXT:    mul.xyzw vf4, vf7, vf7 ibeq vi3, vi1, .LBB3_4
 ; CHECK-NEXT:    nop nop
@@ -233,16 +233,15 @@ define void @late_acc_term() {
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 move.xyzw vf3, vf5
 ; CHECK-NEXT:    maddx.xyzw vf9, vf2, vf8x move.xyzw vf5, vf7
 ; CHECK-NEXT:    mul.xyzw vf10, vf4, vf4 lq.xyzw vf7, 0(vi3)
-; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 iaddiu vi4, vi3, 0
-; CHECK-NEXT:    nop iaddi vi3, vi4, 1
+; CHECK-NEXT:    mul.xyzw vf8, vf6, vf6 iaddi vi3, vi3, 1
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop sq.xyzw vf9, 196(vi3)
 ; CHECK-NEXT:    mul.xyzw vf4, vf7, vf7 ibne vi3, vi1, .LBB3_3
 ; CHECK-NEXT:    mul.xyzw vf6, vf10, vf10 nop
 ; CHECK-NEXT:  .LBB3_4:
-; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 iaddi vi2, vi3, -2
-; CHECK-NEXT:    maddx.xyzw vf3, vf2, vf8x nop
+; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 iaddi vi4, vi3, -1
+; CHECK-NEXT:    maddx.xyzw vf3, vf2, vf8x iaddi vi2, vi3, -2
 ; CHECK-NEXT:    nop sq.xyzw vf3, 197(vi3)
-; CHECK-NEXT:    nop iaddiu vi3, vi4, 0
 ; CHECK-NEXT:    nop move.xyzw vf3, vf5
 ; CHECK-NEXT:    nop move.xyzw vf5, vf7
 ; CHECK-NEXT:  .LBB3_5:
@@ -250,7 +249,7 @@ define void @late_acc_term() {
 ; CHECK-NEXT:    mula.xyzw acc, vf1, vf3 nop
 ; CHECK-NEXT:    maddx.xyzw vf3, vf2, vf6x nop
 ; CHECK-NEXT:    nop sq.xyzw vf3, 200(vi2)
-; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:    nop iaddiu vi2, vi4, 0
 ; CHECK-NEXT:    nop move.xyzw vf3, vf5
 ; CHECK-NEXT:  .LBB3_6:
 ; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 nop

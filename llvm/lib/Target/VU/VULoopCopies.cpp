@@ -361,9 +361,12 @@ bool VULoopCopies::rebaseExitPhis(MachineBasicBlock &MBB) {
     // The phis expressed by Root and the uses that need a register.
     SmallVector<std::pair<MachineInstr *, int64_t>, 4> Members = {{&Root, 0}};
     for (MachineInstr &Q : MBB.phis()) {
-      auto It = PhiOffsets.find(Q.getOperand(0).getReg());
-      if (It != PhiOffsets.end() && It->second.Reg == R)
-        Members.push_back({&Q, It->second.Offset});
+      Register QReg = Q.getOperand(0).getReg();
+      if (QReg == R || !PhiOffsets.count(QReg))
+        continue;
+      RegOffset X = resolve(QReg);
+      if (X.Reg == R)
+        Members.push_back({&Q, X.Offset});
     }
     bool Fits = true;
     for (auto [Q, Offset] : Members)
