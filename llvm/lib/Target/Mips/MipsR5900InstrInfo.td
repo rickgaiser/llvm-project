@@ -1154,8 +1154,12 @@ let Predicates = [IsR5900] in {
   // R5900 Scalar MMI Operations
   // These use MMI instructions for scalar operations on i32/i64 values.
   // On R5900, GPR128/GPR64/GPR32 are the same physical registers, so these
-  // instructions operate on the lower bits and ignore/produce garbage in upper
-  // bits.
+  // instructions operate on each 32-bit word of the register. An i32 value
+  // must stay sign-extended to 64 bits (64-bit instructions such as SLTIU and
+  // BEQ read the whole register). With sign-extended inputs, PMAXW and PMINW
+  // keep that, since the upper word is the max/min of the sign words; the
+  // other operations do not (PABSW gives 1 for the upper word of a negative
+  // input), so their result is sign-extended again with SLL 0.
   //===----------------------------------------------------------------------===//
 
   // Scalar versions of MMI instructions - same encoding, different register
@@ -1183,7 +1187,7 @@ let Predicates = [IsR5900] in {
   }
 
   // Scalar MMI patterns - use separate Pat definitions to avoid pattern issues
-  def : Pat<(i32 (abs GPR32:$rt)), (PABSW_S32 GPR32:$rt)>;
+  def : Pat<(i32 (abs GPR32:$rt)), (SLL (PABSW_S32 GPR32:$rt), 0)>;
   def : Pat<(i32 (smax GPR32:$rs, GPR32:$rt)), (PMAXW_S32 GPR32:$rs,
                                                    GPR32:$rt)>;
   def : Pat<(i32 (smin GPR32:$rs, GPR32:$rt)), (PMINW_S32 GPR32:$rs,
@@ -1215,14 +1219,14 @@ let Predicates = [IsR5900] in {
   }
 
   // Scalar saturating arithmetic patterns
-  def : Pat<(i32 (saddsat GPR32:$rs, GPR32:$rt)), (PADDSW_S32 GPR32:$rs,
-                                                      GPR32:$rt)>;
-  def : Pat<(i32 (ssubsat GPR32:$rs, GPR32:$rt)), (PSUBSW_S32 GPR32:$rs,
-                                                      GPR32:$rt)>;
-  def : Pat<(i32 (uaddsat GPR32:$rs, GPR32:$rt)), (PADDUW_S32 GPR32:$rs,
-                                                      GPR32:$rt)>;
-  def : Pat<(i32 (usubsat GPR32:$rs, GPR32:$rt)), (PSUBUW_S32 GPR32:$rs,
-                                                      GPR32:$rt)>;
+  def : Pat<(i32 (saddsat GPR32:$rs, GPR32:$rt)),
+            (SLL (PADDSW_S32 GPR32:$rs, GPR32:$rt), 0)>;
+  def : Pat<(i32 (ssubsat GPR32:$rs, GPR32:$rt)),
+            (SLL (PSUBSW_S32 GPR32:$rs, GPR32:$rt), 0)>;
+  def : Pat<(i32 (uaddsat GPR32:$rs, GPR32:$rt)),
+            (SLL (PADDUW_S32 GPR32:$rs, GPR32:$rt), 0)>;
+  def : Pat<(i32 (usubsat GPR32:$rs, GPR32:$rt)),
+            (SLL (PSUBUW_S32 GPR32:$rs, GPR32:$rt), 0)>;
 
   // PLZCW scalar version for CTLZ lowering
   // PLZCW counts leading bits matching MSB (sign bit), returns (count - 1)
