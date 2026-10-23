@@ -72,6 +72,9 @@ struct MachinePipelinerPolicy {
   /// instruction does not fit, instead of the swing modulo scheduler. It
   /// requires the processor resources instead of the DFA.
   bool UseIterativeScheduler = false;
+  /// The maximum stage of a schedule, or -1 for no limit. Iterations that are
+  /// further apart are also assumed to access memory at different times.
+  int MaxStages = 3;
 };
 
 class LLVM_ABI MachinePipelinerLegacy : public MachineFunctionPass {

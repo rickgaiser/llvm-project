@@ -1029,8 +1029,8 @@ void SwingSchedulerDAG::schedule() {
     return;
   }
   // Check that the maximum stage count is less than user-defined limit.
-  if (SwpMaxStages > -1 && (int)numStages > SwpMaxStages) {
-    LLVM_DEBUG(dbgs() << "numStages:" << numStages << ">" << SwpMaxStages
+  if (Policy.MaxStages > -1 && (int)numStages > Policy.MaxStages) {
+    LLVM_DEBUG(dbgs() << "numStages:" << numStages << ">" << Policy.MaxStages
                       << " : too many stages, abort\n");
     NumFailLargeMaxStage++;
     ORE->emit([&]() {
@@ -1038,7 +1038,7 @@ void SwingSchedulerDAG::schedule() {
                  DEBUG_TYPE, "schedule", Loop.getStartLoc(), Loop.getHeader())
              << "Too many stages in schedule: "
              << ore::NV("numStages", (int)numStages) << " > "
-             << ore::NV("SwpMaxStages", SwpMaxStages)
+             << ore::NV("SwpMaxStages", Policy.MaxStages)
              << ". Refer to -pipeliner-max-stages.";
     });
     return;
@@ -2911,6 +2911,8 @@ void SwingSchedulerDAG::initPolicy() {
     Policy.ShouldLimitRegPressure = LimitRegPressure;
   if (SwpIterative.getNumOccurrences())
     Policy.UseIterativeScheduler = SwpIterative;
+  if (SwpMaxStages.getNumOccurrences())
+    Policy.MaxStages = SwpMaxStages;
 }
 
 /// Process the nodes in the computed order and create the pipelined schedule
@@ -2943,9 +2945,10 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
       for (bool KeepSingleRegOrder : {false, true}) {
         Schedule.reset();
         Schedule.setInitiationInterval(II);
-        scheduleFound = scheduleIteratively(Schedule, II, KeepSingleRegOrder) &&
-                        (SwpMaxStages < 0 ||
-                         Schedule.getMaxStageCount() <= (unsigned)SwpMaxStages);
+        scheduleFound =
+            scheduleIteratively(Schedule, II, KeepSingleRegOrder) &&
+            (Policy.MaxStages < 0 ||
+             Schedule.getMaxStageCount() <= (unsigned)Policy.MaxStages);
         if (scheduleFound)
           break;
       }
@@ -2999,8 +3002,8 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
         // Even if we find a schedule, make sure the schedule doesn't exceed the
         // allowable number of stages. We keep trying if this happens.
         if (scheduleFound)
-          if (SwpMaxStages > -1 &&
-              Schedule.getMaxStageCount() > (unsigned)SwpMaxStages)
+          if (Policy.MaxStages > -1 &&
+              Schedule.getMaxStageCount() > (unsigned)Policy.MaxStages)
             scheduleFound = false;
 
         LLVM_DEBUG({
@@ -3379,17 +3382,17 @@ bool SwingSchedulerDAG::mayOverlapInLaterIter(
     }
   }
 
-  // The schedule is rejected if it has more than SwpMaxStages stages after the
-  // first, so iterations that are further apart never overlap in time. Find
+  // The schedule is rejected if it has more than Policy.MaxStages stages after
+  // the first, so iterations that are further apart never overlap in time. Find
   // the first later iteration in which OtherMI can access the region of
   // BaseMI.
-  if (SwpMaxStages > -1 && Delta != 0) {
+  if (Policy.MaxStages > -1 && Delta != 0) {
     int64_t Gap =
         Delta > 0 ? OffsetB - (OffsetO + (int64_t)AccessSizeO.getValue() - 1)
                   : OffsetO - (OffsetB + (int64_t)AccessSizeB.getValue() - 1);
     int64_t Distance = Gap > 0 ? divideCeil(Gap, std::abs(Delta)) : 1;
-    if (Distance > SwpMaxStages) {
-      LLVM_DEBUG(dbgs() << "  Result: No overlap within " << SwpMaxStages
+    if (Distance > Policy.MaxStages) {
+      LLVM_DEBUG(dbgs() << "  Result: No overlap within " << Policy.MaxStages
                         << " iterations\n");
       return false;
     }
@@ -3887,8 +3890,8 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
     return Schedule.getExtraRegisters();
   };
   auto StagesFit = [&] {
-    return SwpMaxStages < 0 ||
-           Schedule.getMaxStageCount() <= (unsigned)SwpMaxStages;
+    return Policy.MaxStages < 0 ||
+           Schedule.getMaxStageCount() <= (unsigned)Policy.MaxStages;
   };
   // The cycles where SU keeps its dependences, within one stage more on
   // each side of the schedule.

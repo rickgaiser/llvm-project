@@ -287,3 +287,105 @@ loop:
 exit:
   ret void
 }
+
+; Five products in a chain take 5 stages. The pointer of each older stage is
+; the latest pointer minus a constant, also after the loop, so the kernel
+; keeps only the latest one.
+define void @five_stages() {
+; CHECK-LABEL: five_stages:
+; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 1
+; CHECK-NEXT:    nop iaddiu vi4, vi0, 100
+; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi1)
+; CHECK-NEXT:    nop iaddi vi2, vi1, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibeq vi2, vi4, .LBB4_10
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_1: ; %loop
+; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 lq.xyzw vf2, 0(vi2)
+; CHECK-NEXT:    nop iaddi vi3, vi2, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 ibeq vi3, vi4, .LBB4_9
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_2: ; %loop
+; CHECK-NEXT:    mul.xyzw vf2, vf2, vf2 iaddi vi5, vi3, 1
+; CHECK-NEXT:    mul.xyzw vf3, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 lq.xyzw vf2, 0(vi3)
+; CHECK-NEXT:    nop ibeq vi5, vi4, .LBB4_8
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_3: ; %loop
+; CHECK-NEXT:    mul.xyzw vf2, vf2, vf2 iaddi vi7, vi5, 1
+; CHECK-NEXT:    mul.xyzw vf4, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 lq.xyzw vf2, 0(vi5)
+; CHECK-NEXT:    nop ibeq vi7, vi4, .LBB4_7
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_4: ; %loop
+; CHECK-NEXT:    mul.xyzw vf2, vf2, vf2 iaddi vi6, vi7, 1
+; CHECK-NEXT:    mul.xyzw vf5, vf4, vf4 nop
+; CHECK-NEXT:    mul.xyzw vf4, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 lq.xyzw vf2, 0(vi7)
+; CHECK-NEXT:    nop ibeq vi6, vi4, .LBB4_6
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_5: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    mul.xyzw vf6, vf2, vf2 lq.xyzw vf2, 0(vi6)
+; CHECK-NEXT:    mul.xyzw vf5, vf4, vf4 sq.xyzw vf5, 195(vi6)
+; CHECK-NEXT:    mul.xyzw vf4, vf3, vf3 iaddi vi6, vi6, 1
+; CHECK-NEXT:    mul.xyzw vf3, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf6, vf6 ibne vi6, vi4, .LBB4_5
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB4_6:
+; CHECK-NEXT:    nop iaddi vi5, vi6, -1
+; CHECK-NEXT:    nop iaddi vi3, vi6, -2
+; CHECK-NEXT:    nop iaddi vi2, vi6, -3
+; CHECK-NEXT:    nop iaddi vi1, vi6, -4
+; CHECK-NEXT:    nop sq.xyzw vf5, 195(vi6)
+; CHECK-NEXT:  .LBB4_7:
+; CHECK-NEXT:    mul.xyzw vf4, vf4, vf4 nop
+; CHECK-NEXT:    nop sq.xyzw vf4, 200(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:    nop iaddiu vi3, vi5, 0
+; CHECK-NEXT:  .LBB4_8:
+; CHECK-NEXT:    mul.xyzw vf3, vf3, vf3 nop
+; CHECK-NEXT:    mul.xyzw vf3, vf3, vf3 nop
+; CHECK-NEXT:    nop sq.xyzw vf3, 200(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
+; CHECK-NEXT:  .LBB4_9:
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 200(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi2, 0
+; CHECK-NEXT:  .LBB4_10:
+; CHECK-NEXT:    mul.xyzw vf1, vf2, vf2 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    mul.xyzw vf1, vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 200(vi1)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+entry:
+  br label %loop
+
+loop:
+  %i = phi i16 [ 1, %entry ], [ %i.next, %loop ]
+  %v = call <4 x float> @llvm.vu.lq(i16 %i)
+  %a = fmul <4 x float> %v, %v
+  %b = fmul <4 x float> %a, %a
+  %c = fmul <4 x float> %b, %b
+  %d = fmul <4 x float> %c, %c
+  %e = fmul <4 x float> %d, %d
+  %o = add i16 %i, 200
+  call void @llvm.vu.sq(<4 x float> %e, i16 %o)
+  %i.next = add i16 %i, 1
+  %done = icmp eq i16 %i.next, 100
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}

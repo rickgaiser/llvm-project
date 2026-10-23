@@ -41,6 +41,10 @@ void VUSubtarget::overridePipelinerPolicy(
   // places the values of ACC and Q, with a single register each, much better
   // than swing modulo scheduling.
   Policy.UseIterativeScheduler = true;
+  // A chain of dependent FMAC instructions takes 4 cycles per instruction,
+  // and the loops are short, so the chain of one iteration spans more stages
+  // than on other targets.
+  Policy.MaxStages = 8;
 }
 
 namespace {

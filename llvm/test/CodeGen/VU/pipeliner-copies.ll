@@ -3,6 +3,9 @@
 ; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner \
 ; RUN:   -pipeliner-reduce-lifetimes=false < %s -o /dev/null 2>&1 \
 ; RUN:   | FileCheck %s --check-prefix=NOREDUCE
+; RUN: llc -mtriple=vu -pass-remarks-analysis=pipeliner \
+; RUN:   -pipeliner-max-stages=3 < %s -o /dev/null 2>&1 \
+; RUN:   | FileCheck %s --check-prefix=STAGES3
 ; RUN: llc -mtriple=vu -debug-only=vu-instr-info < %s -o /dev/null 2>&1 \
 ; RUN:   | FileCheck %s --check-prefix=COPIES
 ; REQUIRES: asserts
@@ -15,6 +18,7 @@
 ; CHECK: Minimal Initiation Interval: 3 (ResMII 3, RecMII 2)
 ; CHECK: Schedule found with Initiation Interval: 5
 ; NOREDUCE: Schedule found with Initiation Interval: 5
+; STAGES3: Schedule found with Initiation Interval: 5
 ; COPIES: VU: II 3 needs 1 upper and 6 lower words with copies
 ; COPIES: VU: II 4 needs 1 upper and 5 lower words with copies
 ; COPIES: VU: II 5 needs 1 upper and 4 lower words with copies
@@ -47,6 +51,7 @@ exit:
 ; CHECK: Minimal Initiation Interval: 4 (ResMII 4, RecMII 2)
 ; CHECK: Schedule found with Initiation Interval: 5, MaxStageCount: 3
 ; NOREDUCE: Schedule found with Initiation Interval: 6
+; STAGES3: Schedule found with Initiation Interval: 5, MaxStageCount: 3
 define void @late_load() {
 entry:
   %k = call <4 x float> @llvm.vu.lq(i16 0)
@@ -70,3 +75,29 @@ exit:
   ret void
 }
 
+; A chain of five products takes more than 20 cycles; at II 5, that is more
+; stages than the default limit of other targets allows.
+; CHECK: Minimal Initiation Interval: 5 (ResMII 5, RecMII 2)
+; CHECK: Schedule found with Initiation Interval: 5, MaxStageCount: 5
+; STAGES3: Schedule found with Initiation Interval: 7, MaxStageCount: 3
+define void @long_chain() {
+entry:
+  br label %loop
+
+loop:
+  %i = phi i16 [ 1, %entry ], [ %i.next, %loop ]
+  %v = call <4 x float> @llvm.vu.lq(i16 %i)
+  %a = fmul <4 x float> %v, %v
+  %b = fmul <4 x float> %a, %a
+  %c = fmul <4 x float> %b, %b
+  %d = fmul <4 x float> %c, %c
+  %e = fmul <4 x float> %d, %d
+  %o = add i16 %i, 200
+  call void @llvm.vu.sq(<4 x float> %e, i16 %o)
+  %i.next = add i16 %i, 1
+  %done = icmp eq i16 %i.next, 100
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}
