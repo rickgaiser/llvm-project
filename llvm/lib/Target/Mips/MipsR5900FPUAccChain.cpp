@@ -15,6 +15,13 @@
 //          MADDA_S e, f
 //          MADD_S result, g, h
 //
+// One term that is not a product, as in c0 + c1*x + c2*x^2 + y*x^3, starts
+// the chain as MULA_S c0, 1.0 (1.0 second: the R5900 multiplier is exact for a
+// power of two in ft, but can be 1 ULP low with it in fs). The products are
+// ordered by where their operands are defined, so the one that waits longest
+// for an operand (y above, often the result of the previous step) is the
+// final MADD_S, and the chain does not wait for it.
+//
 // The R5900 (PS2 Emotion Engine) has a dedicated FPU accumulator register that
 // enables efficient multiply-accumulate chains for operations like dot products
 // and matrix multiplications.
@@ -95,15 +102,22 @@ private:
     Register RHS;       // Second operand of multiply
   };
 
-  /// Try to build a chain starting from a FADD_S root
+  /// 1.0f in an FPR, made once per function when a chain needs it.
+  Register One;
+
+  /// Try to build a chain starting from a FADD_S root. Plain is set to the
+  /// one term that is not a product, if any.
   bool buildChain(MachineInstr &Root, SmallVectorImpl<MulAddLeaf> &Leaves,
                   SmallVectorImpl<MachineInstr *> &FAdds,
-                  DenseSet<MachineInstr *> &ChainInstrs);
+                  DenseSet<MachineInstr *> &ChainInstrs, Register &Plain);
 
   /// Transform a chain to use ACC instructions
   void transformChain(MachineBasicBlock &MBB, MachineInstr &Root,
                       SmallVectorImpl<MulAddLeaf> &Leaves,
-                      SmallVectorImpl<MachineInstr *> &FAdds);
+                      SmallVectorImpl<MachineInstr *> &FAdds, Register Plain);
+
+  /// The register with 1.0f, made in the entry block on first use.
+  Register getOne(MachineFunction &MF);
 };
 
 } // namespace
@@ -122,6 +136,7 @@ bool MipsR5900FPUAccChain::runOnMachineFunction(MachineFunction &MF) {
 
   TII = STI->getInstrInfo();
   MRI = &MF.getRegInfo();
+  One = Register();
 
   LLVM_DEBUG(dbgs() << "Running R5900 FPU ACC Chain pass on " << MF.getName()
                     << "\n");
@@ -155,10 +170,24 @@ MachineInstr *MipsR5900FPUAccChain::findDefBefore(MachineInstr &Use,
   return nullptr;
 }
 
+Register MipsR5900FPUAccChain::getOne(MachineFunction &MF) {
+  if (One)
+    return One;
+  MachineBasicBlock &Entry = MF.front();
+  MachineBasicBlock::iterator InsertPt = Entry.getFirstNonPHI();
+  Register Bits = MRI->createVirtualRegister(&Mips::GPR32RegClass);
+  One = MRI->createVirtualRegister(&Mips::FGR32RegClass);
+  BuildMI(Entry, InsertPt, DebugLoc(), TII->get(Mips::LUi), Bits)
+      .addImm(0x3f80);
+  BuildMI(Entry, InsertPt, DebugLoc(), TII->get(Mips::MTC1), One).addReg(Bits);
+  return One;
+}
+
 bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root,
                                       SmallVectorImpl<MulAddLeaf> &Leaves,
                                       SmallVectorImpl<MachineInstr *> &FAdds,
-                                      DenseSet<MachineInstr *> &ChainInstrs) {
+                                      DenseSet<MachineInstr *> &ChainInstrs,
+                                      Register &Plain) {
   // Work list for BFS traversal of the reduction tree
   SmallVector<MachineInstr *, 8> Worklist;
   Worklist.push_back(&Root);
@@ -217,21 +246,25 @@ bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root,
           return false;
         Worklist.push_back(Def1);
       } else {
-        // Both operands must be FMUL_S or FADD_S
-        if (!isFMulS(*Def1) && !isFAddS(*Def1))
-          return false;
-        if (!isFMulS(*Def2) && !isFAddS(*Def2))
-          return false;
-
-        Worklist.push_back(Def1);
-        Worklist.push_back(Def2);
+        // Both operands are FMUL_S or FADD_S, except for at most one term of
+        // the whole chain, which starts it as MULA_S term, 1.0.
+        for (auto [Def, Op] : {std::pair(Def1, Op1), std::pair(Def2, Op2)}) {
+          if (isFMulS(*Def) || isFAddS(*Def)) {
+            Worklist.push_back(Def);
+            continue;
+          }
+          if (Plain || MRI->getRegClass(Op) != &Mips::FGR32RegClass)
+            return false;
+          Plain = Op;
+        }
       }
     } else {
       return false;
     }
   }
 
-  // Need at least 2 multiplies to benefit from ACC
+  // Need at least 2 multiplies to benefit from ACC (with a plain term, the
+  // chain saves one instruction per multiply but one)
   if (Leaves.size() < 2)
     return false;
 
@@ -265,28 +298,51 @@ bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root,
 
 void MipsR5900FPUAccChain::transformChain(
     MachineBasicBlock &MBB, MachineInstr &Root,
-    SmallVectorImpl<MulAddLeaf> &Leaves,
-    SmallVectorImpl<MachineInstr *> &FAdds) {
+    SmallVectorImpl<MulAddLeaf> &Leaves, SmallVectorImpl<MachineInstr *> &FAdds,
+    Register Plain) {
   LLVM_DEBUG(dbgs() << "R5900 FPU ACC: Transforming chain with "
-                    << Leaves.size() << " multiplies\n");
+                    << Leaves.size() << " multiplies"
+                    << (Plain ? " and a plain term" : "") << "\n");
 
-  // Reverse the leaves so we consume them in the order they were loaded.
-  // The BFS traversal collects leaves in reverse program order (last multiply
-  // first), but for optimal scheduling we want MULA_S to use the first-loaded
-  // operands so the accumulator chain can start as soon as possible.
-  std::reverse(Leaves.begin(), Leaves.end());
+  // Order the multiplies by the position of the latest definition of their
+  // operands in this block (earlier blocks first), so that the chain starts
+  // as soon as possible and the multiply that waits longest comes last.
+  DenseMap<const MachineInstr *, unsigned> Pos;
+  unsigned N = 0;
+  for (MachineInstr &MI : MBB)
+    Pos[&MI] = ++N;
+  auto ReadyAt = [&](const MulAddLeaf &L) {
+    unsigned At = 0;
+    for (Register R : {L.LHS, L.RHS})
+      if (MachineInstr *Def = MRI->getVRegDef(R))
+        if (Def->getParent() == &MBB)
+          At = std::max(At, Pos.lookup(Def));
+    return At;
+  };
+  std::stable_sort(Leaves.begin(), Leaves.end(),
+                   [&](const MulAddLeaf &A, const MulAddLeaf &B) {
+                     return ReadyAt(A) < ReadyAt(B);
+                   });
 
   DebugLoc DL = Root.getDebugLoc();
   MachineBasicBlock::iterator InsertPt = Root;
   Register ResultReg = Root.getOperand(0).getReg();
 
-  // First multiply -> MULA_S (ACC = a * b)
-  BuildMI(MBB, InsertPt, DL, TII->get(Mips::MULA_S))
-      .addReg(Leaves[0].LHS)
-      .addReg(Leaves[0].RHS);
+  // The start: ACC = plain * 1.0, or ACC = a * b
+  size_t First = 0;
+  if (Plain) {
+    BuildMI(MBB, InsertPt, DL, TII->get(Mips::MULA_S))
+        .addReg(Plain)
+        .addReg(getOne(*MBB.getParent()));
+  } else {
+    BuildMI(MBB, InsertPt, DL, TII->get(Mips::MULA_S))
+        .addReg(Leaves[0].LHS)
+        .addReg(Leaves[0].RHS);
+    First = 1;
+  }
 
   // Middle multiplies -> MADDA_S (ACC += c * d)
-  for (size_t i = 1; i < Leaves.size() - 1; ++i) {
+  for (size_t i = First; i < Leaves.size() - 1; ++i) {
     BuildMI(MBB, InsertPt, DL, TII->get(Mips::MADDA_S))
         .addReg(Leaves[i].LHS)
         .addReg(Leaves[i].RHS);
@@ -337,12 +393,13 @@ bool MipsR5900FPUAccChain::optimizeBasicBlock(MachineBasicBlock &MBB) {
     SmallVector<MulAddLeaf, 8> Leaves;
     SmallVector<MachineInstr *, 8> FAdds;
     DenseSet<MachineInstr *> ChainInstrs;
+    Register Plain;
 
-    if (buildChain(*MI, Leaves, FAdds, ChainInstrs)) {
+    if (buildChain(*MI, Leaves, FAdds, ChainInstrs, Plain)) {
       // Mark all chain instructions as processed
       ProcessedInstrs.insert(ChainInstrs.begin(), ChainInstrs.end());
 
-      transformChain(MBB, *MI, Leaves, FAdds);
+      transformChain(MBB, *MI, Leaves, FAdds, Plain);
       Modified = true;
     }
   }
