@@ -153,3 +153,41 @@ entry:
   %s1 = fadd nnan ninf float %s0, %m0
   ret float %s1
 }
+
+; (x * 0.8 - y * 0.6) * 2 + 17.1: the product with 2 is t + t, a sum that
+; reaches t twice. Accumulating the products of t once would drop the factor
+; 2; the inner sum is a chain on its own.
+define float @sum_twice(float %x, float %y) {
+; CHECK-LABEL: sum_twice:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    lui $1, %highest(.LCPI6_0)
+; CHECK-NEXT:    lui $2, %highest(.LCPI6_1)
+; CHECK-NEXT:    daddiu $1, $1, %higher(.LCPI6_0)
+; CHECK-NEXT:    daddiu $2, $2, %higher(.LCPI6_1)
+; CHECK-NEXT:    dsll $1, $1, 16
+; CHECK-NEXT:    dsll $2, $2, 16
+; CHECK-NEXT:    daddiu $1, $1, %hi(.LCPI6_0)
+; CHECK-NEXT:    daddiu $2, $2, %hi(.LCPI6_1)
+; CHECK-NEXT:    dsll $1, $1, 16
+; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI6_0)($1)
+; CHECK-NEXT:    dsll $1, $2, 16
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI6_1)($1)
+; CHECK-NEXT:    mula.s $f12, $f0
+; CHECK-NEXT:    lui $1, %highest(.LCPI6_2)
+; CHECK-NEXT:    madd.s $f0, $f13, $f1
+; CHECK-NEXT:    daddiu $1, $1, %higher(.LCPI6_2)
+; CHECK-NEXT:    dsll $1, $1, 16
+; CHECK-NEXT:    daddiu $1, $1, %hi(.LCPI6_2)
+; CHECK-NEXT:    dsll $1, $1, 16
+; CHECK-NEXT:    add.s $f0, $f0, $f0
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI6_2)($1)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    add.s $f0, $f0, $f1
+entry:
+  %m0 = fmul nnan ninf float %x, 0x3FE99999A0000000
+  %m1 = fmul nnan ninf float %y, 0xBFE3333340000000
+  %t = fadd nnan ninf float %m0, %m1
+  %t2 = fadd nnan ninf float %t, %t
+  %r = fadd nnan ninf float %t2, 0x40311999A0000000
+  ret float %r
+}

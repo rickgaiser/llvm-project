@@ -199,9 +199,10 @@ bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root,
   while (!Worklist.empty() && Depth < MaxChainDepth) {
     MachineInstr *MI = Worklist.pop_back_val();
 
-    // Skip if already visited
+    // A value that the sum reaches twice, as in t + t for t * 2, is two
+    // terms of the sum: its products can not be accumulated only once.
     if (!ChainInstrs.insert(MI).second)
-      continue;
+      return false;
 
     Depth++;
 
