@@ -172,6 +172,10 @@ public:
       Features["mips64r2"] = Features["cnmips"] = true;
     else if (CPU == "octeon+")
       Features["mips64r2"] = Features["cnmips"] = Features["cnmipsp"] = true;
+    else if (CPU == "r5900")
+      // The R5900 FPU is single precision only, as the backend's r5900 CPU
+      // definition already says.
+      Features["r5900"] = Features["single-float"] = true;
     else
       Features[CPU] = true;
     return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);

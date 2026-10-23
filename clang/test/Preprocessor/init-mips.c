@@ -1741,6 +1741,16 @@
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPS-VU0 %s
 // MIPS-VU0:#define __mips_vu0 1
 
+// RUN: %clang_cc1 -target-cpu r5900 \
+// RUN:   -E -dM -triple=mips64el-none-none < /dev/null \
+// RUN:   | FileCheck -match-full-lines -check-prefix MIPS-R5900 %s
+// MIPS-R5900:#define __mips_hard_float 1
+// MIPS-R5900:#define __mips_single_float 1
+// RUN: %clang_cc1 -target-cpu r5900 -target-feature -single-float \
+// RUN:   -E -dM -triple=mips64el-none-none < /dev/null \
+// RUN:   | FileCheck -match-full-lines -check-prefix MIPS-R5900-DF %s
+// MIPS-R5900-DF-NOT:#define __mips_single_float 1
+
 // RUN: %clang_cc1 -target-feature +nomadd4 \
 // RUN:   -E -dM -triple=mips-none-none < /dev/null \
 // RUN:   | FileCheck -match-full-lines -check-prefix MIPS-NOMADD4 %s
