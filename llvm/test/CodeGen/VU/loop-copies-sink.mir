@@ -4,6 +4,10 @@
 
 # The value for the next iteration is the first instruction after the phis,
 # and is moved below the store.
+
+# In keep_acc_order, the value for the next iteration reads ACC. Below the
+# store, it would be after the MULA that starts the next value of ACC, and
+# the two values of ACC would cost two copies instead of the one saved.
 ---
 name: sink_first
 tracksRegLiveness: true
@@ -43,6 +47,58 @@ body: |
     SQ 15, %4, 100, %3
     %5:vi = IADDI %3, 1
     IBNE %5, %1, %bb.1
+    B %bb.2
+
+  bb.2:
+    PROGRAM_END
+...
+---
+name: keep_acc_order
+tracksRegLiveness: true
+body: |
+  ; CHECK-LABEL: name: keep_acc_order
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.1(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   [[IADDIU:%[0-9]+]]:vi = IADDIU $vi0, 0
+  ; CHECK-NEXT:   [[IADDIU1:%[0-9]+]]:vi = IADDIU $vi0, 10
+  ; CHECK-NEXT:   [[LQ:%[0-9]+]]:vf = LQ 15, 0, $vi0
+  ; CHECK-NEXT:   [[LQ1:%[0-9]+]]:vf = LQ 15, 1, $vi0
+  ; CHECK-NEXT:   [[MULA:%[0-9]+]]:accr = MULA 15, [[LQ1]], [[LQ1]]
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   [[PHI:%[0-9]+]]:vi = PHI [[IADDIU]], %bb.0, %6, %bb.1
+  ; CHECK-NEXT:   [[PHI1:%[0-9]+]]:vf = PHI [[LQ]], %bb.0, %8, %bb.1
+  ; CHECK-NEXT:   [[PHI2:%[0-9]+]]:accr = PHI [[MULA]], %bb.0, %10, %bb.1
+  ; CHECK-NEXT:   [[MADDw:%[0-9]+]]:vf = MADDw [[PHI2]], 15, [[LQ1]], $vf0
+  ; CHECK-NEXT:   [[MULA1:%[0-9]+]]:accr = MULA 15, [[PHI1]], [[PHI1]]
+  ; CHECK-NEXT:   SQ 15, [[PHI1]], 100, [[PHI]]
+  ; CHECK-NEXT:   [[IADDI:%[0-9]+]]:vi = IADDI [[PHI]], 1
+  ; CHECK-NEXT:   IBNE [[IADDI]], [[IADDIU1]], %bb.1
+  ; CHECK-NEXT:   B %bb.2
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   PROGRAM_END
+  bb.0:
+    %0:vi = IADDIU $vi0, 0
+    %1:vi = IADDIU $vi0, 10
+    %2:vf = LQ 15, 0, $vi0
+    %3:vf = LQ 15, 1, $vi0
+    %4:accr = MULA 15, %3, %3
+
+  bb.1:
+    successors: %bb.1, %bb.2
+
+    %5:vi = PHI %0, %bb.0, %9, %bb.1
+    %6:vf = PHI %2, %bb.0, %7, %bb.1
+    %10:accr = PHI %4, %bb.0, %8, %bb.1
+    %7:vf = MADDw %10, 15, %3, $vf0
+    %8:accr = MULA 15, %6, %6
+    SQ 15, %6, 100, %5
+    %9:vi = IADDI %5, 1
+    IBNE %9, %1, %bb.1
     B %bb.2
 
   bb.2:

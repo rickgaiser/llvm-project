@@ -224,6 +224,19 @@ bool VULoopCopies::canMoveBelow(const MachineInstr &MI,
     return false;
   if (MI.mayLoad() && Other.mayStore() && mayAlias(MI, Other))
     return false;
+  // A value of ACC or Q would live past the start of the next one, which
+  // costs two copies instead of the one saved.
+  for (const MachineOperand &Use : MI.all_uses()) {
+    if (!Use.getReg().isVirtual())
+      continue;
+    const TargetRegisterClass *RC = MRI->getRegClass(Use.getReg());
+    if (RC->getNumRegs() == 1 &&
+        any_of(Other.all_defs(), [&](const MachineOperand &Def) {
+          return Def.getReg().isVirtual() &&
+                 MRI->getRegClass(Def.getReg()) == RC;
+        }))
+      return false;
+  }
   for (const MachineOperand &MO : MI.operands()) {
     if (!MO.isReg() || !MO.getReg())
       continue;
