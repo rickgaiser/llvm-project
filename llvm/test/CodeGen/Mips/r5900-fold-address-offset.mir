@@ -8,6 +8,7 @@
   define void @fold_load_store() { ret void }
   define void @fold_two_uses() { ret void }
   define void @fold_through_addu() { ret void }
+  define void @fold_through_addu_same_reg() { ret void }
   define void @no_fold_stored() { ret void }
   define void @no_fold_src_redefined() { ret void }
   define void @no_fold_offset_overflow() { ret void }
@@ -65,6 +66,24 @@ body:             |
     $r1 = ADDu killed $r3, killed $r5
     $r2 = LW killed $r1, 0
     PseudoReturn undef $r31, implicit $r2
+...
+---
+# The sum is in the register of the add: its load keeps the sum as its base.
+name:            fold_through_addu_same_reg
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    liveins: $r3, $r5
+    ; CHECK-LABEL: name: fold_through_addu_same_reg
+    ; CHECK: liveins: $r3, $r5
+    ; CHECK-NEXT: {{  $}}
+    ; CHECK-NEXT: $r1 = ADDu killed $r5, $r3
+    ; CHECK-NEXT: $f0 = LWC1 killed $r1, 424
+    ; CHECK-NEXT: PseudoReturn undef $r31, implicit $f0
+    $r1 = ADDiu killed $r3, 280
+    $r1 = ADDu killed $r5, killed $r1
+    $f0 = LWC1 killed $r1, 144
+    PseudoReturn undef $r31, implicit $f0
 ...
 ---
 name:            no_fold_stored

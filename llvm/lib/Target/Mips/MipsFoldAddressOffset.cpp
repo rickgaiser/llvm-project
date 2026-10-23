@@ -67,6 +67,7 @@ private:
   bool collectUses(Register Reg, MachineBasicBlock::iterator From, int64_t Imm,
                    Register Keep, SmallVectorImpl<MachineInstr *> &Mems,
                    SmallVectorImpl<MachineInstr *> *Sums,
+                   SmallVectorImpl<MachineInstr *> *SumMems,
                    SmallVectorImpl<MachineInstr *> &DebugUses);
   bool foldAdd(MachineInstr &Add);
 };
@@ -116,12 +117,14 @@ static bool isBasePlusOffset(const MachineInstr &MI) {
 /// Collect the uses of Reg after From until it is redefined: loads and stores
 /// with Reg only as their base and an offset that still fits with Imm added,
 /// and, if Sums is given, register adds with Reg as one operand whose sums are
-/// used the same way. Keep must not change while Reg is live, and Reg must not
-/// be live out of the block.
+/// used the same way, by the loads and stores in SumMems. A sum may be in Reg
+/// itself, so its loads and stores are kept apart from those of Reg. Keep must
+/// not change while Reg is live, and Reg must not be live out of the block.
 bool MipsFoldAddressOffset::collectUses(
     Register Reg, MachineBasicBlock::iterator From, int64_t Imm, Register Keep,
     SmallVectorImpl<MachineInstr *> &Mems,
     SmallVectorImpl<MachineInstr *> *Sums,
+    SmallVectorImpl<MachineInstr *> *SumMems,
     SmallVectorImpl<MachineInstr *> &DebugUses) {
   MachineBasicBlock &MBB = *From->getParent();
   bool Ended = false;
@@ -147,7 +150,8 @@ bool MipsFoldAddressOffset::collectUses(
                   MI.getOpcode() == Mips::DADDu) &&
                  MI.getOperand(0).getReg() != Keep &&
                  collectUses(MI.getOperand(0).getReg(), MI.getIterator(), Imm,
-                             Register(), Mems, nullptr, DebugUses)) {
+                             Register(), *SumMems, nullptr, nullptr,
+                             DebugUses)) {
         Sums->push_back(&MI);
       } else {
         return false;
@@ -178,20 +182,21 @@ bool MipsFoldAddressOffset::foldAdd(MachineInstr &Add) {
 
   // The loads and stores with Dst, or a sum of it and another register, as
   // their base, with Src unchanged while Dst is live.
-  SmallVector<MachineInstr *, 4> Mems, Sums, DebugUses;
-  if (!collectUses(Dst, Add.getIterator(), Imm, Src, Mems, &Sums, DebugUses) ||
+  SmallVector<MachineInstr *, 4> Mems, Sums, SumMems, DebugUses;
+  if (!collectUses(Dst, Add.getIterator(), Imm, Src, Mems, &Sums, &SumMems,
+                   DebugUses) ||
       (Mems.empty() && Sums.empty()))
     return false;
 
   // The instructions that read Src instead of Dst.
   SmallPtrSet<MachineInstr *, 8> Rewritten;
   for (MachineInstr *MI : Mems) {
-    if (MI->getOperand(1).getReg() == Dst) {
-      MI->getOperand(1).setReg(Src);
-      Rewritten.insert(MI);
-    }
+    MI->getOperand(1).setReg(Src);
     MI->getOperand(2).setImm(MI->getOperand(2).getImm() + Imm);
+    Rewritten.insert(MI);
   }
+  for (MachineInstr *MI : SumMems)
+    MI->getOperand(2).setImm(MI->getOperand(2).getImm() + Imm);
   for (MachineInstr *MI : Sums) {
     for (MachineOperand &MO : MI->uses())
       if (MO.isReg() && MO.getReg() == Dst)
