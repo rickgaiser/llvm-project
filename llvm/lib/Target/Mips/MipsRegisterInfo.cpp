@@ -66,6 +66,29 @@ MipsRegisterInfo::getRegPressureLimit(const TargetRegisterClass *RC,
   }
 }
 
+const TargetRegisterClass *
+MipsRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
+                                            const MachineFunction &MF) const {
+  // There is only one VU0 ACC. When the register allocator splits a value
+  // that overlaps another one, the part between its uses can move to a VF
+  // register.
+  if (RC == &Mips::VU0ACCRCRegClass)
+    return &Mips::VU0ACCVFRegClass;
+  return RC;
+}
+
+unsigned MipsRegisterInfo::getRegPressureSetLimit(const MachineFunction &MF,
+                                                  unsigned Idx) const {
+  // VU0ACCVF puts ACC in the pressure sets of the VF registers, which counts
+  // it as one more register for VF values. ACC holds its own values, which
+  // count in these sets too, so only the VF registers are available.
+  for (const int *PSet = getRegClassPressureSets(&Mips::VFRegsRegClass);
+       *PSet != -1; ++PSet)
+    if (static_cast<unsigned>(*PSet) == Idx)
+      return Mips::VFRegsRegClass.getNumRegs() - 1; // VF0 is a constant
+  return MipsGenRegisterInfo::getRegPressureSetLimit(MF, Idx);
+}
+
 //===----------------------------------------------------------------------===//
 // Callee Saved Registers methods
 //===----------------------------------------------------------------------===//

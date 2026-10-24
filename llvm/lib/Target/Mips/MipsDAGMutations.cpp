@@ -25,9 +25,15 @@
 // allocation, where the order costs no registers. A scalarized vector
 // load is otherwise read descending.
 //
+// For the MachinePipeliner, an R5900 VU0 ACC chain starts only when all its
+// instructions can follow without waiting for their other operands.
+// Otherwise the start is scheduled as early as possible and the rest later,
+// which keeps ACC busy for longer or puts the chain in two stages.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MipsDAGMutations.h"
+#include "MipsRegisterInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -47,6 +53,11 @@ public:
 };
 
 class MipsLoadOrderDAGMutation : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override;
+};
+
+class MipsVU0AccChainSMSMutation : public ScheduleDAGMutation {
 public:
   void apply(ScheduleDAGInstrs *DAG) override;
 };
@@ -186,4 +197,66 @@ void MipsLoadOrderDAGMutation::apply(ScheduleDAGInstrs *DAG) {
 
 std::unique_ptr<ScheduleDAGMutation> llvm::createMipsLoadOrderDAGMutation() {
   return std::make_unique<MipsLoadOrderDAGMutation>();
+}
+
+/// Delays the chain that \p Start begins until the operands of all its
+/// instructions are ready: an artificial edge from each operand to Start.
+static void delayChainStart(ScheduleDAGInstrs *DAG, SUnit *Start,
+                            function_ref<bool(Register)> InChain) {
+  // The earliest cycle of each instruction of the chain, relative to Start.
+  DenseMap<SUnit *, unsigned> Offset = {{Start, 0}};
+  SmallVector<SUnit *, 8> Worklist = {Start};
+  while (!Worklist.empty()) {
+    SUnit *SU = Worklist.pop_back_val();
+    for (const SDep &D : SU->Succs) {
+      if (D.getKind() != SDep::Data || !InChain(D.getReg()))
+        continue;
+      unsigned &O = Offset[D.getSUnit()];
+      unsigned New = Offset[SU] + D.getLatency();
+      if (New > O) {
+        O = New;
+        Worklist.push_back(D.getSUnit());
+      }
+    }
+  }
+  // One edge from each operand to Start, with the largest delay, in the
+  // order of the instructions.
+  DenseMap<SUnit *, unsigned> Delay;
+  for (auto [SU, O] : Offset)
+    for (const SDep &D : SU->Preds)
+      if (D.getKind() == SDep::Data && !InChain(D.getReg()) &&
+          !Offset.count(D.getSUnit()) && D.getLatency() > O) {
+        unsigned &L = Delay[D.getSUnit()];
+        L = std::max(L, D.getLatency() - O);
+      }
+  SmallVector<std::pair<SUnit *, unsigned>, 8> Edges(Delay.begin(),
+                                                     Delay.end());
+  llvm::sort(Edges, [](const auto &A, const auto &B) {
+    return A.first->NodeNum < B.first->NodeNum;
+  });
+  for (auto [Pred, Latency] : Edges) {
+    SDep Dep(Pred, SDep::Artificial);
+    Dep.setLatency(Latency);
+    DAG->addEdge(Start, Dep);
+  }
+}
+
+void MipsVU0AccChainSMSMutation::apply(ScheduleDAGInstrs *DAG) {
+  auto InChain = [&](Register Reg) {
+    return Reg.isVirtual() &&
+           DAG->MRI.getRegClass(Reg) == &Mips::VU0ACCRCRegClass;
+  };
+  auto IsChainOp = [&](const MachineOperand &MO) {
+    return InChain(MO.getReg());
+  };
+  // A chain starts with a write of ACC that does not read it: VMULA.
+  for (SUnit &SU : DAG->SUnits) {
+    const MachineInstr &MI = *SU.getInstr();
+    if (any_of(MI.all_defs(), IsChainOp) && none_of(MI.all_uses(), IsChainOp))
+      delayChainStart(DAG, &SU, InChain);
+  }
+}
+
+std::unique_ptr<ScheduleDAGMutation> llvm::createMipsVU0AccChainSMSMutation() {
+  return std::make_unique<MipsVU0AccChainSMSMutation>();
 }

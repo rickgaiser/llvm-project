@@ -4,8 +4,8 @@
 
 ; R5900 VU0 v4f32 costs in issue slots. A VU0 or FPU operation takes 1 slot.
 ; Moving elements between VU0 and the FPU is a chain of moves, and inserting
-; elements, fdiv, the conversions and most shuffles go through stack
-; temporaries.
+; elements, the conversions and most shuffles go through stack temporaries.
+; fdiv divides x and y with DIV.S, z and w in parallel through VDIV.
 
 define void @arith(<4 x float> %a, <4 x float> %b, <8 x float> %c, <2 x float> %d, float %s) {
 ; VU0-LABEL: 'arith'
@@ -13,7 +13,7 @@ define void @arith(<4 x float> %a, <4 x float> %b, <8 x float> %c, <2 x float> %
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %sub = fsub <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %mul = fmul <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 8 for instruction: %neg = fneg <4 x float> %a
-; VU0-NEXT:  Cost Model: Found an estimated cost of 60 for instruction: %div = fdiv <4 x float> %a, %b
+; VU0-NEXT:  Cost Model: Found an estimated cost of 57 for instruction: %div = fdiv <4 x float> %a, %b
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %add8 = fadd <8 x float> %c, %c
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %add2 = fadd <2 x float> %d, %d
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %sadd = fadd float %s, %s

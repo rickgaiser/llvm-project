@@ -179,6 +179,24 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
           .addReg(SrcReg, getKillRegState(KillSrc));
       return;
     }
+    if (SrcReg == Mips::VU0ACC) {
+      // VMSUBx.xyzw d, vf0, vf0x: acc - vf0 * 0 keeps the sign of zero.
+      BuildMI(MBB, I, DL, get(Mips::VMSUBbcx_V), DestReg)
+          .addReg(SrcReg, getKillRegState(KillSrc))
+          .addImm(0xF)
+          .addReg(Mips::VF0)
+          .addReg(Mips::VF0);
+      return;
+    }
+  } else if (DestReg == Mips::VU0ACC) { // Copy to VU0 ACC
+    if (Mips::VFRegsRegClass.contains(SrcReg)) {
+      // VMULAw.xyzw acc, s, vf0w: 1.0 in ft, which is exact (measured).
+      BuildMI(MBB, I, DL, get(Mips::VMULAbcw_V), DestReg)
+          .addImm(0xF)
+          .addReg(SrcReg, getKillRegState(KillSrc))
+          .addReg(Mips::VF0);
+      return;
+    }
   } else if (Mips::GPR128RegClass.contains(
                  DestReg)) { // Copy to GPR128 (R5900 MMI)
     if (Mips::GPR128RegClass.contains(SrcReg)) {
@@ -266,7 +284,9 @@ void MipsSEInstrInfo::storeRegToStack(MachineBasicBlock &MBB,
     Opc = Mips::SDC164;
   else if (Mips::GPR128RegClass.hasSubClassEq(RC))
     Opc = Mips::SQ; // R5900 128-bit GPR spill
-  else if (Mips::VFRegsRegClass.hasSubClassEq(RC))
+  else if (Mips::VFRegsRegClass.hasSubClassEq(RC) ||
+           (Mips::VU0ACCVFRegClass.hasSubClassEq(RC) &&
+            Mips::VFRegsRegClass.contains(SrcReg)))
     Opc = Mips::SQC2; // R5900 VU0 register spill
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::ST_B;
@@ -352,7 +372,9 @@ void MipsSEInstrInfo::loadRegFromStack(MachineBasicBlock &MBB,
     Opc = Mips::LDC164;
   else if (Mips::GPR128RegClass.hasSubClassEq(RC))
     Opc = Mips::LQ; // R5900 128-bit GPR reload
-  else if (Mips::VFRegsRegClass.hasSubClassEq(RC))
+  else if (Mips::VFRegsRegClass.hasSubClassEq(RC) ||
+           (Mips::VU0ACCVFRegClass.hasSubClassEq(RC) &&
+            Mips::VFRegsRegClass.contains(DestReg)))
     Opc = Mips::LQC2; // R5900 VU0 register reload
   else if (RI.isTypeLegalForClass(*RC, MVT::v16i8))
     Opc = Mips::LD_B;

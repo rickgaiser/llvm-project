@@ -247,6 +247,13 @@ public:
   bool enableMachineScheduler() const override;
   bool enablePostRAMachineScheduler() const override;
   bool useAA() const override;
+  // Software pipelining of R5900 VU0 loops (MipsInstrInfo::
+  // analyzeLoopForPipelining), on the processor resources of the R5900 model.
+  bool enableMachinePipeliner() const override;
+  bool useDFAforSMS() const override { return false; }
+  void overridePipelinerPolicy(MachinePipelinerPolicy &Policy) const override;
+  void getSMSMutations(std::vector<std::unique_ptr<ScheduleDAGMutation>>
+                           &Mutations) const override;
   void getCriticalPathRCs(RegClassVector &CriticalPathRCs) const override;
   CodeGenOptLevel getOptLevelToEnablePostRAScheduler() const override;
 

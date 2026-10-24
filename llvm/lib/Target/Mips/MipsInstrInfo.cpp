@@ -17,6 +17,7 @@
 #include "MipsSubtarget.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineCombinerPattern.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -28,6 +29,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/MC/MCInstBuilder.h"
 #include "llvm/MC/MCInstrDesc.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cassert>
 
@@ -125,6 +127,348 @@ bool MipsInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
   BranchType BT = analyzeBranch(MBB, TBB, FBB, Cond, AllowModify, BranchInstrs);
 
   return (BT == BT_None) || (BT == BT_Indirect);
+}
+
+// Off: where the scheduling model finds the critical path shorter, the ACC
+// chain was still slower on the PS2 (Transform 4.51 -> 4.39 Mvert/s, Vec MADD
+// 71.8 -> 70.5 MFLOPS, with the same data layout). The model does not see
+// that the chains wait for each other on the one ACC
+// (MipsAccumulatorDAGMutation keeps them in order).
+static cl::opt<bool> VU0AccCombine(
+    "mips-vu0-acc-combine", cl::Hidden, cl::init(false),
+    cl::desc("Let the MachineCombiner turn an R5900 VU0 add of a product "
+             "into an ACC chain"));
+
+namespace {
+/// The product is operand 2 or 3 of the VADD.
+enum MipsMachineCombinerPattern : unsigned {
+  VU0_MULADD_OP2 = MachineCombinerPattern::TARGET_PATTERN_START,
+  VU0_MULADD_OP3,
+};
+} // namespace
+
+bool MipsInstrInfo::useMachineCombiner() const {
+  return VU0AccCombine && Subtarget.isR5900() && Subtarget.hasVU0();
+}
+
+/// The ACC chain form of a VMUL: VMADD for the full product, VMADDbc for a
+/// broadcast one; 0 if \p Opc is not a VMUL of all fields.
+static unsigned getVU0MaddOpcode(unsigned Opc) {
+  switch (Opc) {
+  case Mips::VMUL:
+    return Mips::VMADD_V;
+  case Mips::VMULbcx:
+    return Mips::VMADDbcx_V;
+  case Mips::VMULbcy:
+    return Mips::VMADDbcy_V;
+  case Mips::VMULbcz:
+    return Mips::VMADDbcz_V;
+  case Mips::VMULbcw:
+    return Mips::VMADDbcw_V;
+  default:
+    return 0;
+  }
+}
+
+bool MipsInstrInfo::getMachineCombinerPatterns(
+    MachineInstr &Root, SmallVectorImpl<unsigned> &Patterns,
+    bool DoRegPressureReduce) const {
+  // VADD 15, fs, ft: operands fd, dest, fs, ft.
+  if (Root.getOpcode() != Mips::VADD || Root.getOperand(1).getImm() != 15)
+    return false;
+  const MachineRegisterInfo &MRI = Root.getMF()->getRegInfo();
+  for (unsigned Idx : {2u, 3u}) {
+    Register Reg = Root.getOperand(Idx).getReg();
+    if (!Reg.isVirtual() || !MRI.hasOneNonDBGUse(Reg))
+      continue;
+    MachineInstr *Mul = MRI.getUniqueVRegDef(Reg);
+    if (Mul && Mul->getParent() == Root.getParent() &&
+        getVU0MaddOpcode(Mul->getOpcode()) && Mul->getOperand(1).getImm() == 15)
+      Patterns.push_back(Idx == 2 ? VU0_MULADD_OP2 : VU0_MULADD_OP3);
+  }
+  return !Patterns.empty();
+}
+
+void MipsInstrInfo::genAlternativeCodeSequence(
+    MachineInstr &Root, unsigned Pattern,
+    SmallVectorImpl<MachineInstr *> &InsInstrs,
+    SmallVectorImpl<MachineInstr *> &DelInstrs,
+    DenseMap<Register, unsigned> &InstIdxForVirtReg) const {
+  if (Pattern != VU0_MULADD_OP2 && Pattern != VU0_MULADD_OP3)
+    return TargetInstrInfo::genAlternativeCodeSequence(
+        Root, Pattern, InsInstrs, DelInstrs, InstIdxForVirtReg);
+  MachineFunction &MF = *Root.getMF();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  unsigned MulIdx = Pattern == VU0_MULADD_OP2 ? 2 : 3;
+  MachineInstr *Mul = MRI.getUniqueVRegDef(Root.getOperand(MulIdx).getReg());
+  const MachineOperand &C = Root.getOperand(MulIdx == 2 ? 3 : 2);
+  // ACC = c * vf0.w: 1.0 in ft is exact (measured).
+  Register Acc = MRI.createVirtualRegister(&Mips::VU0ACCRCRegClass);
+  MachineInstrBuilder MulA =
+      BuildMI(MF, Root.getDebugLoc(), get(Mips::VMULAbcw_V), Acc)
+          .addImm(15)
+          .addReg(C.getReg(), getKillRegState(C.isKill()))
+          .addReg(Mips::VF0);
+  MachineInstrBuilder MAdd =
+      BuildMI(MF, Root.getDebugLoc(), get(getVU0MaddOpcode(Mul->getOpcode())),
+              Root.getOperand(0).getReg())
+          .addReg(Acc, RegState::Kill)
+          .addImm(15)
+          .add(Mul->getOperand(2))
+          .add(Mul->getOperand(3));
+  MulA->setFlags(Root.getFlags());
+  MAdd->setFlags(Root.getFlags());
+  InstIdxForVirtReg.insert({Acc, 0});
+  InsInstrs.push_back(MulA);
+  InsInstrs.push_back(MAdd);
+  DelInstrs.push_back(Mul);
+  DelInstrs.push_back(&Root);
+}
+
+bool MipsInstrInfo::shouldHoist(const MachineInstr &MI,
+                                const MachineLoop *FromLoop) const {
+  const MachineRegisterInfo &MRI = MI.getMF()->getRegInfo();
+  return none_of(MI.all_defs(), [&](const MachineOperand &MO) {
+    return MO.getReg().isVirtual() &&
+           MRI.getRegClass(MO.getReg()) == &Mips::VU0ACCRCRegClass;
+  });
+}
+
+bool MipsInstrInfo::getBaseAndOffsetPosition(const MachineInstr &MI,
+                                             unsigned &BasePos,
+                                             unsigned &OffsetPos) const {
+  if (!Subtarget.isR5900())
+    return false;
+  switch (MI.getOpcode()) {
+  case Mips::LB:
+  case Mips::LBu:
+  case Mips::LH:
+  case Mips::LHu:
+  case Mips::LW:
+  case Mips::LD:
+  case Mips::LQ:
+  case Mips::LWC1:
+  case Mips::LQC2:
+  case Mips::SB:
+  case Mips::SH:
+  case Mips::SW:
+  case Mips::SD:
+  case Mips::SQ:
+  case Mips::SWC1:
+  case Mips::SQC2:
+    break;
+  default:
+    return false;
+  }
+  if (!MI.getOperand(1).isReg() || !MI.getOperand(2).isImm())
+    return false;
+  BasePos = 1;
+  OffsetPos = 2;
+  return true;
+}
+
+bool MipsInstrInfo::getMemOperandsWithOffsetWidth(
+    const MachineInstr &MI, SmallVectorImpl<const MachineOperand *> &BaseOps,
+    int64_t &Offset, bool &OffsetIsScalable, LocationSize &Width) const {
+  unsigned BasePos, OffsetPos;
+  if (!getBaseAndOffsetPosition(MI, BasePos, OffsetPos) ||
+      !MI.hasOneMemOperand())
+    return false;
+  BaseOps.push_back(&MI.getOperand(BasePos));
+  Offset = MI.getOperand(OffsetPos).getImm();
+  OffsetIsScalable = false;
+  Width = (*MI.memoperands_begin())->getSize();
+  return true;
+}
+
+bool MipsInstrInfo::getIncrementValue(const MachineInstr &MI,
+                                      int &Value) const {
+  if (!Subtarget.isR5900() ||
+      (MI.getOpcode() != Mips::ADDiu && MI.getOpcode() != Mips::DADDiu) ||
+      !MI.getOperand(2).isImm())
+    return false;
+  Value = MI.getOperand(2).getImm();
+  return true;
+}
+
+namespace {
+/// The loop counter of a single block loop: it exits when Update = ADDiu(Phi,
+/// Step) equals the loop invariant Limit, and Phi takes Init on entry.
+struct MipsLoopCounter {
+  const MachineInstr *Update;
+  Register Init, Limit;
+  int64_t Step;
+};
+
+/// A single block loop that ends in "if (Cond) goto LoopBB". The pipeliner
+/// keeps the computation of the condition in stage 0 and checks it again
+/// for each stage of the prologue.
+class MipsPipelinerLoopInfo : public TargetInstrInfo::PipelinerLoopInfo {
+  SmallVector<const MachineInstr *, 2> CondDefs;
+  SmallVector<MachineOperand, 4> Cond;
+  std::optional<MipsLoopCounter> Counter;
+
+public:
+  MipsPipelinerLoopInfo(ArrayRef<const MachineInstr *> CondDefs,
+                        ArrayRef<MachineOperand> Cond,
+                        std::optional<MipsLoopCounter> Counter)
+      : CondDefs(CondDefs), Cond(Cond), Counter(Counter) {}
+
+  bool shouldIgnoreForPipelining(const MachineInstr *MI) const override {
+    return is_contained(CondDefs, MI);
+  }
+
+  // The branch "if (Cond) goto epilogue" follows a copy of the instructions
+  // that compute the condition; Cond is true when the loop exits.
+  std::optional<bool> createTripCountGreaterCondition(
+      int TC, MachineBasicBlock &MBB,
+      SmallVectorImpl<MachineOperand> &CondParam) override {
+    CondParam = Cond;
+    return {};
+  }
+
+  void setPreheader(MachineBasicBlock *NewPreheader) override {}
+  void adjustTripCount(int TripCountAdjust) override {}
+
+  // Unroll the kernel instead of copying the values that live longer than
+  // an iteration: a VF copy (VMOVE) takes the one COP2 issue slot and 4
+  // cycles. This needs the loop counter for the remaining iterations.
+  bool isMVEExpanderSupported() override { return Counter.has_value(); }
+  void createRemainingIterationsGreaterCondition(
+      int TC, MachineBasicBlock &MBB, SmallVectorImpl<MachineOperand> &Cond,
+      DenseMap<MachineInstr *, MachineInstr *> &LastStage0Insts) override;
+};
+} // namespace
+
+/// The iterations after the one that set the counter to V are
+/// (Limit - V) / Step, so more than TC remain if
+/// (Limit - V) * sign(Step) - TC * |Step| > 0.
+void MipsPipelinerLoopInfo::createRemainingIterationsGreaterCondition(
+    int TC, MachineBasicBlock &MBB, SmallVectorImpl<MachineOperand> &Cond,
+    DenseMap<MachineInstr *, MachineInstr *> &LastStage0Insts) {
+  MachineFunction &MF = *MBB.getParent();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  const DebugLoc &DL = Counter->Update->getDebugLoc();
+  const TargetRegisterClass *RC =
+      MRI.getRegClass(Counter->Update->getOperand(0).getReg());
+  bool Is64 = Mips::GPR64RegClass.hasSubClassEq(RC);
+  auto NewReg = [&] { return MRI.createVirtualRegister(RC); };
+
+  Register V;
+  if (LastStage0Insts.empty()) {
+    // Before the loop: the counter after the first iteration.
+    V = NewReg();
+    MachineInstr *MI = MF.CloneMachineInstr(Counter->Update);
+    MI->getOperand(0).setReg(V);
+    MI->getOperand(1).setReg(Counter->Init);
+    MBB.insert(MBB.end(), MI);
+  } else {
+    V = LastStage0Insts[const_cast<MachineInstr *>(Counter->Update)]
+            ->getOperand(0)
+            .getReg();
+  }
+
+  Register Diff = NewReg();
+  BuildMI(MBB, MBB.end(), DL, TII.get(Is64 ? Mips::DSUBu : Mips::SUBu), Diff)
+      .addReg(Counter->Step > 0 ? Counter->Limit : V)
+      .addReg(Counter->Step > 0 ? V : Counter->Limit);
+  int64_t Sub = (int64_t)TC * std::abs(Counter->Step);
+  if (Sub) {
+    assert(isInt<16>(-Sub) && "trip count out of range");
+    Register Rest = NewReg();
+    BuildMI(MBB, MBB.end(), DL, TII.get(Is64 ? Mips::DADDiu : Mips::ADDiu),
+            Rest)
+        .addReg(Diff)
+        .addImm(-Sub);
+    Diff = Rest;
+  }
+  Cond.clear();
+  Cond.push_back(MachineOperand::CreateImm(Is64 ? Mips::BGTZ64 : Mips::BGTZ));
+  Cond.push_back(MachineOperand::CreateReg(Diff, /*isDef=*/false));
+}
+
+/// The loop exits when "BEQ Update, Limit" is true (Cond), where Update =
+/// ADDiu/DADDiu (Phi, Step) and Phi takes Update around the loop.
+static std::optional<MipsLoopCounter>
+findLoopCounter(const MachineBasicBlock &LoopBB, ArrayRef<MachineOperand> Cond,
+                ArrayRef<const MachineInstr *> CondDefs,
+                const MachineRegisterInfo &MRI) {
+  if (Cond.size() != 3 || CondDefs.size() != 1 ||
+      (Cond[0].getImm() != Mips::BEQ && Cond[0].getImm() != Mips::BEQ64))
+    return std::nullopt;
+  const MachineInstr *Update = CondDefs[0];
+  if (Update->getOpcode() != Mips::ADDiu && Update->getOpcode() != Mips::DADDiu)
+    return std::nullopt;
+  if (!Update->getOperand(2).isImm() || !Update->getOperand(1).isReg())
+    return std::nullopt;
+  int64_t Step = Update->getOperand(2).getImm();
+  Register Reg = Update->getOperand(0).getReg();
+  Register Limit =
+      Cond[1].getReg() == Reg ? Cond[2].getReg() : Cond[1].getReg();
+  // The difference to the limit must stay a multiple of the step.
+  if (!Step || Limit == Reg ||
+      (Limit.isPhysical() && !MRI.isConstantPhysReg(Limit)))
+    return std::nullopt;
+  if (Limit.isVirtual() && MRI.getVRegDef(Limit)->getParent() == &LoopBB)
+    return std::nullopt;
+  const MachineInstr *Phi = MRI.getVRegDef(Update->getOperand(1).getReg());
+  if (!Phi || !Phi->isPHI() || Phi->getParent() != &LoopBB ||
+      Phi->getNumOperands() != 5)
+    return std::nullopt;
+  MipsLoopCounter C;
+  for (unsigned I = 1; I < 5; I += 2) {
+    if (Phi->getOperand(I + 1).getMBB() == &LoopBB) {
+      if (Phi->getOperand(I).getReg() != Reg)
+        return std::nullopt;
+    } else {
+      C.Init = Phi->getOperand(I).getReg();
+    }
+  }
+  C.Update = Update;
+  C.Limit = Limit;
+  C.Step = Step;
+  return C;
+}
+
+std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
+MipsInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
+  if (!Subtarget.isR5900() || !Subtarget.hasVU0())
+    return nullptr;
+  // Only loops of VU0 work: their 4-cycle operations gain from overlapping
+  // iterations.
+  const MachineRegisterInfo &MRI = LoopBB->getParent()->getRegInfo();
+  auto IsVU0 = [&](const MachineInstr &MI) {
+    return any_of(MI.defs(), [&](const MachineOperand &MO) {
+      return MO.getReg().isVirtual() &&
+             MRI.getRegClass(MO.getReg()) == &Mips::VFRegsRegClass;
+    });
+  };
+  if (none_of(*LoopBB, IsVU0))
+    return nullptr;
+
+  MachineBasicBlock *TBB = nullptr, *FBB = nullptr;
+  SmallVector<MachineOperand, 4> Cond;
+  SmallVector<MachineInstr *, 2> BranchInstrs;
+  BranchType BT = analyzeBranch(*LoopBB, TBB, FBB, Cond, false, BranchInstrs);
+  if ((BT != BT_Cond && BT != BT_CondUncond) || TBB == FBB)
+    return nullptr;
+  // Branch to the exit when the condition is true.
+  if (TBB == LoopBB && reverseBranchCondition(Cond))
+    return nullptr;
+
+  SmallVector<const MachineInstr *, 2> CondDefs;
+  for (const MachineOperand &MO : drop_begin(Cond)) {
+    if (!MO.isReg() || !MO.getReg().isVirtual())
+      continue;
+    const MachineInstr *Def = MRI.getVRegDef(MO.getReg());
+    if (Def->isPHI())
+      return nullptr;
+    if (Def->getParent() == LoopBB)
+      CondDefs.push_back(Def);
+  }
+  return std::make_unique<MipsPipelinerLoopInfo>(
+      CondDefs, Cond, findLoopCounter(*LoopBB, Cond, CondDefs, MRI));
 }
 
 void MipsInstrInfo::BuildCondBr(MachineBasicBlock &MBB, MachineBasicBlock *TBB,

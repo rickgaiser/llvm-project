@@ -86,6 +86,40 @@ public:
                            bool AllowModify,
                            SmallVectorImpl<MachineInstr *> &BranchInstrs) const;
 
+  /// Base register and offset of the plain R5900 loads and stores (base +
+  /// immediate), and the increments of their base registers, for the loop
+  /// carried memory dependences of the MachinePipeliner.
+  bool getMemOperandsWithOffsetWidth(
+      const MachineInstr &MI, SmallVectorImpl<const MachineOperand *> &BaseOps,
+      int64_t &Offset, bool &OffsetIsScalable,
+      LocationSize &Width) const override;
+  bool getBaseAndOffsetPosition(const MachineInstr &MI, unsigned &BasePos,
+                                unsigned &OffsetPos) const override;
+  bool getIncrementValue(const MachineInstr &MI, int &Value) const override;
+
+  /// R5900 VU0: an add of a product, VADD (VMUL a, b), c, as an ACC chain,
+  /// VMULAw ACC, c, vf0w and VMADD d, a, b, when the scheduling model finds
+  /// the critical path shorter (-mips-vu0-acc-combine, off: slower on the
+  /// PS2).
+  bool useMachineCombiner() const override;
+  bool getMachineCombinerPatterns(MachineInstr &Root,
+                                  SmallVectorImpl<unsigned> &Patterns,
+                                  bool DoRegPressureReduce) const override;
+  void genAlternativeCodeSequence(
+      MachineInstr &Root, unsigned Pattern,
+      SmallVectorImpl<MachineInstr *> &InsInstrs,
+      SmallVectorImpl<MachineInstr *> &DelInstrs,
+      DenseMap<Register, unsigned> &InstIdxForVirtReg) const override;
+
+  /// A value of the VU0 ACC stays in its loop: ACC holds one value at a
+  /// time, so a hoisted one would be moved to a VF register and back.
+  bool shouldHoist(const MachineInstr &MI,
+                   const MachineLoop *FromLoop) const override;
+
+  /// Single block R5900 loops with VU0 instructions, for the MachinePipeliner.
+  std::unique_ptr<PipelinerLoopInfo>
+  analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const override;
+
   /// Determine the opcode of a non-delay slot form for a branch if one exists.
   unsigned getEquivalentCompactForm(const MachineBasicBlock::iterator I) const;
 

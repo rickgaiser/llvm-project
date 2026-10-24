@@ -712,52 +712,155 @@ bool MipsSEDAGToDAGISel::selectVSplatImmEq1(SDValue N) const {
 }
 
 // VMULA, VMADDA/VMSUBA..., VMADD/VMSUB. Each instruction reads the ACC value
-// of the one before it; glue keeps them together, so no other ACC chain is
-// placed in between.
+// of the one before it. ACC is a value of a single-register class, so the
+// scheduler keeps the ACC values apart (MipsAccumulatorDAGMutation) and the
+// register allocator can move one to a VF register.
 void MipsSEDAGToDAGISel::selectVU0AccSum(SDNode *Node) {
   // Opcodes for the x, y, z and w broadcasts and for all fields.
-  static constexpr unsigned MulA[] = {Mips::VMULAbcx, Mips::VMULAbcy,
-                                      Mips::VMULAbcz, Mips::VMULAbcw,
-                                      Mips::VMULA};
-  static constexpr unsigned MaddA[] = {Mips::VMADDAbcx, Mips::VMADDAbcy,
-                                       Mips::VMADDAbcz, Mips::VMADDAbcw,
-                                       Mips::VMADDA};
-  static constexpr unsigned MsubA[] = {Mips::VMSUBAbcx, Mips::VMSUBAbcy,
-                                       Mips::VMSUBAbcz, Mips::VMSUBAbcw,
-                                       Mips::VMSUBA};
-  static constexpr unsigned Madd[] = {Mips::VMADDbcx, Mips::VMADDbcy,
-                                      Mips::VMADDbcz, Mips::VMADDbcw,
-                                      Mips::VMADD};
-  static constexpr unsigned Msub[] = {Mips::VMSUBbcx, Mips::VMSUBbcy,
-                                      Mips::VMSUBbcz, Mips::VMSUBbcw,
-                                      Mips::VMSUB};
+  static constexpr unsigned MulA[] = {Mips::VMULAbcx_V, Mips::VMULAbcy_V,
+                                      Mips::VMULAbcz_V, Mips::VMULAbcw_V,
+                                      Mips::VMULA_V};
+  static constexpr unsigned MaddA[] = {Mips::VMADDAbcx_V, Mips::VMADDAbcy_V,
+                                       Mips::VMADDAbcz_V, Mips::VMADDAbcw_V,
+                                       Mips::VMADDA_V};
+  static constexpr unsigned MsubA[] = {Mips::VMSUBAbcx_V, Mips::VMSUBAbcy_V,
+                                       Mips::VMSUBAbcz_V, Mips::VMSUBAbcw_V,
+                                       Mips::VMSUBA_V};
+  static constexpr unsigned Madd[] = {Mips::VMADDbcx_V, Mips::VMADDbcy_V,
+                                      Mips::VMADDbcz_V, Mips::VMADDbcw_V,
+                                      Mips::VMADD_V};
+  static constexpr unsigned Msub[] = {Mips::VMSUBbcx_V, Mips::VMSUBbcy_V,
+                                      Mips::VMSUBbcz_V, Mips::VMSUBbcw_V,
+                                      Mips::VMSUB_V};
 
   SDLoc DL(Node);
   SDValue Mask = CurDAG->getTargetConstant(15, DL, MVT::i32);
-  SDValue Acc = CurDAG->getRegister(Mips::VU0ACC, MVT::v4f32);
   unsigned NumTerms = Node->getNumOperands() / 4;
-  SDValue Glue;
+  SDValue Acc;
   for (unsigned I = 0; I != NumTerms; ++I) {
     SDValue A = Node->getOperand(4 * I), B = Node->getOperand(4 * I + 1);
     unsigned Field = Node->getConstantOperandVal(4 * I + 2);
     bool Neg = Node->getConstantOperandVal(4 * I + 3);
+    SmallVector<SDValue, 4> Ops;
+    if (Acc)
+      Ops.push_back(Acc);
+    Ops.append({Mask, A, B});
     if (I + 1 == NumTerms) {
       unsigned Opc = Neg ? Msub[Field] : Madd[Field];
-      SDValue Ops[] = {Mask, A, B, Glue};
       ReplaceNode(Node, CurDAG->getMachineNode(Opc, DL, MVT::v4f32, Ops));
       return;
     }
     unsigned Opc = I == 0 ? MulA[Field] : Neg ? MsubA[Field] : MaddA[Field];
-    SmallVector<SDValue, 5> Ops = {Mask, Acc, A, B};
-    if (Glue)
-      Ops.push_back(Glue);
-    Glue = SDValue(CurDAG->getMachineNode(Opc, DL, MVT::Glue, Ops), 0);
+    // An unused glue result keeps the node from being merged with an
+    // identical one of another chain: ACC holds one value at a time, so a
+    // shared value would have to be moved to a VF register and back.
+    Acc =
+        SDValue(CurDAG->getMachineNode(Opc, DL, MVT::v4f32, MVT::Glue, Ops), 0);
   }
 }
 
 bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc DL(Node);
+
+  // (a, fa, b, fb): VDIV Q, a.fa, b.fb; VWAITQ; glued to the reader of Q.
+  auto SelectQDiv = [&](SDNode *QDiv) {
+    SDValue Div(
+        CurDAG->getMachineNode(Mips::VDIV_V, DL, MVT::Glue,
+                               {QDiv->getOperand(0), QDiv->getOperand(1),
+                                QDiv->getOperand(2), QDiv->getOperand(3)}),
+        0);
+    return SDValue(CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::Glue, {Div}),
+                   0);
+  };
+
+  if (Opcode == MipsISD::VU0_QDIV) {
+    // Q into field x: VADDQ.x vf0, Q.
+    ReplaceNode(Node, CurDAG->getMachineNode(
+                          Mips::VADDQ_V, DL, MVT::v4f32,
+                          {CurDAG->getTargetConstant(8, DL, MVT::i32),
+                           CurDAG->getRegister(Mips::VF0, MVT::v4f32),
+                           SelectQDiv(Node)}));
+    return true;
+  }
+
+  // An operation with a broadcast of the Q of a division reads Q directly
+  // (VUFoldQ of the VU target):
+  //   v op (bcast (VU0_QDIV a, fa, b, fb), 0)  ->  VDIV; VWAITQ; VopQ v, Q
+  if ((Opcode == ISD::FMUL || Opcode == ISD::FADD || Opcode == ISD::FSUB) &&
+      Node->getValueType(0) == MVT::v4f32) {
+    for (unsigned I : {1, 0}) {
+      if (I == 0 && Opcode == ISD::FSUB)
+        break;
+      SDValue BC = Node->getOperand(I);
+      if (BC.getOpcode() != MipsISD::VU0_BCAST || !BC.hasOneUse() ||
+          BC.getConstantOperandVal(1) != 0 ||
+          BC.getOperand(0).getOpcode() != MipsISD::VU0_QDIV ||
+          !BC.getOperand(0).hasOneUse())
+        continue;
+      unsigned Opc = Opcode == ISD::FMUL   ? Mips::VMULQ_V
+                     : Opcode == ISD::FADD ? Mips::VADDQ_V
+                                           : Mips::VSUBQ_V;
+      ReplaceNode(Node, CurDAG->getMachineNode(
+                            Opc, DL, MVT::v4f32,
+                            {CurDAG->getTargetConstant(15, DL, MVT::i32),
+                             Node->getOperand(1 - I),
+                             SelectQDiv(BC.getOperand(0).getNode())}));
+      return true;
+    }
+  }
+
+  if (Opcode == MipsISD::VU0_DIVQ) {
+    // (base, zero, a, b, k, mask): VDIV Q, a.k, b.k; VWAITQ (Q reads are not
+    // interlocked); VADDQ.<mask> base, zero, Q. Glued, so that no other
+    // write of Q comes in between.
+    SDValue Base = Node->getOperand(0), Zero = Node->getOperand(1);
+    SDValue K =
+        CurDAG->getTargetConstant(Node->getConstantOperandVal(4), DL, MVT::i32);
+    SDValue Mask =
+        CurDAG->getTargetConstant(Node->getConstantOperandVal(5), DL, MVT::i32);
+    SDValue Div(CurDAG->getMachineNode(
+                    Mips::VDIV_V, DL, MVT::Glue,
+                    {Node->getOperand(2), K, Node->getOperand(3), K}),
+                0);
+    SDValue Wait(CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::Glue, {Div}),
+                 0);
+    // A base of VF0 means none: all fields are written (a tied undefined
+    // base would become a copy).
+    auto *BaseReg = dyn_cast<RegisterSDNode>(Base);
+    if (BaseReg && BaseReg->getReg() == Mips::VF0)
+      ReplaceNode(
+          Node, CurDAG->getMachineNode(
+                    Mips::VADDQ_V, DL, MVT::v4f32,
+                    {CurDAG->getTargetConstant(15, DL, MVT::i32), Zero, Wait}));
+    else
+      ReplaceNode(Node, CurDAG->getMachineNode(Mips::VADDQm, DL, MVT::v4f32,
+                                               {Base, Mask, Zero, Wait}));
+    return true;
+  }
+
+  if (Opcode == MipsISD::VU0_INSERT_FIELD) {
+    // (base, zero, src, k, mask): VADDbc<k>.<mask> base, zero, src, or for w
+    // into w VMULw.w base, src, vf0w (1.0 in ft is exact).
+    static constexpr unsigned AddM[] = {Mips::VADDbcxm, Mips::VADDbcym,
+                                        Mips::VADDbczm, Mips::VADDbcwm};
+    SDValue Base = Node->getOperand(0), Zero = Node->getOperand(1),
+            Src = Node->getOperand(2);
+    unsigned K = Node->getConstantOperandVal(3);
+    unsigned Mask = Node->getConstantOperandVal(4);
+    SDValue MaskOp = CurDAG->getTargetConstant(Mask, DL, MVT::i32);
+    MachineSDNode *MN;
+    if (K == 3 && Mask == 1) {
+      SDValue Ops[] = {Base, MaskOp, Src,
+                       CurDAG->getRegister(Mips::VF0, MVT::v4f32)};
+      MN = CurDAG->getMachineNode(Mips::VMULbcwm, DL, MVT::v4f32, Ops);
+    } else {
+      SDValue Ops[] = {Base, MaskOp, Zero, Src};
+      MN = CurDAG->getMachineNode(AddM[K], DL, MVT::v4f32, Ops);
+    }
+    ReplaceNode(Node, MN);
+    return true;
+  }
 
   ///
   // Instruction Selection not handled by the auto-generated

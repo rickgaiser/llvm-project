@@ -165,6 +165,45 @@ def MipsVU0ITOF : SDNode<"MipsISD::VU0_ITOF",
 def MipsVU0ACCSUM : SDNode<"MipsISD::VU0_ACCSUM",
                            SDTypeProfile<1, -1, [SDTCisVT<0, v4f32>]>>;
 
+// Field $k (x = 0 ... w = 3) of $src into the fields of $mask of $base, the
+// others are kept: (base, zero, src, k, mask), where $zero has 0.0 in the
+// fields of $mask (VF0 for x, y and z). Selected in MipsSEDAGToDAGISel.
+def MipsVU0INSERTFIELD : SDNode<"MipsISD::VU0_INSERT_FIELD",
+                                SDTypeProfile<1, 5, [SDTCisVT<0, v4f32>,
+                                                     SDTCisVT<1, v4f32>,
+                                                     SDTCisVT<2, v4f32>,
+                                                     SDTCisVT<3, v4f32>,
+                                                     SDTCisVT<4, i32>,
+                                                     SDTCisVT<5, i32>]>>;
+
+// Field $k of $a / $b into the fields of $mask of $base, through Q:
+// (base, zero, a, b, k, mask), where $zero has 0.0 in the fields of $mask.
+// A base of VF0 means none: all fields are written. VDIV, VWAITQ and a
+// (masked) VADDQ, selected in MipsSEDAGToDAGISel.
+def MipsVU0DIVQ : SDNode<"MipsISD::VU0_DIVQ",
+                         SDTypeProfile<1, 6, [SDTCisVT<0, v4f32>,
+                                              SDTCisVT<1, v4f32>,
+                                              SDTCisVT<2, v4f32>,
+                                              SDTCisVT<3, v4f32>,
+                                              SDTCisVT<4, v4f32>,
+                                              SDTCisVT<5, i32>,
+                                              SDTCisVT<6, i32>]>>;
+
+// The cross product of fields x, y and z: VOPMULA.xyz ACC, a, b and
+// VOPMSUB.xyz d, b, a. Field w is undefined.
+// Q = a.<fa> / b.<fb> (VDIV), in field x of the result (VADDQ.x vf0, Q).
+def MipsVU0QDIV : SDNode<"MipsISD::VU0_QDIV",
+                         SDTypeProfile<1, 4, [SDTCisVT<0, v4f32>,
+                                              SDTCisVT<1, v4f32>,
+                                              SDTCisVT<2, i32>,
+                                              SDTCisVT<3, v4f32>,
+                                              SDTCisVT<4, i32>]>>;
+
+def MipsVU0CROSS : SDNode<"MipsISD::VU0_CROSS",
+                          SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
+                                               SDTCisVT<1, v4f32>,
+                                               SDTCisVT<2, v4f32>]>>;
+
 // Broadcast field $f (x = 0 ... w = 3) of a vector to all four fields. It is
 // selected as the ft operand of a broadcast instruction (fs op ft.<field>).
 def MipsVU0BCAST : SDNode<"MipsISD::VU0_BCAST",
@@ -529,6 +568,239 @@ multiclass VU0_ACC_BC_ALL<string opstr, bits<9> opcode,
   def y : VU0_ACC_BC<opstr, "y", opcode, 0b01, UseRegs>;
   def z : VU0_ACC_BC<opstr, "z", opcode, 0b10, UseRegs>;
   def w : VU0_ACC_BC<opstr, "w", opcode, 0b11, UseRegs>;
+}
+
+// Code generation forms of the ACC instructions: ACC is a value, the result
+// of the instructions that write it and an operand (not encoded, not in the
+// assembly syntax) of those that read it, so that the register allocator and
+// the schedulers see each ACC value on its own. The assembler and the
+// disassembler use the forms above, with the physical ACC.
+class VU0_ACC_V<string opstr, bits<11> funct, bit readsAcc>
+    : InstSE<(outs VU0AccOpnd:$accd),
+             !con(!if(readsAcc, (ins VU0AccOpnd:$accin), (ins)),
+                  (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft)),
+             !strconcat(opstr, "$dest\t$accd, $fs, $ft"), [], FrmR,
+             opstr # "_v"> {
+  let isCodeGenOnly = 1;
+  let hasSideEffects = 0;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // co bit
+  let Inst{24 -21} = dest;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -0} = funct;
+}
+
+class VU0_ACC_BC_V<string opstr, string suffix, bits<9> opcode, bits<2> bc,
+                   bit readsAcc>
+    : InstSE<(outs VU0AccOpnd:$accd),
+             !con(!if(readsAcc, (ins VU0AccOpnd:$accin), (ins)),
+                  (ins vu0destmask:$dest, VFOpnd:$fs, VFOpnd:$ft)),
+             !strconcat(opstr, suffix, "$dest\t$accd, $fs, $ft"), [], FrmR,
+             opstr # suffix # "_v"> {
+  let isCodeGenOnly = 1;
+  let hasSideEffects = 0;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // co bit
+  let Inst{24 -21} = dest;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -2} = opcode;
+  let Inst{1 -0} = bc;
+}
+
+class VU0_3R_ACC_V<string opstr, bits<6> funct>
+    : InstSE<(outs VFOpnd:$fd),
+             (ins VU0AccOpnd:$accin, vu0destmask:$dest, VFOpnd:$fs,
+                  VFOpnd:$ft),
+             !strconcat(opstr, "$dest\t$fd, $fs, $ft"), [], FrmR,
+             opstr # "_v"> {
+  let isCodeGenOnly = 1;
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // co bit
+  let Inst{24 -21} = dest;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = fd;
+  let Inst{5 -0} = funct;
+}
+
+class VU0_3R_BC_ACC_V<string opstr, string suffix, bits<4> opcode, bits<2> bc>
+    : InstSE<(outs VFOpnd:$fd),
+             (ins VU0AccOpnd:$accin, vu0destmask:$dest, VFOpnd:$fs,
+                  VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$dest\t$fd, $fs, $ft"), [], FrmR,
+             opstr # suffix # "_v"> {
+  let isCodeGenOnly = 1;
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> dest;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // co bit
+  let Inst{24 -21} = dest;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = fd;
+  let Inst{5 -2} = opcode;
+  let Inst{1 -0} = bc;
+}
+
+// fd = fs op ft.bc in the fields of $mask, $base in the others.
+class VU0_3R_BC_Masked<string opstr, string suffix, bits<4> opcode, bits<2> bc>
+    : InstSE<(outs VFOpnd:$fd),
+             (ins VFOpnd:$base, vu0destmask:$mask, VFOpnd:$fs, VFOpnd:$ft),
+             !strconcat(opstr, suffix, "$mask\t$fd, $fs, $ft"), [], FrmR,
+             opstr # suffix # "_m"> {
+  let isCodeGenOnly = 1;
+  let hasSideEffects = 0;
+  bits<5> fd;
+  bits<5> fs;
+  bits<5> ft;
+  bits<4> mask;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // co bit
+  let Inst{24 -21} = mask;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = fd;
+  let Inst{5 -2} = opcode;
+  let Inst{1 -0} = bc;
+  let Constraints = "$base = $fd";
+}
+
+multiclass VU0_3R_BC_Masked_ALL<string opstr, bits<4> opcode> {
+  def xm : VU0_3R_BC_Masked<opstr, "x", opcode, 0b00>;
+  def ym : VU0_3R_BC_Masked<opstr, "y", opcode, 0b01>;
+  def zm : VU0_3R_BC_Masked<opstr, "z", opcode, 0b10>;
+  def wm : VU0_3R_BC_Masked<opstr, "w", opcode, 0b11>;
+}
+
+// Code generation forms of VDIV, VWAITQ and VADDQ for a field of a
+// division through Q: VDIV with register operands, VADDQ, and VADDQm that
+// writes the fields of $mask of $base. Q is the physical register; ISel glues the three.
+let isCodeGenOnly = 1, hasSideEffects = 0, Predicates = [HasVU0] in {
+def VDIV_V : InstSE<(outs), (ins VFOpnd:$fs, vu0fieldsel:$fsf, VFOpnd:$ft,
+                                  vu0fieldsel:$ftf),
+                    "vdiv\t$$Q, $fs$fsf, $ft$ftf", [], FrmR, "vdiv_v"> {
+  bits<5> fs;
+  bits<2> fsf;
+  bits<5> ft;
+  bits<2> ftf;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // CO bit
+  let Inst{24 -23} = ftf;
+  let Inst{22 -21} = fsf;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -0} = 0b01110111100;
+  let Defs = [VU0Q];
+}
+
+def VWAITQ_V : InstSE<(outs), (ins), "vwaitq", [], FrmR, "vwaitq_v"> {
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010;
+  let Inst{25} = 1;
+  let Inst{24 -21} = 0b0000;
+  let Inst{20 -0} = 0b000000000001110111111;
+  let Uses = [VU0Q];
+  let Defs = [VU0Q];
+}
+
+// fd.<mask> = fs op Q
+class VU0_2R_Q_V<string opstr, bits<6> funct>
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$mask, VFOpnd:$fs),
+             opstr # "$mask\t$fd, $fs, $$Q", [], FrmR, opstr # "_v"> {
+  bits<5> fd;
+  bits<5> fs;
+  bits<4> mask;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010;
+  let Inst{25} = 1;
+  let Inst{24 -21} = mask;
+  let Inst{20 -16} = 0;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = fd;
+  let Inst{5 -0} = funct;
+  let Uses = [VU0Q];
+}
+
+def VADDQ_V : VU0_2R_Q_V<"vaddq", 0b100000>;
+def VSUBQ_V : VU0_2R_Q_V<"vsubq", 0b100100>;
+def VMULQ_V : VU0_2R_Q_V<"vmulq", 0b011100>;
+
+def VADDQm : InstSE<(outs VFOpnd:$fd),
+                    (ins VFOpnd:$base, vu0destmask:$mask, VFOpnd:$fs),
+                    "vaddq$mask\t$fd, $fs, $$Q", [], FrmR, "vaddq_m"> {
+  bits<5> fd;
+  bits<5> fs;
+  bits<4> mask;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010;
+  let Inst{25} = 1;
+  let Inst{24 -21} = mask;
+  let Inst{20 -16} = 0;
+  let Inst{15 -11} = fs;
+  let Inst{10 -6} = fd;
+  let Inst{5 -0} = 0b100000;
+  let Uses = [VU0Q];
+  let Constraints = "$base = $fd";
+}
+}
+
+multiclass VU0_ACC_BC_ALL_V<string opstr, bits<9> opcode, bit readsAcc> {
+  def x_V : VU0_ACC_BC_V<opstr, "x", opcode, 0b00, readsAcc>;
+  def y_V : VU0_ACC_BC_V<opstr, "y", opcode, 0b01, readsAcc>;
+  def z_V : VU0_ACC_BC_V<opstr, "z", opcode, 0b10, readsAcc>;
+  def w_V : VU0_ACC_BC_V<opstr, "w", opcode, 0b11, readsAcc>;
+}
+
+multiclass VU0_3R_BC_ACC_ALL_V<string opstr, bits<4> opcode> {
+  def x_V : VU0_3R_BC_ACC_V<opstr, "x", opcode, 0b00>;
+  def y_V : VU0_3R_BC_ACC_V<opstr, "y", opcode, 0b01>;
+  def z_V : VU0_3R_BC_ACC_V<opstr, "z", opcode, 0b10>;
+  def w_V : VU0_3R_BC_ACC_V<opstr, "w", opcode, 0b11>;
+}
+
+let Predicates = [HasVU0] in {
+  def VMULA_V : VU0_ACC_V<"vmula", 0b01010111110, 0>;
+  def VMADDA_V : VU0_ACC_V<"vmadda", 0b01010111101, 1>;
+  def VMSUBA_V : VU0_ACC_V<"vmsuba", 0b01011111101, 1>;
+  def VMADD_V : VU0_3R_ACC_V<"vmadd", 0b101001>;
+  def VMSUB_V : VU0_3R_ACC_V<"vmsub", 0b101101>;
+  defm VMULAbc : VU0_ACC_BC_ALL_V<"vmula", 0b001101111, 0>;
+  defm VMADDAbc : VU0_ACC_BC_ALL_V<"vmadda", 0b000101111, 1>;
+  defm VMSUBAbc : VU0_ACC_BC_ALL_V<"vmsuba", 0b000111111, 1>;
+  defm VMADDbc : VU0_3R_BC_ACC_ALL_V<"vmadd", 0b0010>;
+  defm VMSUBbc : VU0_3R_BC_ACC_ALL_V<"vmsub", 0b0011>;
+  def VOPMULA_V : VU0_ACC_V<"vopmula", 0b01011111110, 0>;
+  def VOPMSUB_V : VU0_3R_ACC_V<"vopmsub", 0b101110>;
+  defm VADDbc : VU0_3R_BC_Masked_ALL<"vadd", 0b0000>;
+  defm VMULbc : VU0_3R_BC_Masked_ALL<"vmul", 0b0110>;
+
+  // VOPMULA.xyz acc, a, b: (a.y b.z, a.z b.x, a.x b.y); VOPMSUB.xyz d, b, a
+  // subtracts (b.y a.z, b.z a.x, b.x a.y).
+  def : Pat<(MipsVU0CROSS v4f32:$a, v4f32:$b),
+            (VOPMSUB_V (VOPMULA_V 14, v4f32:$a, v4f32:$b), 14, v4f32:$b,
+                       v4f32:$a)>;
 }
 
 let Predicates = [HasVU0] in {

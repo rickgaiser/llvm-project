@@ -13,11 +13,13 @@
 #include "MipsSubtarget.h"
 #include "Mips.h"
 #include "MipsCallLowering.h"
+#include "MipsDAGMutations.h"
 #include "MipsLegalizerInfo.h"
 #include "MipsRegisterBankInfo.h"
 #include "MipsRegisterInfo.h"
 #include "MipsSelectionDAGInfo.h"
 #include "MipsTargetMachine.h"
+#include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -216,6 +218,30 @@ bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
 /// the in-order R5900, so loads can be scheduled ahead of stores that cannot
 /// alias them.
 bool MipsSubtarget::useAA() const { return isR5900(); }
+
+static cl::opt<bool>
+    R5900Pipeliner("mips-r5900-pipeliner", cl::Hidden, cl::init(true),
+                   cl::desc("Software pipeline the VU0 loops of the R5900"));
+
+bool MipsSubtarget::enableMachinePipeliner() const {
+  return isR5900() && hasVU0() && R5900Pipeliner;
+}
+
+void MipsSubtarget::overridePipelinerPolicy(
+    MachinePipelinerPolicy &Policy) const {
+  // A VU0 operation takes 4 cycles and one COP2 issue slot, so a chain of
+  // them spans several stages of a short loop.
+  Policy.UseIterativeScheduler = true;
+  Policy.MaxStages = 6;
+  Policy.ShouldLimitRegPressure = true;
+  // Unroll the kernel instead of copying values: see MipsPipelinerLoopInfo.
+  Policy.UseMVE = true;
+}
+
+void MipsSubtarget::getSMSMutations(
+    std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
+  Mutations.push_back(createMipsVU0AccChainSMSMutation());
+}
 
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
   CriticalPathRCs.clear();

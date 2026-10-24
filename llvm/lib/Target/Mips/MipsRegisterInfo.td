@@ -536,7 +536,10 @@ def FCC : RegisterClass<"Mips", [i32], 32, (sequence "FCC%u", 0, 7)>,
 def FPUACC : RegisterClass<"Mips", [f32], 32, (add FPU_ACC)>, Unallocatable;
 
 // R5900 VU0 Accumulator register class - 128-bit (4x32-bit floats)
-def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>, Unallocatable;
+// ACC holds one value at a time. When the register allocator splits a value
+// that overlaps another one, the part between its uses can move to a VF
+// register (MipsRegisterInfo::getLargestLegalSuperClass).
+def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>;
 
 // R5900 VU0 Q register class - 32-bit float result register
 def VU0QRC : RegisterClass<"Mips", [f32], 32, (add VU0Q)>, Unallocatable;
@@ -617,6 +620,9 @@ def VFRegs
                         // Callee-saved
                         VF20, VF21, VF22, VF23, VF24, VF25, VF26, VF27, VF28,
                         VF29, VF30, VF31)>;
+
+// The VF registers and ACC, for the parts of a split ACC value (VU0ACCRC).
+def VU0ACCVF : RegisterClass<"Mips", [v4f32], 128, (add VFRegs, VU0ACC)>;
 
 // Coprocessor 3 registers.
 def COP3 : RegisterClass<"Mips", [i32], 32, (sequence "COP3%u", 0, 31)>,

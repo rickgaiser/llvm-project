@@ -22,6 +22,11 @@ std::unique_ptr<ScheduleDAGMutation> createMipsAccumulatorDAGMutation();
 /// during post-RA scheduling.
 std::unique_ptr<ScheduleDAGMutation> createMipsLoadOrderDAGMutation();
 
+/// For the MachinePipeliner: start a chain of R5900 VU0 ACC instructions
+/// (VMULA, VMADDA..., VMADD) only when all its instructions can follow
+/// without waiting for their other operands.
+std::unique_ptr<ScheduleDAGMutation> createMipsVU0AccChainSMSMutation();
+
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_MIPS_MIPSDAGMUTATIONS_H

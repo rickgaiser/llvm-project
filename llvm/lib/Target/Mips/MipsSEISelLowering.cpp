@@ -307,6 +307,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::FADD, MVT::v4f32, Legal);
     setOperationAction(ISD::FSUB, MVT::v4f32, Legal);
     setOperationAction(ISD::FMUL, MVT::v4f32, Legal);
+    // DIV.S and VDIV in parallel (lowerVU0FDIV).
+    setOperationAction(ISD::FDIV, MVT::v4f32, Custom);
 
     // Enable VU0 abs, min, max operations (VABS, VMINI, VMAX)
     setOperationAction(ISD::FABS, MVT::v4f32, Legal);
@@ -332,7 +334,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
     setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
                          ISD::FMINNUM, ISD::BITCAST, ISD::SETCC,
-                         ISD::FP_TO_SINT});
+                         ISD::FP_TO_SINT, ISD::FDIV});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -832,6 +834,8 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::FMUL:
     return lowerR5900FPOp(Op, DAG, RTLIB::MUL_F32);
   case ISD::FDIV:
+    if (Op.getValueType() == MVT::v4f32)
+      return lowerVU0FDIV(Op, DAG);
     return lowerR5900FPOp(Op, DAG, RTLIB::DIV_F32);
   case ISD::FSQRT:
     return lowerR5900FPOp(Op, DAG, RTLIB::SQRT_F32);
@@ -1827,6 +1831,261 @@ static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static cl::opt<bool>
+    VU0BroadcastPair("mips-vu0-bcast-pair", cl::Hidden, cl::init(true),
+                     cl::desc("Do an R5900 VU0 operation on two broadcasts "
+                              "on one field, broadcast"));
+
+static cl::opt<bool> VU0LaneOp(
+    "mips-vu0-lane-op", cl::Hidden, cl::init(true),
+    cl::desc("Do a scalar operation on a field of an R5900 VU0 vector, whose "
+             "result goes back into vectors, on the VU0"));
+
+static bool isVU0BroadcastPairOp(unsigned Opc) {
+  return Opc == ISD::FADD || Opc == ISD::FSUB || Opc == ISD::FMUL ||
+         Opc == ISD::FMAXNUM || Opc == ISD::FMINNUM;
+}
+
+/// The field index of \p V if it is a shuffle that broadcasts one field of
+/// its first operand, or -1.
+static int getVU0SplatShuffleField(SDValue V) {
+  auto *SVN = dyn_cast<ShuffleVectorSDNode>(V);
+  if (!SVN || !SVN->isSplat())
+    return -1;
+  int F = SVN->getSplatIndex();
+  return F >= 0 && F < 4 ? F : -1;
+}
+
+static SDValue performVU0BroadcastPairCombine(SDNode *N, SelectionDAG &DAG,
+                                              const MipsSubtarget &Subtarget);
+
+/// \p V as a VU0_BCAST: V itself, a broadcast shuffle, or an operation on two
+/// broadcasts made into one. The combiner may visit an operation before its
+/// operands.
+static SDValue getVU0AsBroadcast(SDValue V, SelectionDAG &DAG,
+                                 const MipsSubtarget &Subtarget) {
+  if (isVU0Broadcast(V))
+    return V;
+  if (int F = getVU0SplatShuffleField(V); F >= 0)
+    return getVU0Broadcast(DAG, SDLoc(V), V.getOperand(0), F);
+  if (isVU0BroadcastPairOp(V.getOpcode()) && V.getValueType() == MVT::v4f32 &&
+      V.hasOneUse())
+    return performVU0BroadcastPairCombine(V.getNode(), DAG, Subtarget);
+  return SDValue();
+}
+
+// VU0 Broadcast Pair Combine (combineBroadcastPair of the VU target)
+// An operation on two broadcasts, or on a broadcast and a constant splat, is
+// one on a field, broadcast:
+//   op (bcast a, i), (bcast b, j)  ->  bcast (op a, (bcast b, j)), i
+// The operation reads b.j by its broadcast field (VMULbc), and its users read
+// field i the same way, instead of each broadcast being made on its own
+// (VSUB + VADDbc).
+static SDValue performVU0BroadcastPairCombine(SDNode *N, SelectionDAG &DAG,
+                                              const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || !VU0BroadcastPair ||
+      N->getValueType(0) != MVT::v4f32 || !isVU0BroadcastPairOp(N->getOpcode()))
+    return SDValue();
+  SDValue A = N->getOperand(0), B = N->getOperand(1);
+  bool Commutes = N->getOpcode() != ISD::FSUB;
+  auto IsSplat = [](SDValue V) { return isConstOrConstSplatFP(V) != nullptr; };
+  SDValue BA = getVU0AsBroadcast(A, DAG, Subtarget);
+  if (!BA && Commutes) {
+    std::swap(A, B);
+    BA = getVU0AsBroadcast(A, DAG, Subtarget);
+  }
+  if (!BA)
+    return SDValue();
+  SDValue BB = IsSplat(B) ? B : getVU0AsBroadcast(B, DAG, Subtarget);
+  if (!BB)
+    return SDValue();
+  SDLoc DL(N);
+  SDValue Op = DAG.getNode(N->getOpcode(), DL, MVT::v4f32, BA.getOperand(0), BB,
+                           N->getFlags());
+  return DAG.getNode(MipsISD::VU0_BCAST, DL, MVT::v4f32, Op, BA.getOperand(1));
+}
+
+// A broadcast of field j of a vector whose field j is field k of another is
+// a broadcast of that field:
+//   bcast (bcast v, k), j            ->  bcast v, k
+//   bcast (scalar_to_vector v.k), 0  ->  bcast v, k
+//   bcast (insert_vector_elt _, v.k, j), j  ->  bcast v, k
+static SDValue performVU0BCASTCombine(SDNode *N, SelectionDAG &DAG) {
+  SDValue V = N->getOperand(0);
+  unsigned J = N->getConstantOperandVal(1);
+  if (isVU0Broadcast(V))
+    return V;
+  SDValue E;
+  if (V.getOpcode() == ISD::SCALAR_TO_VECTOR && J == 0)
+    E = V.getOperand(0);
+  else if (V.getOpcode() == ISD::INSERT_VECTOR_ELT &&
+           isa<ConstantSDNode>(V.getOperand(2)) &&
+           V.getConstantOperandVal(2) == J)
+    E = V.getOperand(1);
+  if (!E || E.getOpcode() != ISD::EXTRACT_VECTOR_ELT ||
+      E.getOperand(0).getValueType() != MVT::v4f32 ||
+      !isa<ConstantSDNode>(E.getOperand(1)) || E.getConstantOperandVal(1) >= 4)
+    return SDValue();
+  return getVU0Broadcast(DAG, SDLoc(N), E.getOperand(0),
+                         E.getConstantOperandVal(1));
+}
+
+// VU0 Lane Op Combine (combineLaneOp of the VU target)
+// A scalar operation on field k of a vector, whose result only goes back into
+// vectors, is done on the whole vector with the other operand broadcast,
+// instead of moving the field to the FPU and back:
+//   splat (max v.x, 0)  ->  splat (VMAXx v, vf0).x
+// A division is one through Q (VDIV), which its users read directly
+// (VUFoldQ of the VU target; MipsSEDAGToDAGISel::trySelect):
+//   v * splat (1 / v.w)  ->  VDIV Q, vf0w, v.w; VWAITQ; VMULq v, Q
+
+static bool isVU0LaneOpOpcode(unsigned Opc) {
+  return isVU0BroadcastPairOp(Opc) || Opc == ISD::FDIV;
+}
+
+static bool isVU0Lane(SDValue V) {
+  return V.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+         V.getOperand(0).getValueType() == MVT::v4f32 &&
+         isa<ConstantSDNode>(V.getOperand(1)) && V.getConstantOperandVal(1) < 4;
+}
+
+/// A float loaded on its own goes to the VU0 through a GPR (LW, QMTC2).
+static bool isVU0ScalarLoad(SDValue V) {
+  auto *Ld = dyn_cast<LoadSDNode>(V);
+  return Ld && Ld->isSimple() && ISD::isNormalLoad(Ld) && V.hasOneUse();
+}
+
+/// Whether a VU0 operation reads \p V as a field (getVU0FieldOf).
+static bool isVU0FieldOperand(SDValue V) {
+  return isa<ConstantFPSDNode>(V) || isVU0Lane(V) || isVU0ScalarLoad(V);
+}
+
+/// \p V as field Field of a vector: a field of a vector, 0.0 or 1.0 from VF0,
+/// another constant splat, or a float loaded into a GPR.
+static std::pair<SDValue, unsigned> getVU0FieldOf(SDValue V,
+                                                  SelectionDAG &DAG) {
+  SDLoc DL(V);
+  if (isVU0Lane(V))
+    return {V.getOperand(0), unsigned(V.getConstantOperandVal(1))};
+  if (auto *C = dyn_cast<ConstantFPSDNode>(V)) {
+    SDValue VF0 = DAG.getRegister(Mips::VF0, MVT::v4f32);
+    if (C->isZero() && !C->isNegative())
+      return {VF0, 0};
+    if (C->isExactlyValue(1.0))
+      return {VF0, 3};
+    return {DAG.getSplatBuildVector(MVT::v4f32, DL, V), 0};
+  }
+  auto *Ld = cast<LoadSDNode>(V);
+  SDValue I = DAG.getLoad(MVT::i32, DL, Ld->getChain(), Ld->getBasePtr(),
+                          Ld->getMemOperand());
+  DAG.makeEquivalentMemoryOrdering(Ld, I);
+  // The GPR as the low part of a GPR128: field x of the QMTC2.
+  SDValue Q = DAG.getTargetInsertSubreg(
+      Mips::sub_64, DL, MVT::v4i32,
+      SDValue(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32),
+              0),
+      DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, I));
+  return {DAG.getBitcast(MVT::v4f32, Q), 0};
+}
+
+/// Whether the only use of \p N is a splat that one vector FMUL, FADD or
+/// FSUB (as its second operand) reads, which then reads Q directly. Where Q
+/// would be copied to a VF register instead, the one divider is slower than
+/// DIV.S in parallel with the VU0 (Transform 4.52 -> 3.82 Mvert/s).
+static bool isVU0QReadAsBroadcast(SDNode *N) {
+  if (!N->hasOneUse())
+    return false;
+  // N in field x: SCALAR_TO_VECTOR, INSERT_VECTOR_ELT at 0, or BUILD_VECTOR
+  // with N or undef in the other fields.
+  SDNode *U = *N->user_begin();
+  bool IsSplat = false;
+  if (U->getOpcode() == ISD::BUILD_VECTOR) {
+    if (U->getOperand(0).getNode() != N ||
+        !all_of(U->op_values(),
+                [&](SDValue V) { return V.getNode() == N || V.isUndef(); }))
+      return false;
+    IsSplat =
+        all_of(U->op_values(), [&](SDValue V) { return V.getNode() == N; });
+  } else if (U->getOpcode() != ISD::SCALAR_TO_VECTOR &&
+             !(U->getOpcode() == ISD::INSERT_VECTOR_ELT &&
+               isNullConstant(U->getOperand(2)) &&
+               U->getOperand(1).getNode() == N)) {
+    return false;
+  }
+  if (!U->hasOneUse())
+    return false;
+  // Broadcast of field x, unless already a splat.
+  if (!IsSplat) {
+    U = *U->user_begin();
+    auto *SV = dyn_cast<ShuffleVectorSDNode>(U);
+    if (!(SV && SV->isSplat() && SV->getSplatIndex() == 0) &&
+        !(isVU0Broadcast(SDValue(U, 0)) && U->getConstantOperandVal(1) == 0))
+      return false;
+    if (!U->hasOneUse())
+      return false;
+  }
+  SDNode *R = *U->user_begin();
+  return R->getValueType(0) == MVT::v4f32 &&
+         (R->getOpcode() == ISD::FMUL || R->getOpcode() == ISD::FADD ||
+          (R->getOpcode() == ISD::FSUB && R->getOperand(1).getNode() == U));
+}
+
+static SDValue performVU0LaneOpCombine(SDNode *N, SelectionDAG &DAG,
+                                       const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || !VU0LaneOp || N->getValueType(0) != MVT::f32 ||
+      !isVU0LaneOpOpcode(N->getOpcode()))
+    return SDValue();
+  // Whether the value goes into vectors, also through operations with a
+  // field, which become VU0 operations the same way.
+  std::function<bool(SDNode *, unsigned)> GoesToVU0 = [&](SDNode *V,
+                                                          unsigned Depth) {
+    return all_of(V->users(), [&](SDNode *U) {
+      if (U->getOpcode() == ISD::BUILD_VECTOR ||
+          U->getOpcode() == ISD::SCALAR_TO_VECTOR ||
+          U->getOpcode() == ISD::INSERT_VECTOR_ELT)
+        return true;
+      if (Depth >= 3 || !isVU0LaneOpOpcode(U->getOpcode()) ||
+          U->getValueType(0) != MVT::f32)
+        return false;
+      bool First = U->getOperand(0).getNode() == V;
+      if (!First && (U->getOpcode() == ISD::FSUB ||
+                     (U->getOpcode() == ISD::FDIV &&
+                      !isVU0FieldOperand(U->getOperand(0)))))
+        return false;
+      return isVU0FieldOperand(U->getOperand(First ? 1 : 0)) &&
+             GoesToVU0(U, Depth + 1);
+    });
+  };
+  if (!GoesToVU0(N, 0))
+    return SDValue();
+  SDLoc DL(N);
+  SDValue X = N->getOperand(0), Y = N->getOperand(1);
+  if (N->getOpcode() == ISD::FDIV) {
+    // At least one operand is a field of a vector or a load, and Q is read
+    // only as a broadcast (MipsSEDAGToDAGISel::trySelect).
+    if (!isVU0FieldOperand(X) || !isVU0FieldOperand(Y) ||
+        (isa<ConstantFPSDNode>(X) && isa<ConstantFPSDNode>(Y)) ||
+        !isVU0QReadAsBroadcast(N))
+      return SDValue();
+    auto [A, FA] = getVU0FieldOf(X, DAG);
+    auto [B, FB] = getVU0FieldOf(Y, DAG);
+    SDValue Q = DAG.getNode(MipsISD::VU0_QDIV, DL, MVT::v4f32,
+                            {A, DAG.getTargetConstant(FA, DL, MVT::i32), B,
+                             DAG.getTargetConstant(FB, DL, MVT::i32)});
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Q,
+                       DAG.getVectorIdxConstant(0, DL));
+  }
+  if (!isVU0Lane(X) && N->getOpcode() != ISD::FSUB)
+    std::swap(X, Y);
+  if (!isVU0Lane(X) || !isVU0FieldOperand(Y))
+    return SDValue();
+  auto [B, FB] = getVU0FieldOf(Y, DAG);
+  SDValue Op = DAG.getNode(N->getOpcode(), DL, MVT::v4f32, X.getOperand(0),
+                           getVU0Broadcast(DAG, DL, B, FB), N->getFlags());
+  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Op,
+                     X.getOperand(1));
+}
+
 namespace {
 /// A term a * b of a sum computed through the VU0 ACC. Field selects a
 /// broadcast field of b (0-3), or all fields (VU0AccFull).
@@ -1904,6 +2163,109 @@ static bool isVU0PositiveZero(const VU0AccTerm &T) {
 //      VMADDw d, m3, vf0
 // The terms are accumulated in the original order, so the result is the
 // same. An addend of +0.0 is left out. A chain needs two products.
+namespace {
+/// A field of a vector.
+struct VU0Field {
+  SDValue Vec;
+  unsigned F;
+};
+} // namespace
+
+/// The field that lane \p Lane of the v4f32 \p V is: a field of a shuffle,
+/// or the field of the vector itself.
+static std::optional<VU0Field> getVU0LaneField(SDValue V, unsigned Lane) {
+  if (auto *SV = dyn_cast<ShuffleVectorSDNode>(V)) {
+    int M = SV->getMaskElt(Lane);
+    if (M < 0)
+      return std::nullopt;
+    return VU0Field{V.getOperand(M / 4), (unsigned)M % 4};
+  }
+  return VU0Field{V, Lane};
+}
+
+/// Whether lane \p I of \p D is field I of the cross product A x B,
+/// A[j] * B[k] - A[k] * B[j] with j = I + 1 and k = I + 2 (mod 3). A and B
+/// are set by the first lane that is matched.
+static bool matchVU0CrossLane(SDValue D, unsigned I, SDValue &A, SDValue &B) {
+  if (D.getOpcode() != ISD::FSUB || D.getOperand(0).getOpcode() != ISD::FMUL ||
+      D.getOperand(1).getOpcode() != ISD::FMUL)
+    return false;
+  auto Factors =
+      [&](SDValue M) -> std::optional<std::pair<VU0Field, VU0Field>> {
+    auto X = getVU0LaneField(M.getOperand(0), I);
+    auto Y = getVU0LaneField(M.getOperand(1), I);
+    if (!X || !Y)
+      return std::nullopt;
+    return std::make_pair(*X, *Y);
+  };
+  auto P = Factors(D.getOperand(0)), Q = Factors(D.getOperand(1));
+  if (!P || !Q)
+    return false;
+  unsigned J = (I + 1) % 3, K = (I + 2) % 3;
+  // Product A[F1] * B[F2], in either order of its factors.
+  auto Is = [&](std::pair<VU0Field, VU0Field> Prod, unsigned F1, unsigned F2,
+                SDValue &PA, SDValue &PB) {
+    for (bool Swap : {false, true}) {
+      VU0Field X = Swap ? Prod.second : Prod.first;
+      VU0Field Y = Swap ? Prod.first : Prod.second;
+      if (X.F == F1 && Y.F == F2 && (!PA || (PA == X.Vec && PB == Y.Vec))) {
+        PA = X.Vec;
+        PB = Y.Vec;
+        return true;
+      }
+    }
+    return false;
+  };
+  SDValue NA = A, NB = B;
+  if (!Is(*P, J, K, NA, NB) || !Is(*Q, K, J, NA, NB))
+    return false;
+  A = NA;
+  B = NB;
+  return true;
+}
+
+/// A cross product of vectors written with shuffles, whose field w is not
+/// needed (undefined in the shuffles, or replaced by the only user):
+/// VOPMULA.xyz and VOPMSUB.xyz, 2 instructions instead of 4 shuffles through
+/// the GPRs, 2 multiplies and a subtract.
+static cl::opt<bool> VU0Cross("mips-vu0-cross", cl::Hidden, cl::init(true),
+                              cl::desc("Select R5900 VU0 cross products as "
+                                       "VOPMULA and VOPMSUB"));
+
+static SDValue performVU0CrossCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!VU0Cross || !Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
+    return SDValue();
+  SDValue D(N, 0);
+  bool WUnused = (N->hasOneUse() &&
+                  N->user_begin()->getOpcode() == ISD::INSERT_VECTOR_ELT &&
+                  N->user_begin()->getOperand(0) == D &&
+                  isa<ConstantSDNode>(N->user_begin()->getOperand(2)) &&
+                  N->user_begin()->getConstantOperandVal(2) == 3) ||
+                 all_of(N->op_values(), [](SDValue M) {
+                   return M.getOpcode() == ISD::FMUL &&
+                          all_of(M->op_values(), [](SDValue S) {
+                            auto *SV = dyn_cast<ShuffleVectorSDNode>(S);
+                            return SV && SV->getMaskElt(3) < 0;
+                          });
+                 });
+  SDValue A, B;
+  if (!WUnused || !matchVU0CrossLane(D, 0, A, B) ||
+      !matchVU0CrossLane(D, 1, A, B) || !matchVU0CrossLane(D, 2, A, B))
+    return SDValue();
+  return DAG.getNode(MipsISD::VU0_CROSS, SDLoc(N), MVT::v4f32, A, B);
+}
+
+static cl::opt<bool> VU0InsertField(
+    "mips-vu0-insert-field", cl::Hidden, cl::init(true),
+    cl::desc("Write a field of an R5900 VU0 vector into another one with one "
+             "masked VADDbc"));
+
+static cl::opt<unsigned> VU0AccMinProducts(
+    "mips-vu0-acc-min-products", cl::Hidden, cl::init(2),
+    cl::desc("The number of products a sum needs to be computed through the "
+             "R5900 VU0 ACC"));
+
 static SDValue performVU0AccSumCombine(SDNode *N, SelectionDAG &DAG,
                                        const MipsSubtarget &Subtarget) {
   if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32)
@@ -1917,10 +2279,11 @@ static SDValue performVU0AccSumCombine(SDNode *N, SelectionDAG &DAG,
   erase_if(Terms, isVU0PositiveZero);
   // VMULA can not negate. ACC is a single register, so chains wait for each
   // other: with one product, a VMUL and VADD that run in parallel with other
-  // chains are faster (PS2: Transform 3.95 -> 3.58 Mvert/s as ACC chains).
+  // chains are faster (PS2: Transform 3.95 -> 3.58 Mvert/s as ACC chains;
+  // 3.95 -> 3.56 also with ACC as a scheduled value).
   if (Terms[0].Neg || count_if(Terms, [](const VU0AccTerm &T) {
                         return T.B.getOpcode() != ISD::Register;
-                      }) < 2)
+                      }) < (int)VU0AccMinProducts)
     return SDValue();
 
   SDLoc DL(N);
@@ -2085,6 +2448,17 @@ static SDValue performVU0BlendCombine(SDNode *N, SelectionDAG &DAG,
     unsigned EffMask = Swap ? (0xF ^ Mask) : Mask; // Invert mask if swapped
 
     unsigned SrcOp = Src.getOpcode();
+    // A broadcast field into the fields of the mask: one masked VADDbc,
+    // 0 + v.<k> (VMULw for w into w), instead of the broadcast and VMOVE.
+    if (VU0InsertField && SrcOp == MipsISD::VU0_BCAST && Src.hasOneUse()) {
+      unsigned K = Src.getConstantOperandVal(1);
+      SDValue Zero = !(EffMask & 1) || (K == 3 && EffMask == 1)
+                         ? DAG.getRegister(Mips::VF0, MVT::v4f32)
+                         : DAG.getConstantFP(0.0, DL, MVT::v4f32);
+      return DAG.getNode(MipsISD::VU0_INSERT_FIELD, DL, VT, Base, Zero,
+                         Src.getOperand(0), DAG.getConstant(K, DL, MVT::i32),
+                         DAG.getConstant(EffMask, DL, MVT::i32));
+    }
     if (SrcOp == ISD::FADD || SrcOp == ISD::FSUB || SrcOp == ISD::FMUL) {
       SDValue ArithOp0 = Src.getOperand(0);
       SDValue ArithOp1 = Src.getOperand(1);
@@ -2141,21 +2515,39 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
   case ISD::FMINNUM:
     Val = performVU0HorizontalCombine(N, DAG, Subtarget);
     if (!Val)
+      Val = performVU0BroadcastPairCombine(N, DAG, Subtarget);
+    if (!Val)
       Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0LaneOpCombine(N, DAG, Subtarget);
     if (!Val && N->getOpcode() == ISD::FADD && DCI.isAfterLegalizeDAG())
       Val = performVU0AccSumCombine(N, DAG, Subtarget);
     if (!Val)
       revisitVU0HorizontalUsers(N, DCI);
     break;
   case ISD::FSUB:
-    Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!DCI.isAfterLegalizeDAG())
+      Val = performVU0CrossCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0BroadcastPairCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0LaneOpCombine(N, DAG, Subtarget);
     if (!Val && DCI.isAfterLegalizeDAG())
       Val = performVU0AccSumCombine(N, DAG, Subtarget);
     break;
   case ISD::FMUL:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
     if (!Val)
+      Val = performVU0BroadcastPairCombine(N, DAG, Subtarget);
+    if (!Val)
       Val = performVU0BroadcastCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0LaneOpCombine(N, DAG, Subtarget);
+    break;
+  case ISD::FDIV:
+    Val = performVU0LaneOpCombine(N, DAG, Subtarget);
     break;
   case ISD::FP_TO_SINT:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
@@ -2198,6 +2590,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case MipsISD::VU0_BLEND:
     Val = performVU0BlendCombine(N, DAG, Subtarget);
+    break;
+  case MipsISD::VU0_BCAST:
+    Val = performVU0BCASTCombine(N, DAG);
     break;
   case ISD::BITCAST:
     Val = performR5900BITCASTCombine(N, DAG, Subtarget);
@@ -4011,6 +4406,54 @@ lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
   return Op;
 }
 
+static SDValue lowerVU0BUILD_VECTOR(BuildVectorSDNode *Node, SelectionDAG &DAG);
+
+static cl::opt<bool> VU0FDivSplit(
+    "mips-vu0-fdiv-split", cl::Hidden, cl::init(true),
+    cl::desc("Divide fields z and w of an R5900 VU0 vector through VDIV, in "
+             "parallel with DIV.S for x and y"));
+
+/// VU0 v4f32 division. DIV.S is not pipelined (two take 14 cycles), but it
+/// runs in parallel with VDIV (DIV.S and VDIV with VWAITQ: 9; two of each
+/// with VADDQ: 20, measured). Fields x and y are divided by DIV.S, z and w
+/// through VDIV and Q straight into a vector of their own.
+SDValue MipsSETargetLowering::lowerVU0FDIV(SDValue Op,
+                                           SelectionDAG &DAG) const {
+  if (!VU0FDivSplit)
+    return SDValue();
+  SDLoc DL(Op);
+  SDValue A = Op.getOperand(0), B = Op.getOperand(1);
+  auto Field = [&](SDValue V, unsigned I) {
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, V,
+                       DAG.getVectorIdxConstant(I, DL));
+  };
+  SDValue Q0 = DAG.getNode(ISD::FDIV, DL, MVT::f32, Field(A, 0), Field(B, 0),
+                           Op->getFlags());
+  SDValue Q1 = DAG.getNode(ISD::FDIV, DL, MVT::f32, Field(A, 1), Field(B, 1),
+                           Op->getFlags());
+  // z and w into a vector of their own, so that the divisions through Q do
+  // not wait for DIV.S. VF0 has 0.0 in z, and as the base it means none: all
+  // fields are written, the others are replaced below. A zero vector (loop
+  // invariant) for w.
+  SDValue VF0 = DAG.getRegister(Mips::VF0, MVT::v4f32);
+  SDValue ZW = DAG.getNode(MipsISD::VU0_DIVQ, DL, MVT::v4f32,
+                           {VF0, VF0, A, B, DAG.getConstant(2, DL, MVT::i32),
+                            DAG.getConstant(2, DL, MVT::i32)});
+  ZW = DAG.getNode(MipsISD::VU0_DIVQ, DL, MVT::v4f32,
+                   {ZW, DAG.getConstantFP(0.0, DL, MVT::v4f32), A, B,
+                    DAG.getConstant(3, DL, MVT::i32),
+                    DAG.getConstant(1, DL, MVT::i32)});
+  // x and y as a pair in a GPR (MFC1, PEXTLW, PCPYLD, QMTC2), then VMOVE.xy;
+  // the vector repeats them, since one with undefined fields would go
+  // through the stack. Measured with the buffers of Vec Divide 1 KB apart
+  // modulo 4 KB: 20.9 MFLOPS, 19.7 with DIV.S only.
+  auto *XY = cast<BuildVectorSDNode>(
+      DAG.getBuildVector(MVT::v4f32, DL, {Q0, Q1, Q0, Q1}).getNode());
+  return DAG.getNode(MipsISD::VU0_BLEND, DL, MVT::v4f32, ZW,
+                     lowerVU0BUILD_VECTOR(XY, DAG),
+                     DAG.getConstant(0b1100, DL, MVT::i32));
+}
+
 SDValue MipsSETargetLowering::lowerINSERT_VECTOR_ELT(SDValue Op,
                                                      SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -4030,6 +4473,21 @@ SDValue MipsSETargetLowering::lowerINSERT_VECTOR_ELT(SDValue Op,
     unsigned I = Idx->getAsZExtVal();
     if (I > 3)
       return SDValue();
+    // A field of another vector: one masked VADDbc (or VMULw for w into w)
+    // that writes the field directly, 0 + v.<k>. VF0 has 0.0 in x, y and z,
+    // a zero vector (loop invariant) is used for w.
+    if (VU0InsertField && !Vec.isUndef() &&
+        Val.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+        Val.getOperand(0).getValueType() == MVT::v4f32 &&
+        isa<ConstantSDNode>(Val.getOperand(1)) &&
+        Val.getConstantOperandVal(1) < 4) {
+      unsigned K = Val.getConstantOperandVal(1);
+      SDValue Zero = I < 3 || K == 3 ? DAG.getRegister(Mips::VF0, MVT::v4f32)
+                                     : DAG.getConstantFP(0.0, DL, MVT::v4f32);
+      return DAG.getNode(MipsISD::VU0_INSERT_FIELD, DL, VecTy, Vec, Zero,
+                         Val.getOperand(0), DAG.getConstant(K, DL, MVT::i32),
+                         DAG.getConstant(1 << (3 - I), DL, MVT::i32));
+    }
     SmallVector<SDValue, 4> Elts(4, DAG.getUNDEF(MVT::f32));
     Elts[I] = Val;
     SDValue Lane = DAG.getBuildVector(MVT::v4f32, DL, Elts);

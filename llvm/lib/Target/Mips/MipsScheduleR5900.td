@@ -324,6 +324,16 @@ def : InstRW<[R5900WriteVU0Div], (instrs VDIV, VSQRT)>;
 def : InstRW<[R5900WriteVU0Rsqrt], (instrs VRSQRT)>;
 def : InstRW<[R5900WriteVU0Acc],
              (instregex "^V(ADD|SUB|MUL|MADD|MSUB)Abc[xyzw]$")>;
+// The code generation forms with ACC as a value (MipsVU0InstrInfo.td).
+def : InstRW<[R5900WriteVU0Acc], (instrs VMULA_V, VMADDA_V, VMSUBA_V,
+                                  VOPMULA_V)>;
+def : InstRW<[R5900WriteVU0Acc], (instregex "^V(MUL|MADD|MSUB)Abc[xyzw]_V$")>;
+def : InstRW<[R5900WriteVU0], (instrs VMADD_V, VMSUB_V, VOPMSUB_V)>;
+def : InstRW<[R5900WriteVU0], (instregex "^V(MADD|MSUB)bc[xyzw]_V$")>;
+def : InstRW<[R5900WriteVU0], (instregex "^V(ADD|MUL)bc[xyzw]m$")>;
+def : InstRW<[R5900WriteVU0Div], (instrs VDIV_V)>;
+def : InstRW<[R5900WriteVU0WaitQ], (instrs VWAITQ_V)>;
+def : InstRW<[R5900WriteVU0], (instrs VADDQ_V, VSUBQ_V, VMULQ_V, VADDQm)>;
 
 // Multimedia (MMI)
 // ================

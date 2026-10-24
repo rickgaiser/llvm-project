@@ -208,6 +208,7 @@ public:
   void addIRPasses() override;
   bool addInstSelector() override;
   void addPreEmitPass() override;
+  bool addILPOpts() override;
   void addPreRegAlloc() override;
   void addPreSched2() override;
   bool addIRTranslator() override;
@@ -264,6 +265,12 @@ bool MipsPassConfig::addInstSelector() {
   return false;
 }
 
+// R5900: the VU0 ACC alternatives of MipsInstrInfo::getMachineCombinerPatterns.
+bool MipsPassConfig::addILPOpts() {
+  addPass(&MachineCombinerID);
+  return true;
+}
+
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
 
@@ -276,6 +283,10 @@ void MipsPassConfig::addPreRegAlloc() {
   // multiplier where it lowers the resource bound of a block.
   addPass(createMipsR5900Div1Pass());
   addPass(createMipsR5900Mult1Pass());
+  // R5900: software pipeline VU0 loops (MipsSubtarget::
+  // enableMachinePipeliner).
+  if (getOptLevel() >= CodeGenOptLevel::Default)
+    addPass(&MachinePipelinerID);
 }
 
 void MipsPassConfig::addPreSched2() {

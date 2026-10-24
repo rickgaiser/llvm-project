@@ -296,7 +296,14 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
                                Op1Info.getNoProps(), Op2Info.getNoProps());
     unsigned NumVecOps =
         Opcode == Instruction::FNeg || Op2Info.isConstant() ? 1 : 2;
-    return getR5900ScalarizedCost(VTy, NumVecOps, ScalarCost, CostKind);
+    InstructionCost Cost =
+        getR5900ScalarizedCost(VTy, NumVecOps, ScalarCost, CostKind);
+    // A v4f32 fdiv divides z and w through VDIV in parallel with DIV.S
+    // (MipsSETargetLowering::lowerVU0FDIV): 20.9 instead of 19.7 MFLOPS in
+    // the Vec Divide loop (measured).
+    if (Opcode == Instruction::FDiv && *Parts == 1 && NumVecOps == 2)
+      Cost = Cost * 19 / 20;
+    return Cost;
   }
 
   // An FPU add, subtract or multiply takes one slot, like the VU0 ones.
