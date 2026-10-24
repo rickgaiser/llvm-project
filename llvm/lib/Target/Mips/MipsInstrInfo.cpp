@@ -517,7 +517,14 @@ MipsInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
 
   SmallVector<const MachineInstr *, 2> CondDefs;
   for (const MachineOperand &MO : drop_begin(Cond)) {
-    if (!MO.isReg() || !MO.getReg().isVirtual())
+    if (!MO.isReg())
+      continue;
+    // A condition in a physical register ($fcc0 of BC1T/BC1F): the compare
+    // that sets it is scheduled like the other instructions, and no copy of
+    // it is made in front of the branches of the prologue.
+    if (MO.getReg().isPhysical() && !MRI.isConstantPhysReg(MO.getReg()))
+      return nullptr;
+    if (!MO.getReg().isVirtual())
       continue;
     const MachineInstr *Def = MRI.getVRegDef(MO.getReg());
     if (Def->isPHI())

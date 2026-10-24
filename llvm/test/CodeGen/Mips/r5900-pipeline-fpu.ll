@@ -266,3 +266,63 @@ loop:
 exit:
   ret void
 }
+
+; A loop that exits on a float compare is not pipelined: the branch tests
+; $fcc0, which the compare sets, and the branches of the prologue would test
+; a stale $fcc0.
+define float @fcc_exit(float %a) {
+; CHECK-LABEL: fcc_exit:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    lui $1, %hi(.LCPI3_0)
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI3_0)($1)
+; CHECK-NEXT:    c.le.s $f12, $f1
+; CHECK-NEXT:    bc1t .LBB3_3
+; CHECK-NEXT:    mov.s $f0, $f12
+; CHECK-NEXT:  # %bb.1: # %loop.preheader
+; CHECK-NEXT:    lui $1, %hi(.LCPI3_1)
+; CHECK-NEXT:    lwc1 $f2, %lo(.LCPI3_1)($1)
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB3_2: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    add.s $f0, $f0, $f2
+; CHECK-NEXT:    c.le.s $f0, $f1
+; CHECK-NEXT:    bc1f .LBB3_2
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  .LBB3_3: # %exit
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+;
+; OFF-LABEL: fcc_exit:
+; OFF:       # %bb.0: # %entry
+; OFF-NEXT:    lui $1, %hi(.LCPI3_0)
+; OFF-NEXT:    lwc1 $f1, %lo(.LCPI3_0)($1)
+; OFF-NEXT:    c.le.s $f12, $f1
+; OFF-NEXT:    bc1t .LBB3_3
+; OFF-NEXT:    mov.s $f0, $f12
+; OFF-NEXT:  # %bb.1: # %loop.preheader
+; OFF-NEXT:    lui $1, %hi(.LCPI3_1)
+; OFF-NEXT:    lwc1 $f2, %lo(.LCPI3_1)($1)
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB3_2: # %loop
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    add.s $f0, $f0, $f2
+; OFF-NEXT:    c.le.s $f0, $f1
+; OFF-NEXT:    bc1f .LBB3_2
+; OFF-NEXT:    nop
+; OFF-NEXT:  .LBB3_3: # %exit
+; OFF-NEXT:    jr $ra
+; OFF-NEXT:    nop
+entry:
+  %c0 = fcmp nnan ninf ogt float %a, 0x400921FB60000000
+  br i1 %c0, label %loop, label %exit
+
+loop:
+  %x = phi float [ %a, %entry ], [ %y, %loop ]
+  %y = fadd nnan ninf float %x, 0xC01921FB60000000
+  %c = fcmp nnan ninf ogt float %y, 0x400921FB60000000
+  br i1 %c, label %loop, label %exit
+
+exit:
+  %r = phi float [ %a, %entry ], [ %y, %loop ]
+  ret float %r
+}
