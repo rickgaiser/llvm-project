@@ -12,6 +12,10 @@
 // values the VU can address. A 32-bit value that is stored or converted is
 // the 16-bit one sign-extended; a loaded one is the low half of its field.
 //
+// The VU has no integer vector unit: an integer vector operation is done
+// lane by lane first (the vector is built again for the users that need
+// it), so that its lanes are narrowed like the scalars.
+//
 //===----------------------------------------------------------------------===//
 
 #include "VU.h"
@@ -42,6 +46,7 @@ private:
   Type *I16 = nullptr;
   Value *get16(Value *V);
   Value *narrow(Instruction &I);
+  bool scalarizeVectors(Function &F);
 };
 } // namespace
 
@@ -53,6 +58,106 @@ FunctionPass *llvm::createVUNarrowIntPass() { return new VUNarrowInt(); }
 
 static bool isWide(Type *T) {
   return T->isIntegerTy() && T->getIntegerBitWidth() > 16;
+}
+
+/// A vector of integers (not of i1: the masks of comparisons are vectors of
+/// floats on the VU).
+static FixedVectorType *intVector(Type *T) {
+  auto *VT = dyn_cast<FixedVectorType>(T);
+  return VT && VT->getElementType()->isIntegerTy() &&
+                 VT->getElementType()->getIntegerBitWidth() >= 8
+             ? VT
+             : nullptr;
+}
+
+/// Integer vector operations lane by lane, and the lanes that are extracted
+/// found where they come from:
+///  - a lane of a vector of lanes twice as wide (HLSL's uint4, <4 x i32>,
+///    read as <8 x i16>): the low or the high half of the wide lane;
+///  - a lane of a loaded vector: a load of the lane (ILW once narrowed);
+///  - a lane of a vector that is built (by the scalarized operations): the
+///    scalar.
+bool VUNarrowInt::scalarizeVectors(Function &F) {
+  bool Changed = false;
+  SmallVector<Instruction *, 16> Ops;
+  for (Instruction &I : instructions(F)) {
+    if (isa<BinaryOperator, SelectInst>(I) && intVector(I.getType()))
+      Ops.push_back(&I);
+    else if (isa<ICmpInst>(I) && intVector(I.getOperand(0)->getType()))
+      Ops.push_back(&I);
+    else if (isa<ZExtInst, SExtInst, TruncInst>(I) && intVector(I.getType()))
+      Ops.push_back(&I);
+  }
+  for (Instruction *I : Ops) {
+    auto *VT = cast<FixedVectorType>(I->getType());
+    IRBuilder<> B(I);
+    Value *V = PoisonValue::get(VT);
+    for (unsigned K = 0, N = VT->getNumElements(); K != N; ++K) {
+      auto Lane = [&](Value *X) {
+        return X->getType()->isVectorTy() ? B.CreateExtractElement(X, K) : X;
+      };
+      Value *R;
+      if (auto *BO = dyn_cast<BinaryOperator>(I))
+        R = B.CreateBinOp(BO->getOpcode(), Lane(BO->getOperand(0)),
+                          Lane(BO->getOperand(1)));
+      else if (auto *C = dyn_cast<ICmpInst>(I))
+        R = B.CreateICmp(C->getPredicate(), Lane(C->getOperand(0)),
+                         Lane(C->getOperand(1)));
+      else if (auto *S = dyn_cast<SelectInst>(I))
+        R = B.CreateSelect(Lane(S->getCondition()), Lane(S->getTrueValue()),
+                           Lane(S->getFalseValue()));
+      else
+        R = B.CreateCast(cast<CastInst>(I)->getOpcode(), Lane(I->getOperand(0)),
+                         VT->getElementType());
+      V = B.CreateInsertElement(V, R, K);
+    }
+    V->takeName(I);
+    I->replaceAllUsesWith(V);
+    I->eraseFromParent();
+    Changed = true;
+  }
+
+  SmallVector<ExtractElementInst *, 16> Work;
+  for (Instruction &I : instructions(F))
+    if (auto *EE = dyn_cast<ExtractElementInst>(&I))
+      Work.push_back(EE);
+  while (!Work.empty()) {
+    ExtractElementInst *EE = Work.pop_back_val();
+    auto *Idx = dyn_cast<ConstantInt>(EE->getIndexOperand());
+    if (!Idx || !EE->getType()->isIntegerTy())
+      continue;
+    unsigned K = Idx->getZExtValue(), W = EE->getType()->getIntegerBitWidth();
+    Value *Src = EE->getVectorOperand(), *New = nullptr;
+    if (auto *BC = dyn_cast<BitCastInst>(Src)) {
+      auto *From = intVector(BC->getOperand(0)->getType());
+      if (From && From->getElementType()->getIntegerBitWidth() == 2 * W) {
+        IRBuilder<> B(EE);
+        auto *L = cast<ExtractElementInst>(
+            B.CreateExtractElement(BC->getOperand(0), K / 2));
+        Work.push_back(L);
+        Value *H = K & 1 ? B.CreateLShr(L, W) : static_cast<Value *>(L);
+        New = B.CreateTrunc(H, EE->getType());
+      }
+    } else if (auto *LI = dyn_cast<LoadInst>(Src); LI && LI->isSimple()) {
+      // At the load: no store comes between.
+      IRBuilder<> B(LI->getNextNode());
+      Value *P = B.CreateConstInBoundsGEP1_32(
+          B.getInt8Ty(), LI->getPointerOperand(), K * W / 8);
+      LoadInst *L = B.CreateLoad(EE->getType(), P, EE->getName());
+      L->copyMetadata(*LI, {LLVMContext::MD_alias_scope,
+                            LLVMContext::MD_noalias, LLVMContext::MD_tbaa});
+      New = L;
+    }
+    if (!New)
+      continue;
+    EE->replaceAllUsesWith(New);
+    EE->eraseFromParent();
+    Changed = true;
+  }
+  if (Changed)
+    for (BasicBlock &BB : F)
+      SimplifyInstructionsInBlock(&BB);
+  return Changed;
 }
 
 /// \p V as an i16: its narrow version, or its low 16 bits.
@@ -156,6 +261,7 @@ Value *VUNarrowInt::narrow(Instruction &I) {
 bool VUNarrowInt::runOnFunction(Function &F) {
   I16 = Type::getInt16Ty(F.getContext());
   Narrow.clear();
+  bool Vectors = scalarizeVectors(F);
   // Phis first, so that every value has its narrow version when it is used.
   SmallVector<std::pair<PHINode *, PHINode *>, 8> Phis;
   for (Instruction &I : instructions(F))
@@ -183,7 +289,7 @@ bool VUNarrowInt::runOnFunction(Function &F) {
     Old.push_back(P);
   }
   if (Old.empty())
-    return false;
+    return Vectors;
 
   // The users that keep the wide type get the narrow value sign-extended.
   for (Instruction *I : Old) {

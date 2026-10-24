@@ -1565,32 +1565,44 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
     // integers are inserted with MFIR.
     if (N->getValueType(0) != MVT::v4i32 || DCI.isAfterLegalizeDAG())
       break;
-    bool AllConst = true, AllNarrow = true;
-    for (SDValue E : N->ops()) {
-      AllConst &= E.isUndef() || isa<ConstantSDNode>(E);
-      AllNarrow &= E.isUndef() || ((E.getOpcode() == ISD::SIGN_EXTEND ||
-                                    E.getOpcode() == ISD::ANY_EXTEND) &&
-                                   E.getOperand(0).getValueType() == MVT::i16);
+    bool AnyNarrow = false;
+    SmallVector<SDValue, 4> Fs(4);
+    SDValue First;
+    for (unsigned I = 0; I != 4; ++I) {
+      SDValue E = N->getOperand(I);
+      if (E.isUndef())
+        continue;
+      if (auto *C = dyn_cast<ConstantSDNode>(E)) {
+        Fs[I] = DAG.getConstantFP(
+            APFloat(APFloat::IEEEsingle(), C->getAPIntValue().trunc(32)), DL,
+            MVT::f32);
+        if (!First)
+          First = Fs[I];
+        continue;
+      }
+      if ((E.getOpcode() != ISD::SIGN_EXTEND &&
+           E.getOpcode() != ISD::ANY_EXTEND) ||
+          E.getOperand(0).getValueType() != MVT::i16)
+        return SDValue();
+      AnyNarrow = true;
     }
-    if (AllConst) {
-      SmallVector<SDValue, 4> Fs;
-      for (SDValue E : N->ops())
-        Fs.push_back(
-            E.isUndef()
-                ? DAG.getUNDEF(MVT::f32)
-                : DAG.getConstantFP(
-                      APFloat(
-                          APFloat::IEEEsingle(),
-                          cast<ConstantSDNode>(E)->getAPIntValue().trunc(32)),
-                      DL, MVT::f32));
-      return DAG.getNode(ISD::BITCAST, DL, MVT::v4i32,
-                         DAG.getBuildVector(MVT::v4f32, DL, Fs));
-    }
-    if (!AllNarrow)
-      break;
+    // The constant fields: not a BUILD_VECTOR of floats, whose bitcast would
+    // be folded back into this one (before the types are legalized), which
+    // would never end; a SPLAT of a constant and the others inserted, as
+    // lowerBUILD_VECTOR makes them.
     SDValue V = DAG.getUNDEF(MVT::v4i32);
+    if (First) {
+      SDValue F = DAG.getNode(VUISD::SPLAT, DL, MVT::v4f32, First);
+      for (unsigned I = 0; I != 4; ++I)
+        if (Fs[I] && Fs[I] != First)
+          F = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v4f32, F, Fs[I],
+                          DAG.getVectorIdxConstant(I, DL));
+      V = DAG.getNode(ISD::BITCAST, DL, MVT::v4i32, F);
+    }
+    if (!AnyNarrow)
+      return V;
     for (unsigned I = 0; I != 4; ++I)
-      if (SDValue E = N->getOperand(I); !E.isUndef())
+      if (SDValue E = N->getOperand(I); !E.isUndef() && !Fs[I])
         V = DAG.getNode(VUISD::INSERT_VI, DL, MVT::v4i32, V, E.getOperand(0),
                         DAG.getTargetConstant(I, DL, MVT::i32));
     return V;

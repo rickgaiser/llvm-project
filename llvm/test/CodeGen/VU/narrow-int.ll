@@ -84,6 +84,7 @@ define void @loop() {
 ; CHECK-NEXT:  .LBB0_8: ; %done
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
 entry:
   %n = load i32, ptr inttoptr (i16 0 to ptr)
   %k = load i32, ptr inttoptr (i16 4 to ptr)
@@ -119,10 +120,102 @@ define void @store_int() {
 ; CHECK-NEXT:    nop sq.x vf1, 2(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 1)
   %x = extractelement <4 x float> %v, i32 0
   %i = fptosi float %x to i32
   %j = mul i32 %i, 3
   store i32 %j, ptr inttoptr (i16 32 to ptr)
+  ret void
+}
+
+; Integer vectors are computed lane by lane: a uint4 input (<4 x i32>, read
+; as <8 x i16>) times 4 indexes a table of quadwords (skinning: the joints of
+; a vertex). Each lane is loaded by itself (ILW) and doubled twice.
+define void @vector_index() {
+; CHECK-LABEL: vector_index:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop ilw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop ilw.y vi2, 1(vi0)
+; CHECK-NEXT:    nop ilw.w vi3, 1(vi0)
+; CHECK-NEXT:    nop iadd vi1, vi1, vi1
+; CHECK-NEXT:    nop iadd vi2, vi2, vi2
+; CHECK-NEXT:    nop iadd vi1, vi1, vi1
+; CHECK-NEXT:    nop iadd vi2, vi2, vi2
+; CHECK-NEXT:    nop lq.xyzw vf1, 4(vi1)
+; CHECK-NEXT:    nop lq.xyzw vf2, 4(vi2)
+; CHECK-NEXT:    nop iadd vi1, vi3, vi3
+; CHECK-NEXT:    nop iadd vi1, vi1, vi1
+; CHECK-NEXT:    nop lq.xyzw vf3, 4(vi1)
+; CHECK-NEXT:    add.xyzw vf1, vf1, vf2 nop
+; CHECK-NEXT:    add.xyzw vf1, vf1, vf3 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %j = load <4 x i32>, ptr inttoptr (i16 16 to ptr)
+  %m = shl <4 x i32> %j, splat (i32 2)
+  %h = bitcast <4 x i32> %m to <8 x i16>
+  %a = extractelement <8 x i16> %h, i64 0
+  %b = extractelement <8 x i16> %h, i64 2
+  %c = extractelement <8 x i16> %h, i64 6
+  %pa = getelementptr <4 x float>, ptr inttoptr (i16 64 to ptr), i16 %a
+  %pb = getelementptr <4 x float>, ptr inttoptr (i16 64 to ptr), i16 %b
+  %pc = getelementptr <4 x float>, ptr inttoptr (i16 64 to ptr), i16 %c
+  %va = load <4 x float>, ptr %pa
+  %vb = load <4 x float>, ptr %pb
+  %vc = load <4 x float>, ptr %pc
+  %s = fadd <4 x float> %va, %vb
+  %t = fadd <4 x float> %s, %vc
+  store <4 x float> %t, ptr inttoptr (i16 32 to ptr)
+  ret void
+}
+
+; An integer vector of 16-bit values and a constant (HLSL int4(d, d, d,
+; 128)): the constant as the bits of a float, the others inserted (MFIR).
+define void @mixed_lanes() {
+; CHECK-LABEL: mixed_lanes:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop loi 0x00000080
+; CHECK-NEXT:    addi.x vf1, vf0, i lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    ftoi0.x vf2, vf2 nop
+; CHECK-NEXT:    addx.xyz vf1, vf0, vf1x nop
+; CHECK-NEXT:    nop mtir vi1, vf2x
+; CHECK-NEXT:    nop mr32.w vf1, vf1
+; CHECK-NEXT:    nop mfir.x vf1, vi1
+; CHECK-NEXT:    nop mfir.y vf1, vi1
+; CHECK-NEXT:    nop mfir.z vf1, vi1
+; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = load <4 x float>, ptr inttoptr (i16 16 to ptr)
+  %d = extractelement <4 x float> %v, i32 0
+  %i = fptosi float %d to i32
+  %a = insertelement <4 x i32> poison, i32 %i, i32 0
+  %b = insertelement <4 x i32> %a, i32 %i, i32 1
+  %c = insertelement <4 x i32> %b, i32 %i, i32 2
+  %e = insertelement <4 x i32> %c, i32 128, i32 3
+  store <4 x i32> %e, ptr inttoptr (i16 32 to ptr)
+  ret void
+}
+
+; A constant integer vector (not folded back and forth between a bitcast of
+; floats and the integers before the types are legalized).
+define void @const_vector() {
+; CHECK-LABEL: const_vector:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop loi 0x00000001
+; CHECK-NEXT:    addi.x vf1, vf0, i loi 0x00000002
+; CHECK-NEXT:    addi.x vf2, vf0, i loi 0x00000080
+; CHECK-NEXT:    addi.x vf4, vf0, i nop
+; CHECK-NEXT:    addx.x vf3, vf0, vf1x nop
+; CHECK-NEXT:    addx.y vf3, vf0, vf2x nop
+; CHECK-NEXT:    addx.z vf3, vf0, vf4x nop
+; CHECK-NEXT:    nop mr32.w vf3, vf1
+; CHECK-NEXT:    nop sq.xyzw vf3, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  store <4 x i32> <i32 1, i32 2, i32 128, i32 1>, ptr inttoptr (i16 32 to ptr)
   ret void
 }
