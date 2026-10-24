@@ -11,6 +11,7 @@
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/ScheduleDAGMutation.h"
+#include "llvm/CodeGen/SingleRegClassMutations.h"
 
 using namespace llvm;
 
@@ -62,63 +63,11 @@ void VUSubtarget::overridePipelinerPolicy(
 }
 
 namespace {
-/// Keeps the uses of ACC, Q, P and I together with their definitions for the
-/// pipeliner, like the instructions of an ACC chain:
-///   MULA, MADDA..., MADD  ->  MULA, ...
-///   DIV, ADDq             ->  DIV, ...
-/// - The output dependence from a definition of P or I to the next one
-///   also follows from a read in between. It is removed, so that the read is
-///   on the path from one definition to the next, and the pipeliner orders it
-///   with them instead of after both.
-/// - A group starts only when all its instructions can follow without
-///   waiting for other operands. Otherwise the start would be scheduled as
-///   early as possible and the rest later, which makes ACC or Q busy for
-///   longer, or puts the group in two stages.
-class ResultRegChains : public ScheduleDAGMutation {
-  /// Delays the group that \p Start begins until the operands of all its
-  /// instructions are ready. \p InGroup tells which registers the group
-  /// passes on.
-  static void delayGroupStart(ScheduleDAGInstrs *DAG, SUnit *Start,
-                              function_ref<bool(Register)> InGroup) {
-    // The earliest cycle of each instruction of the group, relative to Start.
-    DenseMap<SUnit *, unsigned> Offset = {{Start, 0}};
-    SmallVector<SUnit *, 8> Worklist = {Start};
-    while (!Worklist.empty()) {
-      SUnit *SU = Worklist.pop_back_val();
-      for (const SDep &D : SU->Succs) {
-        if (D.getKind() != SDep::Data || !InGroup(D.getReg()))
-          continue;
-        unsigned &O = Offset[D.getSUnit()];
-        unsigned New = Offset[SU] + D.getLatency();
-        if (New > O) {
-          O = New;
-          Worklist.push_back(D.getSUnit());
-        }
-      }
-    }
-    // One edge from each operand to Start, with the largest delay (a second
-    // edge from the same instruction would not be added), in the order of
-    // the instructions.
-    DenseMap<SUnit *, unsigned> Delay;
-    for (auto [SU, O] : Offset)
-      for (const SDep &D : SU->Preds)
-        if (D.getKind() == SDep::Data && !InGroup(D.getReg()) &&
-            !Offset.count(D.getSUnit()) && D.getLatency() > O) {
-          unsigned &L = Delay[D.getSUnit()];
-          L = std::max(L, D.getLatency() - O);
-        }
-    SmallVector<std::pair<SUnit *, unsigned>, 8> Edges(Delay.begin(),
-                                                       Delay.end());
-    llvm::sort(Edges, [](const auto &A, const auto &B) {
-      return A.first->NodeNum < B.first->NodeNum;
-    });
-    for (auto [Pred, Latency] : Edges) {
-      SDep Dep(Pred, SDep::Artificial);
-      Dep.setLatency(Latency);
-      DAG->addEdge(Start, Dep);
-    }
-  }
-
+/// The output dependence from a definition of P or I to the next one also
+/// follows from a read in between. It is removed, so that the read is on the
+/// path from one definition to the next, and the pipeliner orders it with
+/// them instead of after both.
+class ResultRegOrder : public ScheduleDAGMutation {
 public:
   void apply(ScheduleDAGInstrs *DAG) override {
     auto isReg = [](const SDep &D, SDep::Kind K, Register Reg) {
@@ -147,27 +96,15 @@ public:
       }
     for (auto [SU, Pred] : Remove)
       SU->removePred(Pred);
-
-    // Groups start with a write that does not read the register: MULA, DIV.
-    for (const TargetRegisterClass *RC : {&VU::ACCRRegClass, &VU::QRRegClass}) {
-      auto InGroup = [&](Register Reg) {
-        return Reg.isVirtual() && DAG->MRI.getRegClass(Reg) == RC;
-      };
-      auto IsGroupOp = [&](const MachineOperand &MO) {
-        return InGroup(MO.getReg());
-      };
-      for (SUnit &SU : DAG->SUnits) {
-        const MachineInstr &MI = *SU.getInstr();
-        if (any_of(MI.all_defs(), IsGroupOp) &&
-            none_of(MI.all_uses(), IsGroupOp))
-          delayGroupStart(DAG, &SU, InGroup);
-      }
-    }
   }
 };
 } // namespace
 
 void VUSubtarget::getSMSMutations(
     std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
-  Mutations.push_back(std::make_unique<ResultRegChains>());
+  Mutations.push_back(std::make_unique<ResultRegOrder>());
+  // Keeps the uses of ACC and Q together with their definitions, like the
+  // instructions of an ACC chain: MULA, MADDA..., MADD and DIV, ADDq.
+  Mutations.push_back(
+      createSingleRegChainStartMutation({&VU::ACCRRegClass, &VU::QRRegClass}));
 }

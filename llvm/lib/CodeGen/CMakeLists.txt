@@ -239,6 +239,7 @@ add_llvm_component_library(LLVMCodeGen
   SelectOptimize.cpp
   ShadowStackGCLowering.cpp
   ShrinkWrap.cpp
+  SingleRegClassMutations.cpp
   SjLjEHPrepare.cpp
   SlotIndexes.cpp
   SpillPlacement.cpp

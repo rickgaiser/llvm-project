@@ -20,6 +20,7 @@
 #include "MipsSelectionDAGInfo.h"
 #include "MipsTargetMachine.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
+#include "llvm/CodeGen/SingleRegClassMutations.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -240,7 +241,9 @@ void MipsSubtarget::overridePipelinerPolicy(
 
 void MipsSubtarget::getSMSMutations(
     std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
-  Mutations.push_back(createMipsVU0AccChainSMSMutation());
+  // ACC chains (VMULA, VMADDA..., VMADD).
+  Mutations.push_back(
+      createSingleRegChainStartMutation({&Mips::VU0ACCRCRegClass}));
 }
 
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {

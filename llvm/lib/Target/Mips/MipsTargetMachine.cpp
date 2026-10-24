@@ -35,6 +35,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/SingleRegClassMutations.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
@@ -304,7 +305,7 @@ ScheduleDAGInstrs *
 MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
   ScheduleDAGMILive *DAG = createSchedLive(C);
   if (C->MF->getSubtarget<MipsSubtarget>().isR5900())
-    DAG->addMutation(createMipsAccumulatorDAGMutation());
+    DAG->addMutation(createSingleRegClassOrderMutation());
   return DAG;
 }
 
