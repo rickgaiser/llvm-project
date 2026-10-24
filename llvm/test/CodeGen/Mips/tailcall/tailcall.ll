@@ -5,7 +5,7 @@
 ; RUN: llc -mtriple=mips64el -mcpu=mips64r2  -relocation-model=pic \
 ; RUN:     -verify-machineinstrs -mips-tail-calls=1 < %s | FileCheck %s -check-prefixes=ALL,PIC64
 ; RUN: llc -mtriple=mips64el -mcpu=mips64r2  -relocation-model=static \
-; RUN:     -verify-machineinstrs -mips-tail-calls=1 < %s | FileCheck %s -check-prefixes=ALL,STATIC64
+; RUN:     -verify-machineinstrs -mips-tail-calls=1 < %s | FileCheck %s -check-prefixes=ALL,STATIC64,STATIC64R2
 ; RUN: llc -mtriple=mipsel -mattr=mips16 -relocation-model=pic \
 ; RUN:      -verify-machineinstrs -mips-tail-calls=1 < %s | \
 ; RUN:     FileCheck %s -check-prefixes=ALL,PIC16
@@ -22,7 +22,7 @@
 ; RUN: llc -mtriple=mips64el -relocation-model=pic -mcpu=mips64r2 -verify-machineinstrs \
 ; RUN:     -mips-tail-calls=1 < %s | FileCheck %s -check-prefix=PIC64
 ; RUN: llc -mtriple=mips64el -relocation-model=pic -mcpu=mips64r6 -verify-machineinstrs \
-; RUN:     -mips-tail-calls=1 < %s | FileCheck %s -check-prefix=STATIC64
+; RUN:     -mips-tail-calls=1 < %s | FileCheck %s -check-prefixes=STATIC64,STATIC64R6
 
 ; RUN: llc -mtriple=mipsel -relocation-model=pic -mcpu=mips32r6 -mattr=+micromips -verify-machineinstrs \
 ; RUN:      -mips-tail-calls=1 < %s | FileCheck %s -check-prefixes=ALL,PIC32MMR6
@@ -188,7 +188,8 @@ entry:
 ; STATIC32: jal
 ; STATIC32MMR6: balc
 ; PIC64: jalr $25
-; STATIC64: jal
+; STATIC64R2: j callee8
+; STATIC64R6: jal
 ; PIC16: jalrc
 
   %call = tail call i32 (i32, ...) @callee8(i32 2, i32 1) nounwind
@@ -247,7 +248,8 @@ entry:
 ; PIC32MMR6: jalr $25
 ; STATIC32: jal
 ; STATIC32MMR6: balc
-; STATIC64: jal
+; STATIC64R2: j callee10
+; STATIC64R6: jal
 ; PIC64: jalr $25
 ; PIC64R6: jalr $25
 ; PIC16: jalrc
@@ -310,7 +312,8 @@ entry:
 ; PIC32MMR6: jalr $25
 ; STATIC32: jal
 ; STATIC32MMR6: balc
-; STATIC64: jal
+; STATIC64R2: j callee13
+; STATIC64R6: jal
 ; PIC64R6: jalr $25
 ; PIC64: jalr $25
 ; PIC16: jalrc

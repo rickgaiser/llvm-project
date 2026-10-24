@@ -1568,6 +1568,10 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   return SDValue();
 }
 
+bool MipsTargetLowering::mayBeEmittedAsTailCall(const CallInst *CI) const {
+  return CI->isTailCall() && Subtarget.useTailCalls();
+}
+
 bool MipsTargetLowering::isCheapToSpeculateCttz(Type *Ty) const {
   return Subtarget.hasMips32();
 }
@@ -3856,10 +3860,12 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Check if it's really possible to do a tail call.
   // For non-musttail calls, restrict to functions that won't require $gp
   // restoration. In PIC mode, calling external functions via tail call can
-  // cause issues with $gp register handling (see D24763).
+  // cause issues with $gp register handling (see D24763). Without abicalls
+  // there is no $gp to restore.
   bool IsMustTail = CLI.CB && CLI.CB->isMustTailCall();
   bool CalleeIsLocal = true;
-  if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee)) {
+  if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee);
+      G && Subtarget.isABICalls()) {
     const GlobalValue *GV = G->getGlobal();
     bool HasLocalLinkage = GV->hasLocalLinkage() || GV->hasPrivateLinkage();
     bool HasHiddenVisibility =
@@ -3871,7 +3877,7 @@ MipsTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   }
 
   if (IsTailCall) {
-    if (!Subtarget.getCLOpts().tail_calls) {
+    if (!Subtarget.useTailCalls()) {
       IsTailCall = false;
       if (IsMustTail)
         report_fatal_error("failed to perform tail call elimination on a call "

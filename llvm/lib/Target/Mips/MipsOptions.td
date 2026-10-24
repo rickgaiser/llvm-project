@@ -44,8 +44,8 @@ defm : BoolField<"disable-mips-df-succbb-search", "true",
   "Disallow MIPS delay filler to search successor basic blocks">;
 
 // MipsISelLowering.cpp
-defm : BoolField<"mips-tail-calls", "false",
-  "MIPS: permit tail calls">;
+defm : OptionalBoolField<"mips-tail-calls",
+  "MIPS: permit tail calls (default: only for the R5900)">;
 
 // MipsOptimizePICCall.cpp
 defm : BoolField<"mips-erase-gp-opnd", "true",
