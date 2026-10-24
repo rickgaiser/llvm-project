@@ -259,6 +259,19 @@ let Predicates = [IsR5900] in {
     def PseudoMFLO1 : PseudoSE<(outs GPR32:$rd), (ins ACC64_1:$hilo), []>;
   }
 
+  // HI and LO as one value (HILO128RC), for a sum that a loop of PMADDH
+  // keeps in them (MipsR5900LoopAcc). MipsSEInstrInfo::expandPostRAPseudo
+  // expands these to PMTLO and PMTHI, PMADDH, PMFLO and PMFHI.
+  let hasSideEffects = 0 in {
+    def PseudoPMTHILO
+        : PseudoSE<(outs HILO128RC:$acc), (ins GPR128:$lo, GPR128:$hi), []>;
+    let Constraints = "$accin = $acc" in def PseudoPMADDH
+        : PseudoSE<(outs GPR128:$rd, HILO128RC:$acc),
+                   (ins GPR128:$rs, GPR128:$rt, HILO128RC:$accin), []>;
+    def PseudoPMFLO : PseudoSE<(outs GPR128:$rd), (ins HILO128RC:$acc), []>;
+    def PseudoPMFHI : PseudoSE<(outs GPR128:$rd), (ins HILO128RC:$acc), []>;
+  }
+
   //===----------------------------------------------------------------------===//
   // PLZCW - Parallel Leading Zero or one Count Word
   // Counts leading zeros/ones in two 32-bit words in parallel

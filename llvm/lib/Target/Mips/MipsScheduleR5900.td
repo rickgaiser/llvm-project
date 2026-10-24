@@ -381,6 +381,13 @@ def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO, R5900WriteMMIMulHILO,
 def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO, R5900WriteMMIMulHILO,
               R5900WriteMMIMulHILO, R5900WriteMMIMulHILO],
              (instrs PMULTH, PMADDH, PMSUBH, PHMADH, PHMSBH)>;
+// HI and LO as one value (MipsR5900LoopAcc): a PMADDH reads the sum of the
+// previous one 2 cycles late (measured: PMADDH to PMADDH 2 cycles).
+def : InstRW<[R5900WriteMMIMul, R5900WriteMMIMulHILO, ReadDefault,
+              ReadDefault, R5900ReadMMIAcc],
+             (instrs PseudoPMADDH)>;
+def : InstRW<[R5900WriteMMI], (instrs PseudoPMTHILO, PseudoPMFLO,
+                                      PseudoPMFHI)>;
 def : InstRW<[R5900WriteMMIDiv, R5900WriteMMIDivHILO, R5900WriteMMIDivHILO,
               R5900WriteMMIDivHILO], (instrs PDIVW, PDIVUW, PDIVBW)>;
 def : InstRW<[R5900WriteLZC], (instrs PLZCW, PLZCW_S32)>;

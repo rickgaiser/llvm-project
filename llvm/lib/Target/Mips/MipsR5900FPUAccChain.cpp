@@ -294,6 +294,14 @@ void MipsR5900FPUAccChain::transformChain(MachineBasicBlock &MBB,
 }
 
 bool MipsR5900FPUAccChain::optimizeBasicBlock(MachineBasicBlock &MBB) {
+  // A loop that keeps a sum in ACC (MipsR5900LoopAcc): ACC is live through
+  // the block.
+  if (MBB.isLiveIn(Mips::FPU_ACC) &&
+      any_of(MBB.successors(), [](const MachineBasicBlock *S) {
+        return S->isLiveIn(Mips::FPU_ACC);
+      }))
+    return false;
+
   // The roots of the sums: the adds and subtracts, last first, so that the
   // largest sum is taken before its parts.
   SmallVector<MachineInstr *, 8> Candidates;

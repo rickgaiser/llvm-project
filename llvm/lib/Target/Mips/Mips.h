@@ -54,6 +54,7 @@ FunctionPass *createMipsR5900Div1Pass();
 FunctionPass *createMipsFoldAddressOffsetPass();
 FunctionPass *createMipsR5900Mult1Pass();
 FunctionPass *createMipsR5900FPUAccChainPass();
+FunctionPass *createMipsR5900LoopAccPass();
 FunctionPass *createMipsR5900IssuePass(bool KeepSCEVAA = false);
 
 InstructionSelector *
@@ -72,6 +73,7 @@ void initializeMipsR5900Div1Pass(PassRegistry &);
 void initializeMipsFoldAddressOffsetPass(PassRegistry &);
 void initializeMipsR5900Mult1Pass(PassRegistry &);
 void initializeMipsR5900FPUAccChainPass(PassRegistry &);
+void initializeMipsR5900LoopAccPass(PassRegistry &);
 void initializeMipsR5900IssuePass(PassRegistry &);
 } // namespace llvm
 

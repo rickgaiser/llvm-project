@@ -437,6 +437,25 @@ bool MipsSEInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   switch (MI.getDesc().getOpcode()) {
   default:
     return false;
+  case Mips::PseudoPMTHILO: {
+    const DebugLoc &DL = MI.getDebugLoc();
+    BuildMI(MBB, MI, DL, get(Mips::PMTLO)).add(MI.getOperand(1));
+    BuildMI(MBB, MI, DL, get(Mips::PMTHI)).add(MI.getOperand(2));
+    break;
+  }
+  case Mips::PseudoPMADDH:
+    BuildMI(MBB, MI, MI.getDebugLoc(), get(Mips::PMADDH))
+        .add(MI.getOperand(0))
+        .add(MI.getOperand(2))
+        .add(MI.getOperand(3));
+    break;
+  case Mips::PseudoPMFLO:
+  case Mips::PseudoPMFHI:
+    BuildMI(
+        MBB, MI, MI.getDebugLoc(),
+        get(MI.getOpcode() == Mips::PseudoPMFLO ? Mips::PMFLO : Mips::PMFHI))
+        .add(MI.getOperand(0));
+    break;
   case Mips::RetRA:
     expandRetRA(MBB, MI);
     break;

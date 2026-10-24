@@ -446,6 +446,11 @@ MipsInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
   };
   if (none_of(*LoopBB, IsVU0))
     return nullptr;
+  // A sum in a physical accumulator that is live through the loop
+  // (MipsR5900LoopAcc) can not overlap with the next iteration.
+  for (MCPhysReg Reg : {Mips::FPU_ACC, Mips::HI0_64, Mips::LO0_64})
+    if (LoopBB->isLiveIn(Reg))
+      return nullptr;
 
   MachineBasicBlock *TBB = nullptr, *FBB = nullptr;
   SmallVector<MachineOperand, 4> Cond;

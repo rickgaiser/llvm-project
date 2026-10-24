@@ -77,6 +77,7 @@ add_llvm_target(MipsCodeGen
   MipsR5900Div1.cpp
   MipsR5900Mult1.cpp
   MipsR5900FPUAccChain.cpp
+  MipsR5900LoopAcc.cpp
   MipsR5900IssueModel.cpp
   MipsR5900IssuePass.cpp
   MipsR5900VU0MatVec.cpp

@@ -76,6 +76,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMipsFoldAddressOffsetPass(*PR);
   initializeMipsR5900Mult1Pass(*PR);
   initializeMipsR5900FPUAccChainPass(*PR);
+  initializeMipsR5900LoopAccPass(*PR);
   initializeMipsR5900IssuePass(*PR);
   initializeMipsDAGToDAGISelLegacyPass(*PR);
 }
@@ -275,6 +276,10 @@ bool MipsPassConfig::addILPOpts() {
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
 
+  // R5900: keep the sums of products that loops carry in an accumulator,
+  // before the FPU ACC chains, which then leave those loops alone.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createMipsR5900LoopAccPass());
   // R5900: Optimize multiply-add chains to use the FPU accumulator. This must
   // run before register allocation so virtual registers are still in SSA form
   // (one definition per register). It skips functions whose subtarget is not

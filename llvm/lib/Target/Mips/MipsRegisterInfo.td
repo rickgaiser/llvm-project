@@ -14,6 +14,8 @@ def sub_32     : SubRegIndex<32>;
 def sub_64     : SubRegIndex<64>;
 def sub_lo     : SubRegIndex<32>;
 def sub_hi     : SubRegIndex<32, 32>;
+def sub_ac0    : SubRegIndex<128>;
+def sub_ac1    : SubRegIndex<128, 128>;
 def sub_dsp16_19 : SubRegIndex<4, 16>;
 def sub_dsp20    : SubRegIndex<1, 20>;
 def sub_dsp21    : SubRegIndex<1, 21>;
@@ -274,6 +276,7 @@ let Namespace = "Mips" in {
   // R5900 FPU Accumulator register
   def FPU_ACC : MipsReg<0, "acc">;
 
+
   // R5900 VU0 (COP2) Vector Float Registers - 128-bit (4x32-bit floats)
   // VF0 is a constant register with value {0.0, 0.0, 0.0, 1.0}
   let isConstant = true in def VF0 : MipsReg<0, "vf0">, DwarfRegNum<[112]>;
@@ -320,6 +323,14 @@ let Namespace = "Mips" in {
                     [!cast<Register>("LO"#I), !cast<Register>("HI"#I)]>;
 
   def AC0_64 : ACCReg<0, "ac0", [LO0_64, HI0_64]>;
+  // R5900: the upper halves of HI and LO, and all 128 bits of HI and LO as
+  // one register, for a sum that a loop of PMADDH keeps in them
+  // (MipsR5900LoopAcc).
+  def AC1_64 : ACCReg<1, "ac1", [LO1_64, HI1_64]>;
+  def HILO128 : MipsRegWithSubRegs<0, "hilo", [AC0_64, AC1_64]> {
+    let SubRegIndices = [sub_ac0, sub_ac1];
+    let CoveredBySubRegs = 1;
+  }
 
   // DSP-ASE control register fields.
   def DSPPos : Register<"">;
@@ -534,6 +545,11 @@ def FCC : RegisterClass<"Mips", [i32], 32, (sequence "FCC%u", 0, 7)>,
 
 // R5900 FPU Accumulator register class
 def FPUACC : RegisterClass<"Mips", [f32], 32, (add FPU_ACC)>, Unallocatable;
+
+// R5900: HI and LO with the 8 sums of PMADDH, one value at a time.
+def HILO128RC : RegisterClass<"Mips", [untyped], 128, (add HILO128)> {
+  let Size = 256;
+}
 
 // R5900 VU0 Accumulator register class - 128-bit (4x32-bit floats)
 // ACC holds one value at a time. When the register allocator splits a value

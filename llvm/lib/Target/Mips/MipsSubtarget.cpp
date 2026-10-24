@@ -241,9 +241,10 @@ void MipsSubtarget::overridePipelinerPolicy(
 
 void MipsSubtarget::getSMSMutations(
     std::vector<std::unique_ptr<ScheduleDAGMutation>> &Mutations) const {
-  // ACC chains (VMULA, VMADDA..., VMADD).
-  Mutations.push_back(
-      createSingleRegChainStartMutation({&Mips::VU0ACCRCRegClass}));
+  // ACC chains (VMULA, VMADDA..., VMADD) and the PMADDH sums of
+  // MipsR5900LoopAcc.
+  Mutations.push_back(createSingleRegChainStartMutation(
+      {&Mips::VU0ACCRCRegClass, &Mips::HILO128RCRegClass}));
 }
 
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {
