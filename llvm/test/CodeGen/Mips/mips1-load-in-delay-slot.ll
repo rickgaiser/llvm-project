@@ -23,15 +23,13 @@ define internal fastcc void @test() unnamed_addr #0 {
 ; MIPS1-PSX-NEXT:    bnez $1, $BB0_5
 ; MIPS1-PSX-NEXT:    nop
 ; MIPS1-PSX-NEXT:  # %bb.3: # %bb9.i
-; MIPS1-PSX-NEXT:    andi $1, $2, 1
-; MIPS1-PSX-NEXT:    bnez $1, $BB0_1
+; MIPS1-PSX-NEXT:    bnez $2, $BB0_1
 ; MIPS1-PSX-NEXT:    nop
 ; MIPS1-PSX-NEXT:  # %bb.4: # %bb9.i
 ; MIPS1-PSX-NEXT:    b $BB0_6
 ; MIPS1-PSX-NEXT:    nop
 ; MIPS1-PSX-NEXT:  $BB0_5: # %bb10.i
-; MIPS1-PSX-NEXT:    andi $1, $2, 1
-; MIPS1-PSX-NEXT:    bnez $1, $BB0_1
+; MIPS1-PSX-NEXT:    bnez $2, $BB0_1
 ; MIPS1-PSX-NEXT:    nop
 ; MIPS1-PSX-NEXT:  $BB0_6: # %unreachable.2
 ; MIPS1-PSX-NEXT:    .insn

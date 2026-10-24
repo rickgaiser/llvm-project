@@ -294,7 +294,6 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; NOTAIL-NEXT:    sll $4, $4, 0
 ; NOTAIL-NEXT:  .LBB4_7: # %return
 ; NOTAIL-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
-; NOTAIL-NEXT:    andi $2, $2, 65535
 ; NOTAIL-NEXT:    jr $ra
 ; NOTAIL-NEXT:    addiu $sp, $sp, 16
 ;
@@ -396,7 +395,6 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; MIPS64-NEXT:    jal hc
 ; MIPS64-NEXT:    sll $4, $4, 0
 ; MIPS64-NEXT:  .LBB4_7: # %return
-; MIPS64-NEXT:    andi $2, $2, 65535
 ; MIPS64-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
 ; MIPS64-NEXT:    jr $ra
 ; MIPS64-NEXT:    addiu $sp, $sp, 16

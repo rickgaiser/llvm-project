@@ -431,7 +431,7 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
 
   setTargetDAGCombine({ISD::SDIVREM, ISD::UDIVREM, ISD::SELECT, ISD::AND,
                        ISD::OR, ISD::ADD, ISD::SUB, ISD::AssertZext, ISD::SHL,
-                       ISD::SIGN_EXTEND, ISD::ZERO_EXTEND});
+                       ISD::SIGN_EXTEND, ISD::ZERO_EXTEND, ISD::LOAD});
 
   // Sink shifts into their users' blocks to expose extract patterns.
   setHasExtractBitsInsn(Subtarget.hasExtractInsert());
@@ -1550,6 +1550,25 @@ static SDValue performZeroExtendCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue(N, 0);
 }
 
+// An i32 any extending load of an i8 or i16 is selected as lbu or lhu, so
+// make it a zero extending load: the known zero high bits then also reach
+// the users of the value in other blocks (ComputeLiveOutVRegInfo), such as
+// the zero extension of a zeroext return value after a phi.
+static SDValue performLOADCombine(SDNode *N, SelectionDAG &DAG,
+                                  TargetLowering::DAGCombinerInfo &DCI) {
+  auto *LD = cast<LoadSDNode>(N);
+  EVT MemVT = LD->getMemoryVT();
+  if (!DCI.isAfterLegalizeDAG() || LD->getExtensionType() != ISD::EXTLOAD ||
+      LD->getValueType(0) != MVT::i32 ||
+      (MemVT != MVT::i8 && MemVT != MVT::i16))
+    return SDValue();
+
+  SDValue ZExtLoad =
+      DAG.getExtLoad(ISD::ZEXTLOAD, SDLoc(N), MVT::i32, LD->getChain(),
+                     LD->getBasePtr(), MemVT, LD->getMemOperand());
+  return DCI.CombineTo(N, ZExtLoad, ZExtLoad.getValue(1));
+}
+
 SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   const {
   SelectionDAG &DAG = DCI.DAG;
@@ -1579,6 +1598,8 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
     return performSignExtendCombine(N, DAG, DCI, Subtarget);
   case ISD::ZERO_EXTEND:
     return performZeroExtendCombine(N, DAG, Subtarget);
+  case ISD::LOAD:
+    return performLOADCombine(N, DAG, DCI);
   case ISD::SETCC:
     if (DCI.isBeforeLegalizeOps())
       return performR5900WideningSETCCCombine(N, DAG, Subtarget);
