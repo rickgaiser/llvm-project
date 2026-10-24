@@ -695,10 +695,12 @@ multiclass VU0_3R_BC_Masked_ALL<string opstr, bits<4> opcode> {
 
 // Code generation forms of VDIV, VWAITQ and VADDQ for a field of a
 // division through Q: VDIV with register operands, VADDQ, and VADDQm that
-// writes the fields of $mask of $base. Q is the physical register; ISel glues the three.
+// writes the fields of $mask of $base. Q is a value (VU0QV): VDIV writes it,
+// VWAITQ reads it and writes it again once the division is done (reads of Q
+// are not interlocked), and the readers take that one.
 let isCodeGenOnly = 1, hasSideEffects = 0, Predicates = [HasVU0] in {
-def VDIV_V : InstSE<(outs), (ins VFOpnd:$fs, vu0fieldsel:$fsf, VFOpnd:$ft,
-                                  vu0fieldsel:$ftf),
+def VDIV_V : InstSE<(outs VU0QV:$q), (ins VFOpnd:$fs, vu0fieldsel:$fsf,
+                                           VFOpnd:$ft, vu0fieldsel:$ftf),
                     "vdiv\t$$Q, $fs$fsf, $ft$ftf", [], FrmR, "vdiv_v"> {
   bits<5> fs;
   bits<2> fsf;
@@ -712,22 +714,20 @@ def VDIV_V : InstSE<(outs), (ins VFOpnd:$fs, vu0fieldsel:$fsf, VFOpnd:$ft,
   let Inst{20 -16} = ft;
   let Inst{15 -11} = fs;
   let Inst{10 -0} = 0b01110111100;
-  let Defs = [VU0Q];
 }
 
-def VWAITQ_V : InstSE<(outs), (ins), "vwaitq", [], FrmR, "vwaitq_v"> {
+def VWAITQ_V : InstSE<(outs VU0QV:$qd), (ins VU0QV:$q), "vwaitq", [], FrmR,
+                      "vwaitq_v"> {
   bits<32> Inst;
   let Inst{31 -26} = 0b010010;
   let Inst{25} = 1;
   let Inst{24 -21} = 0b0000;
   let Inst{20 -0} = 0b000000000001110111111;
-  let Uses = [VU0Q];
-  let Defs = [VU0Q];
 }
 
 // fd.<mask> = fs op Q
 class VU0_2R_Q_V<string opstr, bits<6> funct>
-    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$mask, VFOpnd:$fs),
+    : InstSE<(outs VFOpnd:$fd), (ins vu0destmask:$mask, VFOpnd:$fs, VU0QV:$q),
              opstr # "$mask\t$fd, $fs, $$Q", [], FrmR, opstr # "_v"> {
   bits<5> fd;
   bits<5> fs;
@@ -740,7 +740,6 @@ class VU0_2R_Q_V<string opstr, bits<6> funct>
   let Inst{15 -11} = fs;
   let Inst{10 -6} = fd;
   let Inst{5 -0} = funct;
-  let Uses = [VU0Q];
 }
 
 def VADDQ_V : VU0_2R_Q_V<"vaddq", 0b100000>;
@@ -748,7 +747,8 @@ def VSUBQ_V : VU0_2R_Q_V<"vsubq", 0b100100>;
 def VMULQ_V : VU0_2R_Q_V<"vmulq", 0b011100>;
 
 def VADDQm : InstSE<(outs VFOpnd:$fd),
-                    (ins VFOpnd:$base, vu0destmask:$mask, VFOpnd:$fs),
+                    (ins VFOpnd:$base, vu0destmask:$mask, VFOpnd:$fs,
+                         VU0QV:$q),
                     "vaddq$mask\t$fd, $fs, $$Q", [], FrmR, "vaddq_m"> {
   bits<5> fd;
   bits<5> fs;
@@ -761,7 +761,6 @@ def VADDQm : InstSE<(outs VFOpnd:$fd),
   let Inst{15 -11} = fs;
   let Inst{10 -6} = fd;
   let Inst{5 -0} = 0b100000;
-  let Uses = [VU0Q];
   let Constraints = "$base = $fd";
 }
 }

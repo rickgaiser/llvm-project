@@ -74,14 +74,18 @@ MipsRegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
   // register.
   if (RC == &Mips::VU0ACCRCRegClass)
     return &Mips::VU0ACCVFRegClass;
+  // The same for Q.
+  if (RC == &Mips::VU0QVRegClass)
+    return &Mips::VU0QVFRegClass;
   return RC;
 }
 
 unsigned MipsRegisterInfo::getRegPressureSetLimit(const MachineFunction &MF,
                                                   unsigned Idx) const {
-  // VU0ACCVF puts ACC in the pressure sets of the VF registers, which counts
-  // it as one more register for VF values. ACC holds its own values, which
-  // count in these sets too, so only the VF registers are available.
+  // VU0ACCVF and VU0QVF put ACC and Q in the pressure sets of the VF
+  // registers, which counts them as more registers for VF values. They hold
+  // their own values, which count in these sets too, so only the VF
+  // registers are available.
   for (const int *PSet = getRegClassPressureSets(&Mips::VFRegsRegClass);
        *PSet != -1; ++PSet)
     if (static_cast<unsigned>(*PSet) == Idx)

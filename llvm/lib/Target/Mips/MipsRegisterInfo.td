@@ -559,6 +559,10 @@ def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>;
 
 // R5900 VU0 Q register class - 32-bit float result register
 def VU0QRC : RegisterClass<"Mips", [f32], 32, (add VU0Q)>, Unallocatable;
+// Q as a value of code generation (VDIV_V, VWAITQ_V, VADDQ_V...): one at a
+// time. When the register allocator splits a value that overlaps another
+// one, the part between its uses can move to a VF register (VU0QVF).
+def VU0QV : RegisterClass<"Mips", [f32], 32, (add VU0Q)>;
 
 def MSA128B: RegisterClass<"Mips", [v16i8], 128,
                            (sequence "W%u", 0, 31)>;
@@ -639,6 +643,8 @@ def VFRegs
 
 // The VF registers and ACC, for the parts of a split ACC value (VU0ACCRC).
 def VU0ACCVF : RegisterClass<"Mips", [v4f32], 128, (add VFRegs, VU0ACC)>;
+// The VF registers and Q, for the parts of a split Q value (VU0QV).
+def VU0QVF : RegisterClass<"Mips", [f32], 128, (add VFRegs, VU0Q)>;
 
 // Coprocessor 3 registers.
 def COP3 : RegisterClass<"Mips", [i32], 32, (sequence "COP3%u", 0, 31)>,

@@ -763,24 +763,26 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc DL(Node);
 
-  // (a, fa, b, fb): VDIV Q, a.fa, b.fb; VWAITQ; glued to the reader of Q.
+  // (a, fa, b, fb): VDIV Q, a.fa, b.fb; VWAITQ; the Q for the reader, and
+  // a glue that keeps the three together, so that the Q values of two
+  // divisions do not overlap.
   auto SelectQDiv = [&](SDNode *QDiv) {
-    SDValue Div(
-        CurDAG->getMachineNode(Mips::VDIV_V, DL, MVT::Glue,
+    SDNode *Div =
+        CurDAG->getMachineNode(Mips::VDIV_V, DL, MVT::f32, MVT::Glue,
                                {QDiv->getOperand(0), QDiv->getOperand(1),
-                                QDiv->getOperand(2), QDiv->getOperand(3)}),
-        0);
-    return SDValue(CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::Glue, {Div}),
-                   0);
+                                QDiv->getOperand(2), QDiv->getOperand(3)});
+    return CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::f32, MVT::Glue,
+                                  {SDValue(Div, 0), SDValue(Div, 1)});
   };
 
   if (Opcode == MipsISD::VU0_QDIV) {
     // Q into field x: VADDQ.x vf0, Q.
+    SDNode *Wait = SelectQDiv(Node);
     ReplaceNode(Node, CurDAG->getMachineNode(
                           Mips::VADDQ_V, DL, MVT::v4f32,
                           {CurDAG->getTargetConstant(8, DL, MVT::i32),
                            CurDAG->getRegister(Mips::VF0, MVT::v4f32),
-                           SelectQDiv(Node)}));
+                           SDValue(Wait, 0), SDValue(Wait, 1)}));
     return true;
   }
 
@@ -801,41 +803,43 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
       unsigned Opc = Opcode == ISD::FMUL   ? Mips::VMULQ_V
                      : Opcode == ISD::FADD ? Mips::VADDQ_V
                                            : Mips::VSUBQ_V;
+      SDNode *Wait = SelectQDiv(BC.getOperand(0).getNode());
       ReplaceNode(Node, CurDAG->getMachineNode(
                             Opc, DL, MVT::v4f32,
                             {CurDAG->getTargetConstant(15, DL, MVT::i32),
-                             Node->getOperand(1 - I),
-                             SelectQDiv(BC.getOperand(0).getNode())}));
+                             Node->getOperand(1 - I), SDValue(Wait, 0),
+                             SDValue(Wait, 1)}));
       return true;
     }
   }
 
   if (Opcode == MipsISD::VU0_DIVQ) {
     // (base, zero, a, b, k, mask): VDIV Q, a.k, b.k; VWAITQ (Q reads are not
-    // interlocked); VADDQ.<mask> base, zero, Q. Glued, so that no other
-    // write of Q comes in between.
+    // interlocked); VADDQ.<mask> base, zero, Q.
     SDValue Base = Node->getOperand(0), Zero = Node->getOperand(1);
     SDValue K =
         CurDAG->getTargetConstant(Node->getConstantOperandVal(4), DL, MVT::i32);
     SDValue Mask =
         CurDAG->getTargetConstant(Node->getConstantOperandVal(5), DL, MVT::i32);
-    SDValue Div(CurDAG->getMachineNode(
-                    Mips::VDIV_V, DL, MVT::Glue,
-                    {Node->getOperand(2), K, Node->getOperand(3), K}),
-                0);
-    SDValue Wait(CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::Glue, {Div}),
-                 0);
+    SDNode *Div = CurDAG->getMachineNode(
+        Mips::VDIV_V, DL, MVT::f32, MVT::Glue,
+        {Node->getOperand(2), K, Node->getOperand(3), K});
+    SDNode *Wait =
+        CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::f32, MVT::Glue,
+                               {SDValue(Div, 0), SDValue(Div, 1)});
     // A base of VF0 means none: all fields are written (a tied undefined
     // base would become a copy).
     auto *BaseReg = dyn_cast<RegisterSDNode>(Base);
     if (BaseReg && BaseReg->getReg() == Mips::VF0)
-      ReplaceNode(
-          Node, CurDAG->getMachineNode(
-                    Mips::VADDQ_V, DL, MVT::v4f32,
-                    {CurDAG->getTargetConstant(15, DL, MVT::i32), Zero, Wait}));
+      ReplaceNode(Node, CurDAG->getMachineNode(
+                            Mips::VADDQ_V, DL, MVT::v4f32,
+                            {CurDAG->getTargetConstant(15, DL, MVT::i32), Zero,
+                             SDValue(Wait, 0), SDValue(Wait, 1)}));
     else
-      ReplaceNode(Node, CurDAG->getMachineNode(Mips::VADDQm, DL, MVT::v4f32,
-                                               {Base, Mask, Zero, Wait}));
+      ReplaceNode(Node,
+                  CurDAG->getMachineNode(
+                      Mips::VADDQm, DL, MVT::v4f32,
+                      {Base, Mask, Zero, SDValue(Wait, 0), SDValue(Wait, 1)}));
     return true;
   }
 

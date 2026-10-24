@@ -188,6 +188,26 @@ void MipsSEInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
           .addReg(Mips::VF0);
       return;
     }
+    if (SrcReg == Mips::VU0Q) {
+      // VADDQ.x d, vf0, Q
+      BuildMI(MBB, I, DL, get(Mips::VADDQ_V), DestReg)
+          .addImm(0x8)
+          .addReg(Mips::VF0)
+          .addReg(SrcReg, getKillRegState(KillSrc));
+      return;
+    }
+  } else if (DestReg == Mips::VU0Q) { // Copy to VU0 Q
+    if (Mips::VFRegsRegClass.contains(SrcReg)) {
+      // VDIV Q, s.x, vf0.w (vf0.w is 1); VWAITQ, as Q reads are not
+      // interlocked.
+      BuildMI(MBB, I, DL, get(Mips::VDIV_V), DestReg)
+          .addReg(SrcReg, getKillRegState(KillSrc))
+          .addImm(0)
+          .addReg(Mips::VF0)
+          .addImm(3);
+      BuildMI(MBB, I, DL, get(Mips::VWAITQ_V), DestReg).addReg(DestReg);
+      return;
+    }
   } else if (DestReg == Mips::VU0ACC) { // Copy to VU0 ACC
     if (Mips::VFRegsRegClass.contains(SrcReg)) {
       // VMULAw.xyzw acc, s, vf0w: 1.0 in ft, which is exact (measured).
