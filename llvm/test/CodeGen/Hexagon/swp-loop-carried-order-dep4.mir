@@ -1,7 +1,10 @@
-# RUN: llc -mtriple=hexagon -run-pass pipeliner -debug-only=pipeliner %s -o /dev/null 2>&1 -pipeliner-experimental-cg=true | FileCheck %s
+# RUN: llc -mtriple=hexagon -run-pass pipeliner -debug-only=pipeliner %s -o /dev/null 2>&1 -pipeliner-experimental-cg=true -pipeliner-max-stages=10 | FileCheck %s
 # REQUIRES: asserts
 
 # Test that loop carried memory dependences are computed correctly.
+# The accesses meet 8 and 10 iterations apart: iterations further apart than
+# the maximum stage count never run at the same time, so the limit is raised
+# to keep the dependences.
 # The original code is as follows.
 #
 # ```
