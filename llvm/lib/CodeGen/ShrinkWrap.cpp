@@ -62,6 +62,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineOptimizationRemarkEmitter.h"
@@ -403,6 +404,22 @@ static bool isAnalyzableBB(const TargetInstrInfo &TII,
   return !TII.analyzeBranch(Entry, TBB, FBB, Cond);
 }
 
+/// \return the jump table of the indirect branch that ends \p MBB, or -1.
+static int getJumpTableIndex(const TargetInstrInfo &TII,
+                             const MachineBasicBlock &MBB) {
+  MachineBasicBlock::const_iterator Term = MBB.getFirstTerminator();
+  return Term == MBB.end() ? -1 : TII.getJumpTableIndex(*Term);
+}
+
+/// Redirects the jump table entries of \p Pred from \p Old to \p New.
+static void replaceInJumpTable(MachineBasicBlock &Pred, MachineBasicBlock *Old,
+                               MachineBasicBlock *New,
+                               const TargetInstrInfo &TII) {
+  int JTI = getJumpTableIndex(TII, Pred);
+  if (JTI >= 0)
+    Pred.getParent()->getJumpTableInfo()->ReplaceMBBInJumpTable(JTI, Old, New);
+}
+
 /// Determines if any predecessor of MBB is on the path from block that has use
 /// or def of CSRs/FI to MBB.
 /// ReachableByDirty: All blocks reachable from block that has use or def of
@@ -516,8 +533,10 @@ tryToSplitRestore(MachineBasicBlock *MBB,
 
   // After splitting, all predecessors of the restore point should be dirty
   // blocks.
-  for (MachineBasicBlock *SuccBB : DirtyPreds)
+  for (MachineBasicBlock *SuccBB : DirtyPreds) {
     SuccBB->ReplaceUsesOfBlockWith(MBB, NMBB);
+    replaceInJumpTable(*SuccBB, MBB, NMBB, *TII);
+  }
 
   NMBB->addSuccessor(MBB);
 
@@ -546,8 +565,10 @@ static void rollbackRestoreSplit(MachineFunction &MF, MachineBasicBlock *NMBB,
       NMBBFallthrough.insert(BB);
 
   NMBB->removeSuccessor(MBB);
-  for (MachineBasicBlock *SuccBB : DirtyPreds)
+  for (MachineBasicBlock *SuccBB : DirtyPreds) {
     SuccBB->ReplaceUsesOfBlockWith(NMBB, MBB);
+    replaceInJumpTable(*SuccBB, NMBB, MBB, *TII);
+  }
 
   NMBB->erase(NMBB->begin(), NMBB->end());
   NMBB->eraseFromParent();
@@ -570,7 +591,11 @@ bool ShrinkWrapImpl::checkIfRestoreSplittable(
       return false;
 
   for (MachineBasicBlock *PredBB : CurRestore->predecessors()) {
-    if (!isAnalyzableBB(*TII, *PredBB))
+    // An indirect branch through a jump table that only PredBB uses can be
+    // redirected like an analyzable branch.
+    if (!isAnalyzableBB(*TII, *PredBB) &&
+        !(getJumpTableIndex(*TII, *PredBB) >= 0 &&
+          PredBB->canSplitCriticalEdge(CurRestore)))
       return false;
 
     if (ReachableByDirty.count(PredBB))

@@ -23,6 +23,7 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineOperand.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetOpcodes.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -127,6 +128,51 @@ bool MipsInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
   BranchType BT = analyzeBranch(MBB, TBB, FBB, Cond, AllowModify, BranchInstrs);
 
   return (BT == BT_None) || (BT == BT_Indirect);
+}
+
+// The jump table that the value of Reg at UseMI is computed from: the defs
+// of Reg are followed through their register operands until one of them
+// names the table. A virtual register has a unique def anywhere; a physical
+// register is followed only to its last def before UseMI in the same block.
+static int getJumpTableIndexOfReg(const MachineInstr &UseMI, Register Reg,
+                                  unsigned Depth) {
+  if (!Reg || Depth == 0)
+    return -1;
+  const MachineBasicBlock &MBB = *UseMI.getParent();
+  const MachineRegisterInfo &MRI = MBB.getParent()->getRegInfo();
+  const MachineInstr *Def = nullptr;
+  if (Reg.isVirtual()) {
+    Def = MRI.getUniqueVRegDef(Reg);
+  } else {
+    const TargetRegisterInfo *TRI = MRI.getTargetRegisterInfo();
+    for (const MachineInstr &MI :
+         make_range(std::next(MachineBasicBlock::const_reverse_iterator(UseMI)),
+                    MBB.rend())) {
+      if (MI.modifiesRegister(Reg, TRI)) {
+        Def = &MI;
+        break;
+      }
+    }
+  }
+  if (!Def)
+    return -1;
+  for (const MachineOperand &MO : Def->operands())
+    if (MO.isJTI())
+      return MO.getIndex();
+  for (const MachineOperand &MO : Def->explicit_uses())
+    if (MO.isReg())
+      if (int JTI = getJumpTableIndexOfReg(*Def, MO.getReg(), Depth - 1);
+          JTI >= 0)
+        return JTI;
+  return -1;
+}
+
+int MipsInstrInfo::getJumpTableIndex(const MachineInstr &MI) const {
+  if (!MI.isIndirectBranch() || !MI.getOperand(0).isReg())
+    return -1;
+  // The longest chain is the 64-bit absolute address of the table (lui,
+  // daddiu, dsll, daddiu, dsll, daddiu), then the entry address and its load.
+  return getJumpTableIndexOfReg(MI, MI.getOperand(0).getReg(), 10);
 }
 
 // Off: where the scheduling model finds the critical path shorter, the ACC
