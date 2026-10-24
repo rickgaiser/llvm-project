@@ -1130,6 +1130,11 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static cl::opt<unsigned> R5900MulMaxSteps(
+    "mips-r5900-mul-max-steps", cl::Hidden, cl::init(4),
+    cl::desc("The most shifts, adds and subtracts that replace an R5900 "
+             "32-bit multiply by a constant"));
+
 static bool shouldTransformMulToShiftsAddsSubs(APInt C, EVT VT,
                                                SelectionDAG &DAG,
                                                const MipsSubtarget &Subtarget) {
@@ -1159,6 +1164,10 @@ static bool shouldTransformMulToShiftsAddsSubs(APInt C, EVT VT,
   // - Take in account `-Os, -Oz` flags because this optimization
   //   increases code size.
   unsigned MaxSteps = Subtarget.isABI_O32() ? 8 : 12;
+  // The R5900 MULT writes its GPR directly: latency 4, one every 2 cycles
+  // (measured, bench uarch_tests.c). Two ALUs do 4 steps in that time.
+  if (Subtarget.isR5900() && VT == MVT::i32)
+    MaxSteps = R5900MulMaxSteps;
 
   SmallVector<APInt, 16> WorkStack(1, C);
   unsigned Steps = 0;
