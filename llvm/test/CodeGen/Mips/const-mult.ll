@@ -130,8 +130,6 @@ define i128 @muln170141183460469231731687303715884105725_128(i128 signext %a) {
 ; MIPS64-NEXT:    dsll $3, $4, 1
 ; MIPS64-NEXT:    daddu $2, $3, $4
 ; MIPS64-NEXT:    sltu $3, $2, $3
-; MIPS64-NEXT:    dsll $3, $3, 32
-; MIPS64-NEXT:    dsrl $3, $3, 32
 ; MIPS64-NEXT:    daddu $1, $1, $3
 ; MIPS64-NEXT:    dsll $3, $4, 63
 ; MIPS64-NEXT:    jr $ra
@@ -193,14 +191,10 @@ define i128 @mul170141183460469231731687303715884105723_128(i128 signext %a) {
 ; MIPS64-NEXT:    dsll $2, $4, 2
 ; MIPS64-NEXT:    daddu $5, $2, $4
 ; MIPS64-NEXT:    sltu $2, $5, $2
-; MIPS64-NEXT:    dsll $2, $2, 32
-; MIPS64-NEXT:    dsrl $2, $2, 32
 ; MIPS64-NEXT:    daddu $1, $1, $2
 ; MIPS64-NEXT:    dsll $2, $4, 63
 ; MIPS64-NEXT:    dsubu $1, $2, $1
 ; MIPS64-NEXT:    sltu $2, $zero, $5
-; MIPS64-NEXT:    dsll $2, $2, 32
-; MIPS64-NEXT:    dsrl $2, $2, 32
 ; MIPS64-NEXT:    dsubu $3, $1, $2
 ; MIPS64-NEXT:    jr $ra
 ; MIPS64-NEXT:    dnegu $2, $5

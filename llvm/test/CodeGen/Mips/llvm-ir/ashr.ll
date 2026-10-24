@@ -599,8 +599,7 @@ define signext i128 @ashr_i128(i128 signext %a, i128 signext %b) {
 ; MIPS64R6:       # %bb.0: # %entry
 ; MIPS64R6-NEXT:    dsrav $1, $4, $7
 ; MIPS64R6-NEXT:    sll $3, $7, 0
-; MIPS64R6-NEXT:    andi $2, $3, 64
-; MIPS64R6-NEXT:    sll $6, $2, 0
+; MIPS64R6-NEXT:    andi $6, $3, 64
 ; MIPS64R6-NEXT:    seleqz $2, $1, $6
 ; MIPS64R6-NEXT:    dsra $8, $4, 63
 ; MIPS64R6-NEXT:    selnez $8, $8, $6

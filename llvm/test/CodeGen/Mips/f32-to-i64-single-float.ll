@@ -16,14 +16,13 @@ define void @foo(ptr %in, ptr %out) {
 ; CHECK-NEXT:    and $2, $1, $2
 ; CHECK-NEXT:    srl $2, $2, 23
 ; CHECK-NEXT:    lui $3, 127
-; CHECK-NEXT:    ori $3, $3, 65535
 ; CHECK-NEXT:    addiu $4, $zero, 150
 ; CHECK-NEXT:    subu $4, $4, $2
+; CHECK-NEXT:    ori $3, $3, 65535
 ; CHECK-NEXT:    and $3, $1, $3
 ; CHECK-NEXT:    lui $6, 128
 ; CHECK-NEXT:    or $3, $3, $6
-; CHECK-NEXT:    dsll $3, $3, 32
-; CHECK-NEXT:    dsrl $3, $3, 32
+; CHECK-NEXT:    sll $3, $3, 0
 ; CHECK-NEXT:    dsrlv $4, $3, $4
 ; CHECK-NEXT:    addiu $6, $2, -150
 ; CHECK-NEXT:    dsllv $3, $3, $6

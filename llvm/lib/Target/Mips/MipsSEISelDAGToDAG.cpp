@@ -117,6 +117,55 @@ bool MipsSEDAGToDAGISel::replaceUsesWithZeroReg(MachineRegisterInfo *MRI,
   return true;
 }
 
+// Whether the instruction that defines Reg clears bits 32-63 of the 64-bit
+// register: the set on less than instructions (0 or 1), clz and clo (0 to
+// 32), andi (a zero extended immediate), and ori and xori of such a value.
+static bool isZeroExtended64(const MachineRegisterInfo &MRI, Register Reg) {
+  const MachineInstr *Def =
+      Reg.isVirtual() ? MRI.getUniqueVRegDef(Reg) : nullptr;
+  if (!Def)
+    return false;
+  switch (Def->getOpcode()) {
+  case Mips::SLT:
+  case Mips::SLTu:
+  case Mips::SLTi:
+  case Mips::SLTiu:
+  case Mips::SLT64:
+  case Mips::SLTu64:
+  case Mips::SLTi64:
+  case Mips::SLTiu64:
+  case Mips::CLZ:
+  case Mips::CLO:
+  case Mips::CLZ_R6:
+  case Mips::CLO_R6:
+  case Mips::ANDi:
+    return true;
+  case Mips::ORi:
+  case Mips::XORi:
+    return Def->getOperand(1).isReg() &&
+           isZeroExtended64(MRI, Def->getOperand(1).getReg());
+  default:
+    return false;
+  }
+}
+
+// A sign extension (or nneg zero extension) of an i32 whose bits 32-63 are
+// zero in the register already is the register itself: SLL64_32 becomes
+// SUBREG_TO_REG, which the register coalescer removes.
+bool MipsSEDAGToDAGISel::replaceZeroExtendedSext(MachineRegisterInfo *MRI,
+                                                 MachineInstr &MI) {
+  Register Src = MI.getOperand(1).getReg();
+  if (!isZeroExtended64(*MRI, Src))
+    return false;
+  BuildMI(*MI.getParent(), MI, MI.getDebugLoc(),
+          Subtarget->getInstrInfo()->get(TargetOpcode::SUBREG_TO_REG),
+          MI.getOperand(0).getReg())
+      .addReg(Src)
+      .addImm(Mips::sub_32);
+  MI.eraseFromParent();
+  return true;
+}
+
 void MipsSEDAGToDAGISel::emitMCountABI(MachineInstr &MI, MachineBasicBlock &MBB,
                                        MachineFunction &MF) {
   MachineInstrBuilder MIB(MF, &MI);
@@ -150,7 +199,7 @@ void MipsSEDAGToDAGISel::processFunctionAfterISel(MachineFunction &MF) {
   MachineRegisterInfo *MRI = &MF.getRegInfo();
 
   for (auto &MBB: MF) {
-    for (auto &MI: MBB) {
+    for (auto &MI : make_early_inc_range(MBB)) {
       switch (MI.getOpcode()) {
       case Mips::RDDSP:
         addDSPCtrlRegOperands(false, MI, MF);
@@ -169,6 +218,9 @@ void MipsSEDAGToDAGISel::processFunctionAfterISel(MachineFunction &MF) {
       case Mips::ExtractElementF64:
         if (Subtarget->isABI_FPXX() && !Subtarget->hasMTHC1())
           MI.addOperand(MachineOperand::CreateReg(Mips::SP, false, true));
+        break;
+      case Mips::SLL64_32:
+        replaceZeroExtendedSext(MRI, MI);
         break;
       case Mips::JAL:
       case Mips::JAL_MM:

@@ -25,7 +25,6 @@ define <2 x i32> @cttzv2i32(<2 x i32> %x) {
 ; MIPS64-NEXT:    clz $1, $1
 ; MIPS64-NEXT:    xori $1, $1, 31
 ; MIPS64-NEXT:    dsrl $2, $4, 32
-; MIPS64-NEXT:    dext $1, $1, 0, 32
 ; MIPS64-NEXT:    sll $2, $2, 0
 ; MIPS64-NEXT:    negu $3, $2
 ; MIPS64-NEXT:    and $2, $2, $3

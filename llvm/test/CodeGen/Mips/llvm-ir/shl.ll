@@ -672,8 +672,7 @@ define signext i128 @shl_i128(i128 signext %a, i128 signext %b) {
 ; MIPS64R6-NEXT:    xori $4, $3, 63
 ; MIPS64R6-NEXT:    dsrlv $2, $2, $4
 ; MIPS64R6-NEXT:    or $1, $1, $2
-; MIPS64R6-NEXT:    andi $2, $3, 64
-; MIPS64R6-NEXT:    sll $3, $2, 0
+; MIPS64R6-NEXT:    andi $3, $3, 64
 ; MIPS64R6-NEXT:    seleqz $1, $1, $3
 ; MIPS64R6-NEXT:    dsllv $4, $5, $7
 ; MIPS64R6-NEXT:    selnez $2, $4, $3

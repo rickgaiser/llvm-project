@@ -212,8 +212,6 @@ entry:
   ; CMOV-64:    movn    $2, $5, $[[T0]]
 
   ; SEL-64:     andi    $[[T0:[0-9]+]], $4, 1
-  ; FIXME: This shift is redundant
-  ; SEL-64:     sll     $[[T0]], $[[T0]], 0
   ; SEL-64:     seleqz  $[[T1:[0-9]+]], $6, $[[T0]]
   ; SEL-64:     selnez  $[[T0]], $5, $[[T0]]
   ; SEL-64:     or      $2, $[[T0]], $[[T1]]
@@ -280,8 +278,6 @@ define ptr @tst_select_word_cst(ptr %a, ptr %b) {
   ; SEL-64:     daddiu  $[[T0:[0-9]+]], $zero, -1
   ; SEL-64:     xor     $[[T1:[0-9]+]], $5, $[[T0]]
   ; SEL-64:     sltu    $[[T2:[0-9]+]], $zero, $[[T1]]
-  ; FIXME: This shift is redundant.
-  ; SEL-64:     sll     $[[T2]], $[[T2]], 0
   ; SEL-64:     seleqz  $2, $4, $[[T2]]
 
   ; MM32R3:     move    $2, $4

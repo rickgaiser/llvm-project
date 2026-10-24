@@ -431,7 +431,7 @@ MipsTargetLowering::MipsTargetLowering(const MipsTargetMachine &TM,
 
   setTargetDAGCombine({ISD::SDIVREM, ISD::UDIVREM, ISD::SELECT, ISD::AND,
                        ISD::OR, ISD::ADD, ISD::SUB, ISD::AssertZext, ISD::SHL,
-                       ISD::SIGN_EXTEND});
+                       ISD::SIGN_EXTEND, ISD::ZERO_EXTEND});
 
   // Sink shifts into their users' blocks to expose extract patterns.
   setHasExtractBitsInsn(Subtarget.hasExtractInsert());
@@ -1532,6 +1532,24 @@ static SDValue performSignExtendCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+// The 32-bit operations sign extend their results to 64 bits, so an i32 with
+// a known zero sign bit is zero extended already. Mark the zero extension
+// nneg, so that it is selected like a sign extension, which is often free
+// (sext_like), instead of a pair of shifts.
+static SDValue performZeroExtendCombine(SDNode *N, SelectionDAG &DAG,
+                                        const MipsSubtarget &Subtarget) {
+  SDValue N0 = N->getOperand(0);
+  if (!Subtarget.isGP64bit() || N->getFlags().hasNonNeg() ||
+      N->getValueType(0) != MVT::i64 || N0.getValueType() != MVT::i32 ||
+      !DAG.SignBitIsZero(N0))
+    return SDValue();
+
+  SDNodeFlags Flags = N->getFlags();
+  Flags.setNonNeg(true);
+  N->setFlags(Flags);
+  return SDValue(N, 0);
+}
+
 SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
   const {
   SelectionDAG &DAG = DCI.DAG;
@@ -1559,6 +1577,8 @@ SDValue  MipsTargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI)
     return performSUBCombine(N, DAG, DCI, Subtarget);
   case ISD::SIGN_EXTEND:
     return performSignExtendCombine(N, DAG, DCI, Subtarget);
+  case ISD::ZERO_EXTEND:
+    return performZeroExtendCombine(N, DAG, Subtarget);
   case ISD::SETCC:
     if (DCI.isBeforeLegalizeOps())
       return performR5900WideningSETCCCombine(N, DAG, Subtarget);

@@ -15,19 +15,19 @@
 ; RUN: llc < %s -mtriple=mips -mcpu=mips32r6 -mattr=+micromips | FileCheck %s \
 ; RUN:    -check-prefixes=MM32,MMR6
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips3 | FileCheck %s \
-; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM,GP64-NOT-R2
+; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips4 | FileCheck %s \
-; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM,GP64-NOT-R2
+; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips64 | FileCheck %s \
-; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM,GP64-NOT-R2
+; RUN:    -check-prefixes=NOT-R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips64r2 | FileCheck %s \
-; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM,GP64-R2
+; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips64r3 | FileCheck %s \
-; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM,GP64-R2
+; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips64r5 | FileCheck %s \
-; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM,GP64-R2
+; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM
 ; RUN: llc < %s -mtriple=mips64 -mcpu=mips64r6 | FileCheck %s \
-; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM,GP64-R2
+; RUN:    -check-prefixes=R2-R6,GP64,NOT-MM
 
 define signext i1 @sub_i1(i1 signext %a, i1 signext %b) {
 entry:
@@ -187,24 +187,10 @@ entry:
 ; MMR6: subu16   $5, $[[T24]], $[[T25]]
 ; MMR6: lw       $3, 4($sp)
 
-; FIXME: The sltu, dsll, dsrl pattern here occurs when an i32 is zero
-;        extended to 64 bits. Fortunately slt(i)(u) actually gives an i1.
-;        These should be combined away.
-
-; GP64-NOT-R2: dsubu     $1, $4, $6
-; GP64-NOT-R2: sltu      $[[T0:[0-9]+]], $5, $7
-; GP64-NOT-R2: dsll      $[[T1:[0-9]+]], $[[T0]], 32
-; GP64-NOT-R2: dsrl      $[[T2:[0-9]+]], $[[T1]], 32
-; GP64-NOT-R2: dsubu     $2, $1, $[[T2]]
-; GP64-NOT-R2: dsubu     $3, $5, $7
-
-; FIXME: Likewise for the sltu, dext here.
-
-; GP64-R2:     dsubu     $1, $4, $6
-; GP64-R2:     sltu      $[[T0:[0-9]+]], $5, $7
-; GP64-R2:     dext      $[[T1:[0-9]+]], $[[T0]], 0, 32
-; GP64-R2:     dsubu     $2, $1, $[[T1]]
-; GP64-R2:     dsubu     $3, $5, $7
+; GP64:        dsubu     $1, $4, $6
+; GP64:        sltu      $[[T0:[0-9]+]], $5, $7
+; GP64:        dsubu     $2, $1, $[[T0]]
+; GP64:        dsubu     $3, $5, $7
 
   %r = sub i128 %a, %b
   ret i128 %r

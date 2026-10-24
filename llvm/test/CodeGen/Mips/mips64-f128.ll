@@ -2875,7 +2875,6 @@ define fp128 @selectCC_LD(fp128 %a, fp128 %b, fp128 %c, fp128 %d) {
 ; CMP_CC_FMT-NEXT:  .Ltmp50:
 ; CMP_CC_FMT-NEXT:    jalrc $25
 ; CMP_CC_FMT-NEXT:    slt $1, $zero, $2
-; CMP_CC_FMT-NEXT:    sll $1, $1, 0
 ; CMP_CC_FMT-NEXT:    seleqz $2, $17, $1
 ; CMP_CC_FMT-NEXT:    selnez $3, $19, $1
 ; CMP_CC_FMT-NEXT:    or $2, $3, $2

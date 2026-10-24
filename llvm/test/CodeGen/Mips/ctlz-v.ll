@@ -14,8 +14,7 @@ entry:
 ; MIPS64-DAG: dsll $[[R1:[0-9]+]], $[[R0]], 32
 ; MIPS64-DAG: sll $[[A2:[0-9]+]], $4, 0
 ; MIPS64-DAG: clz $[[R2:[0-9]+]], $[[A2]]
-; MIPS64-DAG: dext $[[R3:[0-9]+]], $[[R2]], 0, 32
-; MIPS64-DAG: or $2, $[[R3]], $[[R1]]
+; MIPS64-DAG: or $2, $[[R2]], $[[R1]]
 
   %ret = call <2 x i32> @llvm.ctlz.v2i32(<2 x i32> %x, i1 true)
   ret <2 x i32> %ret

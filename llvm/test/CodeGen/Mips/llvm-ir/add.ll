@@ -11,19 +11,19 @@
 ; RUN: llc < %s -mtriple=mips-elf -mcpu=mips32r6 | FileCheck %s \
 ; RUN:    -check-prefixes=ALL,R2-R6,GP32
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips3 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64,GP64-NOT-R2-R6
+; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips4 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64,GP64-NOT-R2-R6
+; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips64 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64,GP64-NOT-R2-R6
+; RUN:    -check-prefixes=ALL,NOT-R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips64r2 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,R2-R6,GP64,GP64-R2-R6
+; RUN:    -check-prefixes=ALL,R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips64r3 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,R2-R6,GP64,GP64-R2-R6
+; RUN:    -check-prefixes=ALL,R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips64r5 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,R2-R6,GP64,GP64-R2-R6
+; RUN:    -check-prefixes=ALL,R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips64-elf -mcpu=mips64r6 | FileCheck %s \
-; RUN:    -check-prefixes=ALL,R2-R6,GP64,GP64-R2-R6
+; RUN:    -check-prefixes=ALL,R2-R6,GP64
 ; RUN: llc < %s -mtriple=mips-elf -mcpu=mips32r3 -mattr=+micromips -O2 -verify-machineinstrs | FileCheck %s \
 ; RUN:    -check-prefixes=ALL,MMR3,MM32
 ; RUN: llc < %s -mtriple=mips-elf -mcpu=mips32r6 -mattr=+micromips -O2 | FileCheck %s \
@@ -167,11 +167,7 @@ entry:
   ; GP64:           daddu   $[[T0:[0-9]+]], $4, $6
   ; GP64:           daddu   $[[T1:[0-9]+]], $5, $7
   ; GP64:           sltu    $[[T2:[0-9]+]], $[[T1]], $5
-  ; GP64-NOT-R2-R6: dsll    $[[T3:[0-9]+]], $[[T2]], 32
-  ; GP64-NOT-R2-R6: dsrl    $[[T4:[0-9]+]], $[[T3]], 32
-  ; GP64-R2-R6:     dext    $[[T4:[0-9]+]], $[[T2]], 0, 32
-
-  ; GP64:           daddu   $2, $[[T0]], $[[T4]]
+  ; GP64:           daddu   $2, $[[T0]], $[[T2]]
 
   ; MMR3:       move      $[[T1:[0-9]+]], $5
   ; MMR3-DAG:   lw        $[[T2:[0-9]+]], 32($sp)
@@ -326,11 +322,7 @@ define signext i128 @add_i128_4(i128 signext %a) {
 
   ; GP64:           daddiu  $[[T0:[0-9]+]], $5, 4
   ; GP64:           sltu    $[[T1:[0-9]+]], $[[T0]], $5
-  ; GP64-NOT-R2-R6: dsll    $[[T2:[0-9]+]], $[[T1]], 32
-  ; GP64-NOT-R2-R6: dsrl    $[[T3:[0-9]+]], $[[T2]], 32
-  ; GP64-R2-R6:     dext    $[[T3:[0-9]+]], $[[T1]], 0, 32
-
-  ; GP64:           daddu   $2, $4, $[[T3]]
+  ; GP64:           daddu   $2, $4, $[[T1]]
 
   ; MMR3:       addiur2 $[[T0:[0-9]+]], $7, 4
   ; MMR3:       sltu    $[[T1:[0-9]+]], $[[T0]], $7
@@ -468,12 +460,7 @@ define signext i128 @add_i128_3(i128 signext %a) {
 
   ; GP64:           daddiu  $[[T0:[0-9]+]], $5, 3
   ; GP64:           sltu    $[[T1:[0-9]+]], $[[T0]], $5
-
-  ; GP64-NOT-R2-R6: dsll    $[[T2:[0-9]+]], $[[T1]], 32
-  ; GP64-NOT-R2-R6: dsrl    $[[T3:[0-9]+]], $[[T2]], 32
-  ; GP64-R2-R6:     dext    $[[T3:[0-9]+]], $[[T1]], 0, 32
-
-  ; GP64:           daddu   $2, $4, $[[T3]]
+  ; GP64:           daddu   $2, $4, $[[T1]]
 
   ; MMR3:       move    $[[T1:[0-9]+]], $7
   ; MMR3:       addius5 $[[T1]], 3

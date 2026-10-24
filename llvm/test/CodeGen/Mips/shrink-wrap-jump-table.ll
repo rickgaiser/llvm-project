@@ -121,7 +121,6 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N64-NEXT:  # %bb.1: # %ram
 ; N64-NEXT:    andi $1, $4, 65535
 ; N64-NEXT:    xori $1, $1, 1
-; N64-NEXT:    sll $1, $1, 0
 ; N64-NEXT:    lui $2, %highest(ram)
 ; N64-NEXT:    daddiu $2, $2, %higher(ram)
 ; N64-NEXT:    dsll $2, $2, 16
