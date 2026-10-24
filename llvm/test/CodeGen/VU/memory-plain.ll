@@ -16,6 +16,7 @@ define void @table() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %v = load <4 x float>, ptr inttoptr (i16 16 to ptr)
   %x = extractelement <4 x float> %v, i32 0
   %i = fptosi float %x to i16
@@ -37,6 +38,7 @@ define void @fields() {
 ; CHECK-NEXT:    nop sq.xyz vf2, 8(vi0)
 ; CHECK-NEXT:    nop sq.w vf1, 8(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %s = load float, ptr inttoptr (i16 72 to ptr)          ; quadword 4, field z
   %p = getelementptr { <4 x float>, <4 x float> }, ptr inttoptr (i16 80 to ptr), i16 0, i32 1
@@ -74,6 +76,7 @@ define void @loop() {
 ; CHECK-NEXT:  .LBB2_2:
 ; CHECK-NEXT:    nop sq.xyzw vf1, 100(vi1)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 entry:
   %top = call i16 @llvm.vu.xtop()
@@ -117,8 +120,32 @@ define void @count() {
 ; CHECK-NEXT:    nop isw.z vi1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %n = load i16, ptr inttoptr (i16 4 to ptr)
   %m = add i16 %n, 3
   store i16 %m, ptr inttoptr (i16 24 to ptr)
+  ret void
+}
+
+; an int4 read as <8 x i16> (an HLSL uint4 input): each element that is used
+; is the low half of a field (ILW)
+define void @halves() {
+; CHECK-LABEL: halves:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop ilw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop ilw.y vi2, 1(vi0)
+; CHECK-NEXT:    nop ilw.w vi3, 1(vi0)
+; CHECK-NEXT:    nop iadd vi1, vi1, vi2
+; CHECK-NEXT:    nop iadd vi1, vi1, vi3
+; CHECK-NEXT:    nop isw.x vi1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = load <8 x i16>, ptr inttoptr (i16 16 to ptr)
+  %a = extractelement <8 x i16> %v, i32 0
+  %b = extractelement <8 x i16> %v, i32 2
+  %c = extractelement <8 x i16> %v, i32 6
+  %s = add i16 %a, %b
+  %t = add i16 %s, %c
+  store i16 %t, ptr inttoptr (i16 32 to ptr)
   ret void
 }

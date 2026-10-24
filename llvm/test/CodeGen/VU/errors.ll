@@ -6,6 +6,7 @@
 ; RUN: not llc -mtriple=vu -O3 %t/call-loop.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CALL
 ; RUN: not llc -mtriple=vu -mcpu=vu0 %t/vu1.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=VU1
 ; RUN: not llc -mtriple=vu %t/mul.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=MUL
+; RUN: not llc -mtriple=vu %t/half.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=HALF
 
 ; ARGS: error: {{.*}} VU: micro programs take no arguments
 ; RET:  error: {{.*}} VU: micro programs do not return a value
@@ -14,6 +15,7 @@
 ; CALL: error: {{.*}} VU: function calls are not supported
 ; VU1:  error: {{.*}} VU: XGKICK and XTOP require VU1
 ; MUL:  error: {{.*}} VU: integer multiply by a variable
+; HALF: error: {{.*}} VU: 16-bit load from the high half of a field
 
 ;--- args.ll
 define void @f(i16 %a) {
@@ -76,5 +78,14 @@ define void @f() {
   %b = call i16 @llvm.vu.ilw(i16 1, i32 0)
   %m = mul i16 %a, %b
   call void @llvm.vu.isw(i16 %m, i16 2, i32 0)
+  ret void
+}
+
+;--- half.ll
+; Element 1 of an int4 seen as <8 x i16> is the high half of field x.
+define void @f() {
+  %v = load <8 x i16>, ptr inttoptr (i16 16 to ptr)
+  %a = extractelement <8 x i16> %v, i32 1
+  store i16 %a, ptr inttoptr (i16 32 to ptr)
   ret void
 }

@@ -222,6 +222,42 @@ bool VULowerMemory::lowerLoad(LoadInst &LI) {
     return true;
   }
 
+  // A vector of 16-bit integers, such as the fields of an int4 seen as
+  // <8 x i16>: one ILW for each element that is read, which must be the low
+  // half of a field.
+  if (auto *VT = dyn_cast<FixedVectorType>(T);
+      VT && VT->getElementType()->isIntegerTy(16)) {
+    unsigned N = VT->getNumElements();
+    SmallVector<bool, 8> Used(N, false);
+    for (User *U : LI.users()) {
+      auto *EE = dyn_cast<ExtractElementInst>(U);
+      auto *Idx = EE ? dyn_cast<ConstantInt>(EE->getIndexOperand()) : nullptr;
+      if (!Idx) {
+        Used.assign(N, true);
+        break;
+      }
+      if (Idx->getZExtValue() < N)
+        Used[Idx->getZExtValue()] = true;
+    }
+    Value *Res = PoisonValue::get(T);
+    for (unsigned I = 0; I != N; ++I) {
+      if (!Used[I])
+        continue;
+      int64_t Byte = Sub + 2 * I;
+      if (Byte % 4) {
+        diagnose(LI, "VU: 16-bit load from the high half of a field");
+        return false;
+      }
+      Value *C = B.CreateIntrinsic(
+          Intrinsic::vu_ilw, {},
+          {getQuadword(B, A, Byte / 16), B.getInt32(Byte / 4 % 4)});
+      copyAAMetadata(LI, C);
+      Res = B.CreateInsertElement(Res, C, I);
+    }
+    LI.replaceAllUsesWith(Res);
+    return true;
+  }
+
   auto Elts = getElements(T);
   if (!Elts || Sub % 4) {
     diagnose(LI, "VU: unsupported load type");
