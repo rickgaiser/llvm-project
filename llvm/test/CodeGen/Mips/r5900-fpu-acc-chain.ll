@@ -10,9 +10,9 @@
 define float @dot2(float %a0, float %b0, float %a1, float %b1) {
 ; CHECK-LABEL: dot2:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    mula.s $f14, $f15
+; CHECK-NEXT:    mula.s $f12, $f13
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    madd.s $f0, $f12, $f13
+; CHECK-NEXT:    madd.s $f0, $f14, $f15
 entry:
   %m0 = fmul nnan ninf float %a0, %b0
   %m1 = fmul nnan ninf float %a1, %b1
@@ -24,10 +24,10 @@ entry:
 define float @dot3(float %a0, float %b0, float %a1, float %b1, float %a2, float %b2) {
 ; CHECK-LABEL: dot3:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    mula.s $f16, $f17
+; CHECK-NEXT:    mula.s $f12, $f13
 ; CHECK-NEXT:    madda.s $f14, $f15
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    madd.s $f0, $f12, $f13
+; CHECK-NEXT:    madd.s $f0, $f16, $f17
 entry:
   %m0 = fmul nnan ninf float %a0, %b0
   %m1 = fmul nnan ninf float %a1, %b1
@@ -41,11 +41,11 @@ entry:
 define float @dot4(float %a0, float %b0, float %a1, float %b1, float %a2, float %b2, float %a3, float %b3) {
 ; CHECK-LABEL: dot4:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    mula.s $f18, $f19
-; CHECK-NEXT:    madda.s $f16, $f17
+; CHECK-NEXT:    mula.s $f12, $f13
 ; CHECK-NEXT:    madda.s $f14, $f15
+; CHECK-NEXT:    madda.s $f16, $f17
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    madd.s $f0, $f12, $f13
+; CHECK-NEXT:    madd.s $f0, $f18, $f19
 entry:
   %m0 = fmul nnan ninf float %a0, %b0
   %m1 = fmul nnan ninf float %a1, %b1
@@ -190,4 +190,63 @@ entry:
   %t2 = fadd nnan ninf float %t, %t
   %r = fadd nnan ninf float %t2, 0x40311999A0000000
   ret float %r
+}
+
+; Subtracted products: MSUBA.S and MSUB.S, in the order of the evaluation.
+define float @dot3_sub(float %a0, float %b0, float %a1, float %b1, float %a2, float %b2) {
+; CHECK-LABEL: dot3_sub:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    mula.s $f12, $f13
+; CHECK-NEXT:    msuba.s $f14, $f15
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    msub.s $f0, $f16, $f17
+entry:
+  %m0 = fmul nnan ninf float %a0, %b0
+  %m1 = fmul nnan ninf float %a1, %b1
+  %m2 = fmul nnan ninf float %a2, %b2
+  %s0 = fsub nnan ninf float %m0, %m1
+  %s1 = fsub nnan ninf float %s0, %m2
+  ret float %s1
+}
+
+; (a0*b0 + a1*b1) + (a2*b2 + a3*b3) without reassociation: one ACC chain
+; would add the terms in another order, so only the parts are chains.
+define float @tree4(float %a0, float %b0, float %a1, float %b1, float %a2, float %b2, float %a3, float %b3) {
+; CHECK-LABEL: tree4:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    mula.s $f12, $f13
+; CHECK-NEXT:    madd.s $f0, $f14, $f15
+; CHECK-NEXT:    mula.s $f16, $f17
+; CHECK-NEXT:    madd.s $f1, $f18, $f19
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    add.s $f0, $f0, $f1
+entry:
+  %m0 = fmul nnan ninf float %a0, %b0
+  %m1 = fmul nnan ninf float %a1, %b1
+  %m2 = fmul nnan ninf float %a2, %b2
+  %m3 = fmul nnan ninf float %a3, %b3
+  %s0 = fadd nnan ninf float %m0, %m1
+  %s1 = fadd nnan ninf float %m2, %m3
+  %s2 = fadd nnan ninf float %s0, %s1
+  ret float %s2
+}
+
+; The same with reassociation: one chain.
+define float @tree4_reassoc(float %a0, float %b0, float %a1, float %b1, float %a2, float %b2, float %a3, float %b3) {
+; CHECK-LABEL: tree4_reassoc:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    mula.s $f18, $f19
+; CHECK-NEXT:    madda.s $f16, $f17
+; CHECK-NEXT:    madda.s $f14, $f15
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    madd.s $f0, $f12, $f13
+entry:
+  %m0 = fmul reassoc nnan ninf float %a0, %b0
+  %m1 = fmul reassoc nnan ninf float %a1, %b1
+  %m2 = fmul reassoc nnan ninf float %a2, %b2
+  %m3 = fmul reassoc nnan ninf float %a3, %b3
+  %s0 = fadd reassoc nnan ninf float %m0, %m1
+  %s1 = fadd reassoc nnan ninf float %m2, %m3
+  %s2 = fadd reassoc nnan ninf float %s0, %s1
+  ret float %s2
 }
