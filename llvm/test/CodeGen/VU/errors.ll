@@ -7,6 +7,10 @@
 ; RUN: not llc -mtriple=vu -mcpu=vu0 %t/vu1.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=VU1
 ; RUN: not llc -mtriple=vu %t/mul.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=MUL
 ; RUN: not llc -mtriple=vu %t/half.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=HALF
+; RUN: not llc -mtriple=vu %t/room.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROOM
+; RUN: not llc -mtriple=vu %t/indexed-carry.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ICARRY
+; RUN: not llc -mtriple=vu %t/indexed-bytes.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=IBYTES
+; RUN: not llc -mtriple=vu %t/indexed-buffer.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=IBUF
 
 ; ARGS: error: {{.*}} VU: micro programs take no arguments
 ; RET:  error: {{.*}} VU: micro programs do not return a value
@@ -16,6 +20,10 @@
 ; VU1:  error: {{.*}} VU: XGKICK and XTOP require VU1
 ; MUL:  error: {{.*}} VU: integer multiply by a variable
 ; HALF: error: {{.*}} VU: 16-bit load from the high half of a field
+; ROOM: error: {{.*}} VU: the buffer of 3 quadwords has no room for a batch
+; ICARRY: error: {{.*}} VU: an indexed vertex program cannot carry prev from vertex to vertex
+; IBUF: error: {{.*}} VU: an indexed vertex program sizes its buffers itself
+; IBYTES: error: {{.*}} VU: 130 vertices of 2 outputs are too many for byte indices
 
 ;--- args.ll
 define void @f(i16 %a) {
@@ -89,3 +97,62 @@ define void @f() {
   store i16 %a, ptr inttoptr (i16 32 to ptr)
   ret void
 }
+
+;--- indexed-carry.ll
+; A value carried from vertex to vertex: the vertices of an indexed program
+; are not drawn in the order they are transformed.
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+@prev = internal addrspace(5) global <4 x float> zeroinitializer, !vu.carry !2
+define void @f() "vu-entry"="vertex" "vu-indexed"="16" {
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  %q = load <4 x float>, ptr addrspace(5) @prev
+  store <4 x float> %p, ptr addrspace(5) @prev
+  %s = fadd <4 x float> %p, %q
+  store <4 x float> %s, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"xyz2"}
+!2 = !{}
+
+;--- indexed-bytes.ll
+; An index is a byte: 130 vertices of 2 quadwords do not fit (and the table
+; leaves the buffers too small, too).
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@rgbaq = external addrspace(3) global <4 x float>, !vu.output !1
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !2
+define void @f() "vu-entry"="vertex" "vu-indexed"="130" {
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  store <4 x float> %p, ptr addrspace(3) @rgbaq
+  store <4 x float> %p, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"rgbaq"}
+!2 = !{i32 1, !"xyz2"}
+
+;--- room.ll
+; A buffer too small for a batch: the error, and no crash in the passes after
+; the entry lowering.
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+define void @f() "vu-entry"="vertex" "vu-buffer-qw"="3" {
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  store <4 x float> %p, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"xyz2"}
+
+;--- indexed-buffer.ll
+; The layout of an indexed program sets the size of its buffers.
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+define void @f() "vu-entry"="vertex" "vu-indexed"="16" "vu-buffer-qw"="256" {
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  store <4 x float> %p, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"xyz2"}

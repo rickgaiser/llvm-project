@@ -32,6 +32,7 @@ Other attributes:
 | `"vu-buffer-qw"` | size of each of the two VU1 buffers of a vertex program | (1024 − spill) / 2 |
 | `"vu-spill-qw"` | quadwords at the top of data memory for spilled registers | 0 |
 | `"vu-header-prefix"` | prefix of the header's macro names | `VU_` |
+| `"vu-indexed"` | an indexed vertex program of this many vertices per batch | 0 (not indexed) |
 
 ## Pointers and memory
 
@@ -85,6 +86,49 @@ The program ends with XGKICK of the outputs. `MAX_N` vertices fit a buffer;
 batches start at multiples of `ALIGN` vertices, because UNPACK ends on a
 quadword of every input stream.
 
+**Indexed vertex program** (`"vu-indexed"="N"`): the code runs once for each
+of the N vertices of a batch, in the order of the inputs, and writes the
+outputs into a table; a gather then copies the outputs of each index into the
+GIF packet, so a vertex that strips or triangles share is transformed once.
+Each of the two buffers (VIF1 BASE 0, OFFSET `BUF_QW`, which the layout sets)
+has, at XTOP:
+
+```
+0                GIF tag (from the EE; NLOOP = the index count)
+1                counts (from the EE): x vertices, y index quadwords, z the
+                 uniform block (CONST_AT or CONST_AT + UNI_QW)
+IN_AT ...        inputs, ITEM_QW quadwords per vertex
+IDX_AT ...       indices: UNPACK V4-8U, four to a quadword (sent as whole
+                 quadwords of 16 bytes); each is the vertex times OUT_QW
+```
+
+and above both buffers, shared by the batches:
+
+```
+OUT_AT           GIF tag (copied by the program)
+OUT_AT + 1 ...   outputs, OUT_QW quadwords per index (MAX_I of them)
+EMPTY_AT         an empty GIF tag (NLOOP 0, EOP), written by the program
+CONST_AT ...     two blocks of uniforms, UNI_QW quadwords each
+TAB_AT ...       the table: OUT_QW quadwords per vertex
+                 (then the spills)
+```
+
+After the vertex loop the program sends the empty tag: XGKICK waits until
+the GIF has read the packet of the batch before, so the gather can write the
+one packet. The GIF reads a packet while the next batch's vertex loop runs.
+The uniforms are not in the buffers: the EE writes them into the blocks by
+turns, once per draw, and names the block in counts.z of each batch. A block
+is not written while a batch reads it, because VIF1 gets to the block of draw
+d + 2 after the MSCALs of draw d + 1, which wait until the batches of draw d
+have ended (a draw with no batch must not take a block). The table is one for
+both buffers: a batch writes and reads it before its XGKICK. Indices are
+bytes: (N − 1) × OUT_QW ≤ 255. The index list may end with up to 3 more
+indices than NLOOP (their outputs land after the packet), and strips restart
+by repeating vertices (degenerate triangles); any primitive works, the gather
+does not look at it. `SV_VertexID` is the vertex's number in the batch. A
+private global with `!vu.carry` is an error: the vertices are not drawn in
+the order they are transformed; so is `"vu-buffer-qw"`.
+
 **Compute program**, from quadword 0:
 
 ```
@@ -98,7 +142,10 @@ SIZE ...   the items, ITEM_QW quadwords each (sent and read back in place)
 The macros (prefix `VU_` and the entry's name in upper case, `VU_LVL2_...`)
 are the ones maxsdk's `MX_VU_SHADER` and `MX_VU_KERNEL` read: for a vertex
 program `ENTRY BUF_QW UNI_QW ITEM_QW OUT_QW MAX_N ALIGN IN_AT OUT_AT NREG REGS
-NIN IN_<input> INPUTS`, for a compute program `N <items> SIZE ENTRY ITEM_QW
+NIN IN_<input> INPUTS`, for an indexed one also `INDEXED MAX_I EMPTY_AT
+CONST_AT TAB_AT IDX_AT` (OUT_AT is then an address of data memory, not of the
+buffer) (the uniforms' quadwords are then in their block, from 0), for a
+compute program `N <items> SIZE ENTRY ITEM_QW
 FORMAT DBUF`, and for both the quadword of each uniform (`<uniform>`, with its
 field in a comment if it does not start a quadword) and `SPILL_QW`.
 
@@ -116,13 +163,13 @@ module:
 
 ```
 clang -cc1 -triple spirv-unknown-vulkan1.3-library -x hlsl -emit-llvm -O2 -finclude-default-header x.hlsl
-opt -mtriple=vu -O2 -vu-cpu=vu0|vu1 [-vu-buffer-qw=N] [-vu-spill-qw=N] [-vu-header-prefix=P]
+opt -mtriple=vu -O2 -vu-cpu=vu0|vu1 [-vu-buffer-qw=N] [-vu-spill-qw=N] [-vu-header-prefix=P] [-vu-indexed=N]
 llc -mtriple=vu -mcpu=vu0|vu1 -O3 -filetype=obj
 ```
 
 | clang's SPIR-V output | VU entry function |
 |---|---|
-| `"hlsl.shader"="vertex"` / `"compute"` | `"vu-entry"` |
+| `"hlsl.shader"="vertex"` / `"compute"` | `"vu-entry"`; with `-vu-indexed=N`, `"vu-indexed"` on a vertex program |
 | cbuffer members (address space 12, `!hlsl.cbs`, the layout struct) | uniforms at the layout's offsets, the cbuffers one after the other, each from a quadword |
 | inputs (7), `Location` | inputs; the format from a semantic suffix (`COLOR_V4_8U`) or the type |
 | `SV_VertexID` (built-in 42) | `llvm.vu.item.index` |

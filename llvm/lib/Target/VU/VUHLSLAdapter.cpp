@@ -61,6 +61,10 @@ static cl::opt<unsigned>
     SpillQW("vu-spill-qw",
             cl::desc("quadwords at the top of VU data memory for spills"),
             cl::init(0));
+static cl::opt<unsigned>
+    Indexed("vu-indexed",
+            cl::desc("indexed HLSL vertex programs: vertices per batch"),
+            cl::init(0));
 static cl::opt<std::string>
     HeaderPrefix("vu-header-prefix",
                  cl::desc("prefix of the layout header's macros"),
@@ -726,6 +730,8 @@ bool Adapter::run() {
   Entry->addFnAttr("vu-header-prefix", HeaderPrefix);
   if (BufferQW)
     Entry->addFnAttr("vu-buffer-qw", utostr(BufferQW));
+  if (Indexed && Vertex)
+    Entry->addFnAttr("vu-indexed", utostr(Indexed));
   if (SpillQW)
     for (Function &F : M)
       if (!F.isDeclaration())
