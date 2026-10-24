@@ -48,6 +48,10 @@ public:
   bool isReMaterializableImpl(const MachineInstr &MI) const override;
 
   // Scheduling. All latencies are in micro instruction words.
+
+  /// Returns the number of words after \p MI until its result in operand
+  /// \p DefIdx can be read without a stall (VUSchedule.td).
+  static unsigned getResultLatency(const MachineInstr &MI, unsigned DefIdx);
   DFAPacketizer *
   CreateTargetScheduleState(const TargetSubtargetInfo &STI) const override;
   std::optional<unsigned> getOperandLatency(const InstrItineraryData *ItinData,

@@ -57,15 +57,8 @@ FunctionPass *llvm::createVUHazardsPass() { return new VUHazards(); }
 
 /// Returns the latency of the Q result of \p MI in words, or 0.
 static unsigned getQLatency(const MachineInstr &MI) {
-  switch (MI.getOpcode()) {
-  case VU::DIV:
-  case VU::SQRT:
-    return 7;
-  case VU::RSQRT:
-    return 13;
-  default:
-    return 0;
-  }
+  int Idx = MI.findRegisterDefOperandIdx(VU::Q, /*TRI=*/nullptr);
+  return Idx < 0 ? 0 : VUInstrInfo::getResultLatency(MI, Idx);
 }
 
 namespace {

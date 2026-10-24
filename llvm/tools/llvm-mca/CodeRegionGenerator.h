@@ -94,6 +94,15 @@ public:
   // We only want to intercept the emission of new instructions.
   void emitInstruction(const MCInst &Inst,
                        const MCSubtargetInfo & /* unused */) override {
+    // A bundle, such as a VU micro instruction word, is analyzed as the
+    // instructions in it.
+    if (Inst.getNumOperands() &&
+        any_of(Inst, [](const MCOperand &MO) { return MO.isInst(); })) {
+      for (const MCOperand &MO : Inst)
+        if (MO.isInst())
+          Regions.addInstruction(*MO.getInst());
+      return;
+    }
     Regions.addInstruction(Inst);
   }
 

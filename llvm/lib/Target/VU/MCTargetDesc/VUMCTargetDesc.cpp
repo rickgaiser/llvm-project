@@ -13,6 +13,7 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCELFObjectWriter.h"
 #include "llvm/MC/MCELFStreamer.h"
+#include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
@@ -40,6 +41,10 @@ static MCInstrInfo *createVUMCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
   InitVUMCInstrInfo(X);
   return X;
+}
+
+static MCInstrAnalysis *createVUMCInstrAnalysis(const MCInstrInfo *Info) {
+  return new MCInstrAnalysis(Info);
 }
 
 static MCRegisterInfo *createVUMCRegisterInfo(const Triple &TT) {
@@ -87,6 +92,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTargetMC() {
   TargetRegistry::RegisterMCAsmInfo(T, createVUMCAsmInfo);
   TargetRegistry::RegisterMCInstrInfo(T, createVUMCInstrInfo);
   TargetRegistry::RegisterMCRegInfo(T, createVUMCRegisterInfo);
+  TargetRegistry::RegisterMCInstrAnalysis(T, createVUMCInstrAnalysis);
   TargetRegistry::RegisterMCSubtargetInfo(T, createVUMCSubtargetInfo);
   TargetRegistry::RegisterMCInstPrinter(T, createVUMCInstPrinter);
   TargetRegistry::RegisterMCCodeEmitter(T, createVUMCCodeEmitter);

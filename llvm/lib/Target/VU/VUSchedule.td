@@ -8,9 +8,22 @@
 //
 // A micro instruction word issues one upper and one lower instruction per
 // cycle. The itineraries only describe these two issue slots; they drive the
-// packetizer automaton and the hazard recognizer. Operand latencies depend on
-// the register that is passed (VF, VI, ACC, I, Q, P) and are computed by
-// VUInstrInfo::getOperandLatency.
+// packetizer automaton and the hazard recognizer.
+//
+// The latencies of the results, in words, are those of the writes below, one
+// per result (VUInstrInfo::getOperandLatency reads them, and llvm-mca too).
+// All are measured on the PS2 (bench/vuuarch, maxsdk docs/vu0.md):
+//   FMAC result (ADD, MUL, MADD, bc, i and q forms, MAX, MINI, ABS, FTOI,
+//   ITOF, CLIP)                                                         4
+//   ACC result (MULA, MADDA, ..., OPMULA) to the next FMAC              1
+//   MOVE, MR32, MFIR, MFP, LQ, ILW to a use                             4
+//   VI, I and R results (IADD, MTIR, LOI, flag checks, ...)             1
+//   DIV, SQRT 7; RSQRT 13; the EFU ops their measured latency (ESADD 10,
+//   ESQRT/ESUM/ERCPR 11, ERSADD/ELENG/ERSQRT 17, ERLENG 23, ESIN 28,
+//   EEXP 43, EATAN 53), equal to their throughput.
+// Q, the MAC and clip flags, and a VI read by a branch in the next word are
+// not interlocked on the PS2; the compiler keeps these distances for
+// correctness. Results may be written in any order (RetireOOO, for llvm-mca).
 //
 // The processor resources below also describe the FDIV and EFU units, which
 // stay busy for several cycles: the next DIV, SQRT or RSQRT stalls until the
@@ -60,19 +73,51 @@ def VULowerRes : ProcResource<1>;
 def VUFdivRes : ProcResource<1>;
 def VUEfuRes : ProcResource<1>;
 
-def VUWriteUpper : SchedWriteRes<[VUUpperRes]>;
-def VUWriteLower : SchedWriteRes<[VULowerRes]>;
+// FMAC result.
+def VUWriteUpper : SchedWriteRes<[VUUpperRes]> {
+  let Latency = 4;
+  let RetireOOO = 1;
+}
+// ACC result, forwarded to the next FMAC instruction.
+def VUWriteAcc : SchedWriteRes<[VUUpperRes]> {
+  let Latency = 1;
+  let RetireOOO = 1;
+}
+// VI, I or R result, or none.
+def VUWriteLower : SchedWriteRes<[VULowerRes]> {
+  let Latency = 1;
+  let RetireOOO = 1;
+}
+// VF result of a lower instruction, or ILW.
+def VUWriteLower4 : SchedWriteRes<[VULowerRes]> {
+  let Latency = 4;
+  let RetireOOO = 1;
+}
+// WAITQ and WAITP: Q and P may be read in the same word.
+def VUWriteWait : SchedWriteRes<[VULowerRes]> {
+  let Latency = 0;
+  let RetireOOO = 1;
+}
+// Pseudos: two FMAC instructions (SPLAT), or LOI and an FMAC instruction.
 def VUWriteUpper2 : SchedWriteRes<[VUUpperRes]> {
+  let Latency = 5;
+  let RetireOOO = 1;
   let ReleaseAtCycles = [2];
   let NumMicroOps = 2;
 }
 def VUWriteLoi : SchedWriteRes<[VULowerRes, VUUpperRes]> {
+  let Latency = 5;
+  let RetireOOO = 1;
   let NumMicroOps = 2;
 }
 def VUWriteFdiv7 : SchedWriteRes<[VULowerRes, VUFdivRes]> {
+  let Latency = 7;
+  let RetireOOO = 1;
   let ReleaseAtCycles = [1, 7];
 }
 def VUWriteFdiv13 : SchedWriteRes<[VULowerRes, VUFdivRes]> {
+  let Latency = 13;
+  let RetireOOO = 1;
   let ReleaseAtCycles = [1, 13];
 }
 
@@ -84,9 +129,19 @@ def : ItinRW<[VUWriteFdiv7], [IIC_VUFdiv7]>;
 def : ItinRW<[VUWriteFdiv13], [IIC_VUFdiv13]>;
 foreach N = [10, 11, 17, 23, 28, 43, 53] in {
   def VUWriteEfu # N : SchedWriteRes<[VULowerRes, VUEfuRes]> {
+    let Latency = N;
+    let RetireOOO = 1;
     let ReleaseAtCycles = [1, N];
   }
   def : ItinRW<[!cast<SchedWriteRes>("VUWriteEfu" # N)],
                [!cast<InstrItinClass>("IIC_VUEfu" # N)]>;
 }
+
+def : InstRW<[VUWriteAcc], (instregex "^(ADD|SUB|MUL|MADD|MSUB)A[iqwxyz]?$",
+                                      "^OPMULA$")>;
+def : InstRW<[VUWriteLower4],
+             (instregex "^(LQ|ILW|ILWR|MOVE|MR32|MFIR|MFP|RGET|INSERT_VI)$")>;
+// The loaded VF, and the base register or R.
+def : InstRW<[VUWriteLower4, VUWriteLower], (instregex "^(LQI|LQD|RNEXT)$")>;
+def : InstRW<[VUWriteWait], (instregex "^WAIT[QP]$")>;
 } // SchedModel = VUModel

@@ -300,66 +300,23 @@ static bool isFlagCheck(unsigned Opc) {
   }
 }
 
-/// Returns the number of words after \p MI until its result in \p Reg can be
-/// read without a stall.
-static unsigned getResultLatency(const MachineInstr &MI, Register Reg) {
-  switch (MI.getOpcode()) {
-  // Pseudos, expanded after register allocation.
-  case VU::LOADF32:
-  case VU::FNEG:
-    return 5; // LOI; FMAC
-  case VU::SPLAT:
-    return 5; // FMAC; FMAC
-  // Q and P are read after the latency, or after a WAITQ or WAITP, which
-  // waits for the result and may share its word with the reader.
-  case VU::DIV:
-  case VU::SQRT:
-    return 7;
-  case VU::RSQRT:
-    return 13;
-  case VU::WAITQ:
-  case VU::WAITP:
-    return 0;
-
-  // EFU (VU1), measured on the PS2 (bench/vuuarch, "<op>, WAITP" bodies
-  // with DIV's convention: DIV, WAITQ takes 8 for a latency of 7).
-  case VU::ESADD:
-    return 10;
-  case VU::ESQRT:
-  case VU::ESUM:
-  case VU::ERCPR:
-    return 11;
-  case VU::ERSADD:
-  case VU::ELENG:
-  case VU::ERSQRT:
-    return 17;
-  case VU::ERLENG:
-    return 23;
-  case VU::ESIN:
-    return 28;
-  case VU::EEXP:
-    return 43;
-  case VU::EATAN:
-  case VU::EATANxy:
-  case VU::EATANxz:
-    return 53;
-
-  // Integer loads go through the FMAC pipeline.
-  case VU::ILW:
-  case VU::ILWR:
-    return 4;
-  }
-
+unsigned VUInstrInfo::getResultLatency(const MachineInstr &MI,
+                                       unsigned DefIdx) {
   if (MI.isCopyLike() || MI.isMetaInstruction())
     return 0;
-  // ACC is forwarded between FMAC instructions; I, R and VI results are
-  // available to the next word.
-  const MachineRegisterInfo &MRI = MI.getMF()->getRegInfo();
-  if (Reg == VU::I || Reg == VU::R || isReg(VU::ACCRRegClass, Reg, MRI) ||
-      isVIReg(Reg, MRI))
+  // The write of the result in the scheduling model (VUSchedule.td): one per
+  // result, in operand order; implicit results such as flags use the last.
+  const TargetSubtargetInfo &STI = MI.getMF()->getSubtarget();
+  const MCSchedClassDesc *SC =
+      STI.getSchedModel().getSchedClassDesc(MI.getDesc().getSchedClass());
+  if (!SC->isValid() || !SC->NumWriteLatencyEntries)
     return 1;
-  // FMAC pipeline.
-  return 4;
+  unsigned WriteIdx = 0;
+  for (unsigned I = 0; I != DefIdx; ++I)
+    if (MI.getOperand(I).isReg() && MI.getOperand(I).isDef())
+      ++WriteIdx;
+  WriteIdx = std::min<unsigned>(WriteIdx, SC->NumWriteLatencyEntries - 1);
+  return STI.getWriteLatencyEntry(SC, WriteIdx)->Cycles;
 }
 
 std::optional<unsigned> VUInstrInfo::getOperandLatency(
@@ -374,7 +331,7 @@ std::optional<unsigned> VUInstrInfo::getOperandLatency(
       UseMI.definesRegister(Reg, /*TRI=*/nullptr))
     return 1;
 
-  unsigned Latency = getResultLatency(DefMI, Reg);
+  unsigned Latency = getResultLatency(DefMI, DefIdx);
   // A conditional branch needs one word between the instruction that sets
   // its VI register and itself, except after a flag check.
   if (UseMI.isConditionalBranch() && !isFlagCheck(DefMI.getOpcode()) &&
