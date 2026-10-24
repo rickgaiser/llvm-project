@@ -84,11 +84,31 @@ void VUInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   report_fatal_error("VU: unsupported register copy");
 }
 
+// Spill slots are quadwords at the top of VU data memory, addressed from VI0
+// (see VURegisterInfo::eliminateFrameIndex). A VI register is stored in field
+// x.
 void VUInstrInfo::storeRegToStackSlot(
     MachineBasicBlock &MBB, MachineBasicBlock::iterator MBBI, Register SrcReg,
     bool isKill, int FrameIndex, const TargetRegisterClass *RC, Register VReg,
     MachineInstr::MIFlag Flags) const {
-  report_fatal_error("VU: register spilling is not supported");
+  DebugLoc DL = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
+  if (VU::VIRegClass.hasSubClassEq(RC)) {
+    BuildMI(MBB, MBBI, DL, get(VU::ISW))
+        .addImm(8)
+        .addReg(SrcReg, getKillRegState(isKill))
+        .addFrameIndex(FrameIndex)
+        .addReg(VU::VI0)
+        .setMIFlags(Flags);
+    return;
+  }
+  if (!VU::VFRegClass.hasSubClassEq(RC))
+    report_fatal_error("VU: spill of an ACC or Q value");
+  BuildMI(MBB, MBBI, DL, get(VU::SQ))
+      .addImm(15)
+      .addReg(SrcReg, getKillRegState(isKill))
+      .addFrameIndex(FrameIndex)
+      .addReg(VU::VI0)
+      .setMIFlags(Flags);
 }
 
 void VUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
@@ -97,7 +117,22 @@ void VUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
                                        const TargetRegisterClass *RC,
                                        Register VReg, unsigned SubReg,
                                        MachineInstr::MIFlag Flags) const {
-  report_fatal_error("VU: register spilling is not supported");
+  DebugLoc DL = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
+  if (VU::VIRegClass.hasSubClassEq(RC)) {
+    BuildMI(MBB, MBBI, DL, get(VU::ILW), DestReg)
+        .addImm(8)
+        .addFrameIndex(FrameIdx)
+        .addReg(VU::VI0)
+        .setMIFlags(Flags);
+    return;
+  }
+  if (!VU::VFRegClass.hasSubClassEq(RC))
+    report_fatal_error("VU: spill of an ACC or Q value");
+  BuildMI(MBB, MBBI, DL, get(VU::LQ), DestReg)
+      .addImm(15)
+      .addFrameIndex(FrameIdx)
+      .addReg(VU::VI0)
+      .setMIFlags(Flags);
 }
 
 bool VUInstrInfo::isReMaterializableImpl(const MachineInstr &MI) const {
@@ -154,6 +189,9 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   }
 
   case VU::INSERT_FIELD: {
+    // The tied source; undefined when it was an IMPLICIT_DEF.
+    RegState SrcState =
+        RegState::Implicit | getUndefRegState(MI.getOperand(1).isUndef());
     // ADD<sf>.<field> d, vf0, s for x, y and z (vf0.xyz is 0). For the w
     // field, MULw.w d, s, vf0w from w and MR32.w d, s from x: exact, unlike
     // MUL<sf>.w d, vf0, s (see SPLAT). Selection inserts no other field into w.
@@ -167,24 +205,24 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
           .addImm(8 >> Field)
           .addReg(VU::VF0)
           .addReg(S)
-          .addReg(D, RegState::Implicit);
+          .addReg(D, SrcState);
     else if (SrcField == 3)
       BuildDef(VU::MULw, D)
           .addImm(MaskW)
           .addReg(S)
           .addReg(VU::VF0)
-          .addReg(D, RegState::Implicit);
+          .addReg(D, SrcState);
     else if (SrcField == 0)
-      BuildDef(VU::MR32, D)
-          .addImm(MaskW)
-          .addReg(S)
-          .addReg(D, RegState::Implicit);
+      BuildDef(VU::MR32, D).addImm(MaskW).addReg(S).addReg(D, SrcState);
     else
       report_fatal_error("VU: no exact insertion of field y or z into w");
     break;
   }
 
   case VU::INSERT_Q: {
+    // The tied source; undefined when it was an IMPLICIT_DEF.
+    RegState SrcState =
+        RegState::Implicit | getUndefRegState(MI.getOperand(1).isUndef());
     // ADDq.<field> d, vf0, q for x, y and z. Not for w: MULq.w d, vf0, q has
     // 1.0 in fs (see SPLAT); VUFoldQ does not make it.
     Register D = MI.getOperand(0).getReg();
@@ -195,17 +233,20 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
         .addImm(8 >> Field)
         .addReg(VU::VF0)
         .add(MI.getOperand(2))
-        .addReg(D, RegState::Implicit);
+        .addReg(D, SrcState);
     break;
   }
 
   case VU::INSERT_VI: {
+    // The tied source; undefined when it was an IMPLICIT_DEF.
+    RegState SrcState =
+        RegState::Implicit | getUndefRegState(MI.getOperand(1).isUndef());
     // MFIR.<field> d, s
     Register D = MI.getOperand(0).getReg();
     BuildDef(VU::MFIR, D)
         .addImm(8 >> MI.getOperand(3).getImm())
         .add(MI.getOperand(2))
-        .addReg(D, RegState::Implicit);
+        .addReg(D, SrcState);
     break;
   }
 

@@ -6,6 +6,7 @@
 
 declare <4 x float> @llvm.vu.lq(i16)
 declare void @llvm.vu.sq(<4 x float>, i16)
+declare i16 @llvm.vu.ilw(i16, i32)
 
 define void @mat4_vec() {
 ; CHECK-LABEL: mat4_vec:
@@ -55,6 +56,7 @@ define void @subtract() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %c = call <4 x float> @llvm.vu.lq(i16 2)
@@ -80,6 +82,7 @@ define void @two_products() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %c = call <4 x float> @llvm.vu.lq(i16 2)
@@ -104,6 +107,7 @@ define void @shared_partial_sum() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %c = call <4 x float> @llvm.vu.lq(i16 2)
@@ -127,6 +131,7 @@ define void @broadcast_y() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
 ; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %v = call <4 x float> @llvm.vu.lq(i16 1)
@@ -187,6 +192,7 @@ define void @upper_lane_term() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %c = call <4 x float> @llvm.vu.lq(i16 2)
@@ -198,5 +204,164 @@ define void @upper_lane_term() {
   %q = fmul <4 x float> %c, %b
   %r = fadd <4 x float> %p, %q
   call void @llvm.vu.sq(<4 x float> %r, i16 3)
+  ret void
+}
+
+; With reassociation, a term from outside the block (a uniform) goes first,
+; so the value loaded in the loop is only one MADD from the result.
+define void @outside_first() {
+; CHECK-LABEL: outside_first:
+; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop ilw.x vi2, 2(vi0)
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
+; CHECK-NEXT:    nop lq.xyzw vf3, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 8(vi3)
+; CHECK-NEXT:    nop iaddi vi1, vi3, 1
+; CHECK-NEXT:    mulaw.xyzw acc, vf3, vf0w isub vi4, vi1, vi2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibgez vi4, .LBB7_2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB7_1: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    maddx.xyzw vf4, vf1, vf2x lq.xyzw vf2, 8(vi1)
+; CHECK-NEXT:    mulaw.xyzw acc, vf3, vf0w iaddi vi1, vi1, 1
+; CHECK-NEXT:    nop isub vi3, vi1, vi2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibltz vi3, .LBB7_1
+; CHECK-NEXT:    nop sq.xyzw vf4, 6(vi1)
+; CHECK-NEXT:  .LBB7_2:
+; CHECK-NEXT:    maddx.xyzw vf1, vf1, vf2x nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 7(vi1)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+entry:
+  %n = call i16 @llvm.vu.ilw(i16 2, i32 0)
+  %lcol = call <4 x float> @llvm.vu.lq(i16 0)
+  %amb = call <4 x float> @llvm.vu.lq(i16 1)
+  br label %loop
+
+loop:
+  %i = phi i16 [ 0, %entry ], [ %i.next, %loop ]
+  %p = add i16 %i, 8
+  %v = call <4 x float> @llvm.vu.lq(i16 %p)
+  %d = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
+  %m = fmul reassoc <4 x float> %lcol, %d
+  %s = fadd reassoc <4 x float> %m, %amb
+  call void @llvm.vu.sq(<4 x float> %s, i16 %p)
+  %i.next = add i16 %i, 1
+  %c = icmp ult i16 %i.next, %n
+  br i1 %c, label %loop, label %exit
+
+exit:
+  ret void
+}
+
+; Without reassociation, the terms keep their order.
+define void @outside_kept() {
+; CHECK-LABEL: outside_kept:
+; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop ilw.x vi1, 2(vi0)
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 8(vi3)
+; CHECK-NEXT:    nop iaddi vi4, vi3, 1
+; CHECK-NEXT:    nop isub vi2, vi4, vi1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibgez vi2, .LBB8_4
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB8_1: ; %loop
+; CHECK-NEXT:    mulax.xyzw acc, vf1, vf3x lq.xyzw vf3, 8(vi4)
+; CHECK-NEXT:    maddw.xyzw vf4, vf2, vf0w iaddi vi2, vi4, 1
+; CHECK-NEXT:    nop isub vi3, vi2, vi1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibgez vi3, .LBB8_3
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB8_2: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    nop iaddi vi2, vi2, 1
+; CHECK-NEXT:    mulax.xyzw acc, vf1, vf3x isub vi3, vi2, vi1
+; CHECK-NEXT:    nop lq.xyzw vf3, 7(vi2)
+; CHECK-NEXT:    nop ibltz vi3, .LBB8_2
+; CHECK-NEXT:    maddw.xyzw vf4, vf2, vf0w sq.xyzw vf4, 5(vi2)
+; CHECK-NEXT:  .LBB8_3:
+; CHECK-NEXT:    nop iaddi vi3, vi2, -1
+; CHECK-NEXT:    nop sq.xyzw vf4, 6(vi2)
+; CHECK-NEXT:  .LBB8_4:
+; CHECK-NEXT:    mulax.xyzw acc, vf1, vf3x nop
+; CHECK-NEXT:    maddw.xyzw vf1, vf2, vf0w nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 8(vi3)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+entry:
+  %n = call i16 @llvm.vu.ilw(i16 2, i32 0)
+  %lcol = call <4 x float> @llvm.vu.lq(i16 0)
+  %amb = call <4 x float> @llvm.vu.lq(i16 1)
+  br label %loop
+
+loop:
+  %i = phi i16 [ 0, %entry ], [ %i.next, %loop ]
+  %p = add i16 %i, 8
+  %v = call <4 x float> @llvm.vu.lq(i16 %p)
+  %d = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
+  %m = fmul <4 x float> %lcol, %d
+  %s = fadd <4 x float> %m, %amb
+  call void @llvm.vu.sq(<4 x float> %s, i16 %p)
+  %i.next = add i16 %i, 1
+  %c = icmp ult i16 %i.next, %n
+  br i1 %c, label %loop, label %exit
+
+exit:
+  ret void
+}
+
+; A term loaded in the block is not from outside: the order is kept.
+define void @loaded_kept() {
+; CHECK-LABEL: loaded_kept:
+; CHECK:       ; %bb.0: ; %entry
+; CHECK-NEXT:    nop ilw.x vi2, 2(vi0)
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 8(vi3)
+; CHECK-NEXT:    nop lq.xyzw vf2, 200(vi3)
+; CHECK-NEXT:    nop iaddi vi1, vi3, 1
+; CHECK-NEXT:    nop isub vi4, vi1, vi2
+; CHECK-NEXT:    mulax.xyzw acc, vf1, vf3x nop
+; CHECK-NEXT:    nop ibgez vi4, .LBB9_2
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:  .LBB9_1: ; %loop
+; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    nop lq.xyzw vf4, 8(vi1)
+; CHECK-NEXT:    maddw.xyzw vf3, vf2, vf0w iaddi vi1, vi1, 1
+; CHECK-NEXT:    nop isub vi3, vi1, vi2
+; CHECK-NEXT:    nop lq.xyzw vf2, 199(vi1)
+; CHECK-NEXT:    mulax.xyzw acc, vf1, vf4x ibltz vi3, .LBB9_1
+; CHECK-NEXT:    nop sq.xyzw vf3, 6(vi1)
+; CHECK-NEXT:  .LBB9_2:
+; CHECK-NEXT:    maddw.xyzw vf1, vf2, vf0w nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 7(vi1)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+entry:
+  %n = call i16 @llvm.vu.ilw(i16 2, i32 0)
+  %lcol = call <4 x float> @llvm.vu.lq(i16 0)
+  br label %loop
+
+loop:
+  %i = phi i16 [ 0, %entry ], [ %i.next, %loop ]
+  %p = add i16 %i, 8
+  %v = call <4 x float> @llvm.vu.lq(i16 %p)
+  %q = add i16 %i, 200
+  %w = call <4 x float> @llvm.vu.lq(i16 %q)
+  %d = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> zeroinitializer
+  %m = fmul reassoc <4 x float> %lcol, %d
+  %s = fadd reassoc <4 x float> %m, %w
+  call void @llvm.vu.sq(<4 x float> %s, i16 %p)
+  %i.next = add i16 %i, 1
+  %c = icmp ult i16 %i.next, %n
+  br i1 %c, label %loop, label %exit
+
+exit:
   ret void
 }

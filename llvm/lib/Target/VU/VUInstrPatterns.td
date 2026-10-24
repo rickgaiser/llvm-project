@@ -31,6 +31,7 @@ def SDT_VUBcast : SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>, SDTCisFP<1>,
                                        SDTCisVT<2, i32>]>;
 def VUbcast : SDNode<"VUISD::BCAST", SDT_VUBcast>;
 
+
 // A sum of products computed through ACC: MULA, MADDA/MSUBA..., MADD/MSUB.
 // The operands are (a, b, field, negate) for each term; see
 // VUTargetLowering::combineAccSum. Selected in VUDAGToDAGISel.
@@ -48,6 +49,25 @@ def VUitof : SDNode<"VUISD::ITOF", SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
 def VUinsertvi : SDNode<"VUISD::INSERT_VI", SDTypeProfile<1, 3, [
                         SDTCisVT<0, v4i32>, SDTCisVT<1, v4i32>,
                         SDTCisVT<2, i16>, SDTCisVT<3, i32>]>>;
+
+// A scalar as a vector: the x field is the scalar, the other fields are
+// undefined. No instruction.
+def VUvec : SDNode<"VUISD::VEC", SDTypeProfile<1, 1, [SDTCisVT<0, v4f32>,
+                                                      SDTCisVT<1, f32>]>>;
+
+// A comparison result as a mask of 0.0 and 1.0 (see
+// VUTargetLowering::getMask) turned into integers: v4i32 for a vector
+// comparison, i16 from field $f for a scalar one.
+def VUmaskint : SDNode<"VUISD::MASK_INT", SDTypeProfile<1, 2, [SDTCisInt<0>,
+                                          SDTCisVT<1, v4f32>, SDTCisVT<2, i32>]>>;
+
+// x * m + y * n, for masks m and n = 1 - m: a select. The masks are in ft,
+// where 1.0 gives an exact product on the PS2. They are read by broadcast
+// field $f (0-3), or in all fields (4).
+def VUblend : SDNode<"VUISD::BLEND", SDTypeProfile<1, 5, [SDTCisVT<0, v4f32>,
+                                     SDTCisSameAs<1, 0>, SDTCisSameAs<2, 0>,
+                                     SDTCisSameAs<3, 0>, SDTCisSameAs<4, 0>,
+                                     SDTCisVT<5, i32>]>>;
 
 //===----------------------------------------------------------------------===//
 // Pseudo instructions
@@ -180,6 +200,21 @@ def : Pat<(v4f32 immAllZerosV), (SUB 15, (v4f32 VF0), (v4f32 VF0))>;
 def fpimm0 : FPImmLeaf<f32, [{ return Imm.isExactlyValue(+0.0); }]>;
 def : Pat<(f32 fpimm0), (SUB 15, (f32 VF0), (f32 VF0))>;
 
+// A scalar with a constant: the constant by its broadcast field x, so that
+// VUPackConstants can share its register; 0.0 is vf0.x. (The other fields of
+// a scalar are undefined.)
+multiclass ScalarConstPats<SDNode Op, Instruction I> {
+  def : Pat<(Op (f32 VF:$a), (f32 fpimm0)), (I 15, VF:$a, (v4f32 VF0))>;
+  def : Pat<(Op (f32 VF:$a), (f32 fpimm:$c)), (I 15, VF:$a, (LOADF32 fpimm:$c))>;
+}
+let AddedComplexity = 5 in {
+defm : ScalarConstPats<fadd, ADDx>;
+defm : ScalarConstPats<fsub, SUBx>;
+defm : ScalarConstPats<fmul, MULx>;
+defm : ScalarConstPats<fmaxnum, MAXx>;
+defm : ScalarConstPats<fminnum, MINIx>;
+}
+
 //===----------------------------------------------------------------------===//
 // Vector fields
 //===----------------------------------------------------------------------===//
@@ -194,6 +229,10 @@ def : Pat<(f32 (extractelt (v4f32 VF:$v), 3)), (ADDw 8, (f32 VF0), VF:$v)>;
 // Integer and float vectors share the VF registers.
 def : Pat<(v4i32 (bitconvert (v4f32 VF:$v))), (v4i32 VF:$v)>;
 def : Pat<(v4f32 (bitconvert (v4i32 VF:$v))), (v4f32 VF:$v)>;
+
+def : Pat<(v4f32 (VUvec (f32 VF:$s))), (COPY_TO_REGCLASS VF:$s, VF)>;
+
+
 
 //===----------------------------------------------------------------------===//
 // Conversions
@@ -324,5 +363,32 @@ defm : BranchCmpZero<SETLT, IBLTZ>;
 defm : BranchCmpZero<SETGT, IBGTZ>;
 defm : BranchCmpZero<SETLE, IBLEZ>;
 defm : BranchCmpZero<SETGE, IBGEZ>;
+// Unsigned comparisons the same way: right for values whose difference fits
+// in 16 bits, as counts and indices do (VUNarrowInt).
+multiclass BranchCmpUnsigned<CondCode CC, Instruction I> {
+  def : Pat<(brcond (i16 (setcc VI:$a, VI:$b, CC)), bb:$t),
+            (I (ISUB VI:$a, VI:$b), bb:$t)>;
+}
+defm : BranchCmpUnsigned<SETULT, IBLTZ>;
+defm : BranchCmpUnsigned<SETUGT, IBGTZ>;
+defm : BranchCmpUnsigned<SETULE, IBLEZ>;
+defm : BranchCmpUnsigned<SETUGE, IBGEZ>;
 
 def : Pat<(brcond (i16 VI:$c), bb:$t), (IBNE VI:$c, (i16 VI0), bb:$t)>;
+
+//===----------------------------------------------------------------------===//
+// Comparisons and selects (masks of 0.0 and 1.0, see VUTargetLowering)
+//===----------------------------------------------------------------------===//
+
+def : Pat<(v4i32 (VUmaskint (v4f32 VF:$m), timm)), (FTOI0 15, VF:$m)>;
+def : Pat<(i16 (VUmaskint (v4f32 VF:$m), timm:$f)),
+          (MTIR (FTOI0 (FieldToMask timm:$f), VF:$m), timm:$f)>;
+def : Pat<(VUblend VF:$x, VF:$m, VF:$y, VF:$n, 4),
+          (MADD (MULA 15, VF:$x, VF:$m), 15, VF:$y, VF:$n)>;
+foreach F = Fields in
+  def : Pat<(VUblend VF:$x, VF:$m, VF:$y, VF:$n,
+                     !cast<TImmLeaf>("FieldImm" # F.Value)),
+            (!cast<Instruction>("MADD" # F.Name)
+                 (!cast<Instruction>("MULA" # F.Name) 15, VF:$x, VF:$m), 15,
+                 VF:$y, VF:$n)>;
+

@@ -50,4 +50,10 @@ def int_vu_xitop : DefaultAttrsIntrinsic<[llvm_i16_ty], [],
 // GIF reads VU data memory.
 def int_vu_xgkick : DefaultAttrsIntrinsic<[], [llvm_i16_ty], []>;
 
+// The index of the item (vertex or element) that the code of a "vu-entry"
+// function works on, and the number of items of the batch; replaced by
+// VUEntryLowering (see VUEntryLowering.cpp).
+def int_vu_item_index : DefaultAttrsIntrinsic<[llvm_i16_ty], [], [IntrNoMem]>;
+def int_vu_item_count : DefaultAttrsIntrinsic<[llvm_i16_ty], [], [IntrNoMem]>;
+
 } // TargetPrefix = "vu"

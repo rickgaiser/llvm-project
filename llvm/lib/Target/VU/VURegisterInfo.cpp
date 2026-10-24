@@ -9,6 +9,8 @@
 #include "VURegisterInfo.h"
 #include "MCTargetDesc/VUMCTargetDesc.h"
 #include "VUFrameLowering.h"
+#include "VUSubtarget.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/Function.h"
@@ -39,10 +41,18 @@ BitVector VURegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   return Reserved;
 }
 
+// There is no stack: the spill slots are the quadwords at the top of data
+// memory (1023 down on VU1, 255 down on VU0), addressed from VI0. The frame
+// offsets are negative, in bytes.
 bool VURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
                                          int SPAdj, unsigned FIOperandNum,
                                          RegScavenger *RS) const {
-  report_fatal_error("VU: stack frames are not supported");
+  MachineFunction &MF = *MI->getMF();
+  int FI = MI->getOperand(FIOperandNum).getIndex();
+  int64_t Offset = MF.getFrameInfo().getObjectOffset(FI);
+  int64_t Top = MF.getSubtarget<VUSubtarget>().hasVU1() ? 1024 : 256;
+  MI->getOperand(FIOperandNum).ChangeToImmediate(Top + Offset / 16);
+  return false;
 }
 
 const TargetRegisterClass *

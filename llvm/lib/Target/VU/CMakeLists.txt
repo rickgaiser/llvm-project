@@ -18,19 +18,24 @@ add_public_tablegen_target(VUCommonTableGen)
 add_llvm_target(VUCodeGen
   VUAsmPrinter.cpp
   VUDelaySlotFiller.cpp
+  VUEntryLowering.cpp
   VUFoldInsertField.cpp
   VUFoldQ.cpp
   VUFrameLowering.cpp
   VUHazards.cpp
+  VUHLSLAdapter.cpp
   VUInstrInfo.cpp
   VUISelDAGToDAG.cpp
   VUISelLowering.cpp
   VULoopCopies.cpp
   VULoopScheduler.cpp
+  VULowerMemory.cpp
+  VUNarrowInt.cpp
   VUPackConstants.cpp
   VUPacketizer.cpp
   VURegisterInfo.cpp
   VUSelectionDAGInfo.cpp
+  VUSinkFields.cpp
   VUSubtarget.cpp
   VUTargetMachine.cpp
   VUTargetObjectFile.cpp
@@ -42,10 +47,12 @@ add_llvm_target(VUCodeGen
   CodeGenTypes
   Core
   MC
+  Passes
   SelectionDAG
   Support
   Target
   TargetParser
+  TransformUtils
   VUDesc
   VUInfo
 

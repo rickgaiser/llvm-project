@@ -559,6 +559,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       Current.push_back(Word);
     }
     int CurrentCycles = VU::getLoopCycles(Current, TII, Itin, TRI);
+    LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << Current.size()
+                      << " words take " << CurrentCycles << " cycles\n");
 
     // The fewest words that take fewer cycles than MaxCycles.
     struct Layout {
@@ -594,7 +596,14 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       unsigned Steps = std::clamp<uint64_t>(200000000 / (N * N), 1000, 1000000);
       SmallVector<int, 32> Cycles;
       for (int L = MinL; L < MaxCycles && Steps; ++L) {
-        if (!G.schedule(L, Cycles, Steps)) {
+        // A search for one length takes at most half of the steps that are
+        // left, so a length that is hard to prove impossible, just below the
+        // shortest schedule, leaves steps for the longer lengths.
+        unsigned Budget = std::max(Steps / 2, std::min(Steps, 1000u));
+        unsigned Left = Budget;
+        bool Found = G.schedule(L, Cycles, Left);
+        Steps -= Budget - Left;
+        if (!Found) {
           LLVM_DEBUG(dbgs() << "  no schedule in " << L << " words\n");
           continue;
         }

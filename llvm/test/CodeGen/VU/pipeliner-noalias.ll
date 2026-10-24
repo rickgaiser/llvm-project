@@ -56,7 +56,7 @@ exit:
 
 ; Without the metadata, the stores may write what the next iteration loads:
 ; every iteration waits for the previous one.
-; CHECK: Minimal Initiation Interval: 22 (ResMII 8, RecMII 22)
+; CHECK: Minimal Initiation Interval: 21 (ResMII 8, RecMII 21)
 define void @unscoped() {
 entry:
   %in = call i16 @llvm.vu.ilw(i16 0, i32 0)

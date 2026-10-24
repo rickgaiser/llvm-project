@@ -12,12 +12,16 @@
 // per field, when the other blocks read them by a broadcast field. The
 // registers that this frees are left for the values of the loop, such as
 // those of a pipelined one:
-//   %a = LOADF32 0.5; %b = LOADF32 3.0; ... (loop) MULx %d, %v, %a; ADDx %e, %d, %b
+//   %a = LOADF32 0.5; %b = LOADF32 3.0; ... (loop) MULx %d, %v, %a; ADDx %e,
+//   %d, %b
 //   ->
 //   %a = LOADF32 0.5; %b = LOADF32 3.0; %p = INSERT_FIELD %a, %b, y, x
 //   ... (loop) MULx %d, %v, %p; ADDy %e, %d, %p
 // The uses that can read another field are the broadcast forms of the FMAC
 // instructions (ft), SPLAT and INSERT_FIELD (the inserted value).
+//
+// Undefined values are not shared: they move to the blocks that use them
+// (see sinkImplicitDefs).
 //
 //===----------------------------------------------------------------------===//
 
@@ -88,7 +92,9 @@ static bool canReadField(const MachineOperand &MO) {
   case VU::SPLAT:
     return Idx == 1 && MI.getOperand(2).getImm() == 0;
   case VU::INSERT_FIELD:
-    return Idx == 2 && MI.getOperand(4).getImm() == 0;
+    // Field y or z goes into w with no exact instruction (see INSERT_FIELD).
+    return Idx == 2 && MI.getOperand(4).getImm() == 0 &&
+           MI.getOperand(3).getImm() != 3;
   default:
     // ft is the last explicit operand of a broadcast form.
     return getFieldForm(MI.getOpcode(), 0) &&
@@ -114,12 +120,42 @@ static void readField(MachineOperand &MO, Register Reg, unsigned Field,
   }
 }
 
+/// An undefined value (the base of a vector that is built field by field)
+/// costs nothing where it is used, but a register from its IMPLICIT_DEF on,
+/// such as one that MachineLICM hoisted out of a loop, or one at the start of
+/// a loop body that the pipeliner counts as live through the iteration: each
+/// use gets its own IMPLICIT_DEF, just before it.
+static bool sinkImplicitDefs(MachineFunction &MF, const TargetInstrInfo &TII,
+                             MachineRegisterInfo &MRI) {
+  bool Changed = false;
+  for (MachineBasicBlock &MBB : MF)
+    for (MachineInstr &MI : make_early_inc_range(MBB)) {
+      if (!MI.isImplicitDef() || !MI.getOperand(0).getReg().isVirtual())
+        continue;
+      Register R = MI.getOperand(0).getReg();
+      for (MachineOperand &MO : make_early_inc_range(MRI.use_operands(R))) {
+        MachineInstr *User = MO.getParent();
+        if (User->isPHI() || User->isDebugInstr() ||
+            (User->getParent() == &MBB && User == MI.getNextNode()))
+          continue;
+        Register C = MRI.createVirtualRegister(MRI.getRegClass(R));
+        BuildMI(*User->getParent(), User, MI.getDebugLoc(),
+                TII.get(TargetOpcode::IMPLICIT_DEF), C);
+        MO.setReg(C);
+        Changed = true;
+      }
+      if (MRI.use_nodbg_empty(R))
+        MI.eraseFromParent();
+    }
+  return Changed;
+}
+
 bool VUPackConstants::runOnMachineFunction(MachineFunction &MF) {
   if (skipFunction(MF.getFunction()))
     return false;
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   MachineRegisterInfo &MRI = MF.getRegInfo();
-  bool Changed = false;
+  bool Changed = sinkImplicitDefs(MF, TII, MRI);
   for (MachineBasicBlock &MBB : MF) {
     // The constants of the block that other blocks, such as a loop, use, and
     // where all those uses can read another field. The shared register is

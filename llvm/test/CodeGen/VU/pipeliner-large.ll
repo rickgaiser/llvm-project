@@ -5,7 +5,8 @@
 
 ; A polynomial of degree 16 by Horner's method: 32 FMAC instructions per
 ; iteration, so the minimal II (32) is above the generic limit of 27, which
-; the VU does not have. The 17 coefficients stay in VF registers, which leaves
+; the VU does not have. The 17 coefficients, a quadword each (they are not
+; broadcast fields), stay in VF registers, which leaves
 ; few registers for the stages: ACC and Q, which share the pressure sets of
 ; VF, must not count as room for VF values, or the schedule at II 32 needs
 ; more registers than there are.
@@ -28,36 +29,29 @@ define void @horner16() {
 ; CHECK-NEXT:    nop ibltz vi2, .LBB0_10
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop.preheader
-; CHECK-NEXT:    nop lq.xyzw vf17, 5(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf4, 1(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf8, 2(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf12, 3(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf16, 4(vi0)
 ; CHECK-NEXT:    nop iaddiu vi2, vi0, 0
-; CHECK-NEXT:    nop lq.xyzw vf18, 6(vi2)
-; CHECK-NEXT:    addx.xyz vf22, vf0, vf17x iaddi vi3, vi2, 1
-; CHECK-NEXT:    addx.xyz vf1, vf0, vf4x nop
-; CHECK-NEXT:    addx.xyz vf5, vf0, vf8x nop
-; CHECK-NEXT:    addx.xyz vf9, vf0, vf12x nop
-; CHECK-NEXT:    addw.xyz vf21, vf0, vf16w nop
-; CHECK-NEXT:    addy.xyz vf2, vf0, vf4y nop
-; CHECK-NEXT:    addz.xyz vf3, vf0, vf4z nop
-; CHECK-NEXT:    addy.xyz vf6, vf0, vf8y mr32.w vf22, vf17
-; CHECK-NEXT:    addz.xyz vf7, vf0, vf8z mr32.w vf1, vf4
-; CHECK-NEXT:    addw.xyz vf4, vf0, vf4w mr32.w vf5, vf8
-; CHECK-NEXT:    addw.xyz vf8, vf0, vf8w mr32.w vf9, vf12
-; CHECK-NEXT:    addy.xyz vf10, vf0, vf12y nop
-; CHECK-NEXT:    addz.xyz vf11, vf0, vf12z mr32.w vf2, vf2
-; CHECK-NEXT:    addw.xyz vf12, vf0, vf12w mr32.w vf3, vf3
-; CHECK-NEXT:    addy.xyz vf14, vf0, vf16y mr32.w vf6, vf6
-; CHECK-NEXT:    addz.xyz vf15, vf0, vf16z mr32.w vf7, vf7
-; CHECK-NEXT:    mulw.w vf21, vf16, vf0w mr32.w vf10, vf10
-; CHECK-NEXT:    addx.xyz vf13, vf0, vf16x mr32.w vf11, vf11
-; CHECK-NEXT:    mula.xyzw acc, vf22, vf18 mr32.w vf13, vf16
-; CHECK-NEXT:    mulw.w vf4, vf4, vf0w mr32.w vf14, vf14
-; CHECK-NEXT:    mulw.w vf8, vf8, vf0w mr32.w vf15, vf15
-; CHECK-NEXT:    mulw.w vf12, vf12, vf0w ibeq vi1, vi3, .LBB0_9
-; CHECK-NEXT:    maddw.xyzw vf17, vf21, vf0w nop
+; CHECK-NEXT:    nop lq.xyzw vf22, 17(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf18, 18(vi2)
+; CHECK-NEXT:    nop lq.xyzw vf21, 16(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 3(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf4, 4(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf5, 5(vi0)
+; CHECK-NEXT:    mula.xyzw acc, vf22, vf18 lq.xyzw vf6, 6(vi0)
+; CHECK-NEXT:    maddw.xyzw vf17, vf21, vf0w lq.xyzw vf7, 7(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf8, 8(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf9, 9(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf10, 10(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf11, 11(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf12, 12(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf13, 13(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf14, 14(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf15, 15(vi0)
+; CHECK-NEXT:    nop iaddi vi3, vi2, 1
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop ibeq vi1, vi3, .LBB0_9
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
 ; CHECK-NEXT:    mula.xyzw acc, vf17, vf18 iaddi vi5, vi3, 1
 ; CHECK-NEXT:    maddw.xyzw vf16, vf15, vf0w nop
@@ -65,14 +59,14 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf16, vf14, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf16, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf16, vf13, vf0w nop
-; CHECK-NEXT:    mula.xyzw acc, vf16, vf18 lq.xyzw vf16, 6(vi3)
+; CHECK-NEXT:    mula.xyzw acc, vf16, vf18 lq.xyzw vf16, 18(vi3)
 ; CHECK-NEXT:    maddw.xyzw vf17, vf12, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf17, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf19, vf11, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf22, vf16 ibeq vi1, vi5, .LBB0_8
 ; CHECK-NEXT:    maddw.xyzw vf17, vf21, vf0w nop
 ; CHECK-NEXT:  .LBB0_3: ; %loop
-; CHECK-NEXT:    mula.xyzw acc, vf17, vf16 lq.xyzw vf20, 6(vi5)
+; CHECK-NEXT:    mula.xyzw acc, vf17, vf16 lq.xyzw vf20, 18(vi5)
 ; CHECK-NEXT:    maddw.xyzw vf17, vf15, vf0w iaddi vi4, vi5, 1
 ; CHECK-NEXT:    mula.xyzw acc, vf19, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf19, vf10, vf0w nop
@@ -94,7 +88,7 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf17, vf21, vf0w ibeq vi1, vi4, .LBB0_7
 ; CHECK-NEXT:    mula.xyzw acc, vf23, vf18 nop
 ; CHECK-NEXT:  .LBB0_4: ; %loop
-; CHECK-NEXT:    maddw.xyzw vf23, vf6, vf0w lq.xyzw vf24, 6(vi4)
+; CHECK-NEXT:    maddw.xyzw vf23, vf6, vf0w lq.xyzw vf24, 18(vi4)
 ; CHECK-NEXT:    nop iaddi vi4, vi4, 1
 ; CHECK-NEXT:    mula.xyzw acc, vf23, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf23, vf5, vf0w nop
@@ -132,9 +126,9 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf18, vf6, vf0w move.xyzw vf25, vf16
 ; CHECK-NEXT:    nop move.xyzw vf16, vf20
 ; CHECK-NEXT:    nop move.xyzw vf20, vf24
-; CHECK-NEXT:    nop lq.xyzw vf24, 6(vi4)
+; CHECK-NEXT:    nop lq.xyzw vf24, 18(vi4)
 ; CHECK-NEXT:    nop iaddi vi4, vi4, 1
-; CHECK-NEXT:    nop sq.xyzw vf23, 1(vi4)
+; CHECK-NEXT:    nop sq.xyzw vf23, 13(vi4)
 ; CHECK-NEXT:    mula.xyzw acc, vf17, vf20 nop
 ; CHECK-NEXT:    maddw.xyzw vf17, vf15, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf18, vf25 nop
@@ -173,7 +167,7 @@ define void @horner16() {
 ; CHECK-NEXT:    nop iaddi vi3, vi4, -2
 ; CHECK-NEXT:    nop iaddi vi2, vi4, -3
 ; CHECK-NEXT:    nop move.xyzw vf20, vf24
-; CHECK-NEXT:    nop sq.xyzw vf23, 2(vi4)
+; CHECK-NEXT:    nop sq.xyzw vf23, 14(vi4)
 ; CHECK-NEXT:  .LBB0_7:
 ; CHECK-NEXT:    maddw.xyzw vf21, vf6, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf21, vf18 nop
@@ -186,7 +180,7 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf21, vf2, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf21, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf18, vf1, vf0w nop
-; CHECK-NEXT:    nop sq.xyzw vf18, 6(vi2)
+; CHECK-NEXT:    nop sq.xyzw vf18, 18(vi2)
 ; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
 ; CHECK-NEXT:    nop iaddiu vi3, vi5, 0
 ; CHECK-NEXT:    nop move.xyzw vf18, vf16
@@ -212,7 +206,7 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf19, vf2, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf19, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf18, vf1, vf0w nop
-; CHECK-NEXT:    nop sq.xyzw vf18, 6(vi2)
+; CHECK-NEXT:    nop sq.xyzw vf18, 18(vi2)
 ; CHECK-NEXT:    nop iaddiu vi2, vi3, 0
 ; CHECK-NEXT:    nop move.xyzw vf18, vf16
 ; CHECK-NEXT:  .LBB0_9:
@@ -246,39 +240,35 @@ define void @horner16() {
 ; CHECK-NEXT:    maddw.xyzw vf2, vf2, vf0w nop
 ; CHECK-NEXT:    mula.xyzw acc, vf2, vf18 nop
 ; CHECK-NEXT:    maddw.xyzw vf1, vf1, vf0w nop
-; CHECK-NEXT:    nop sq.xyzw vf1, 6(vi2)
+; CHECK-NEXT:    nop sq.xyzw vf1, 18(vi2)
 ; CHECK-NEXT:  .LBB0_10: ; %exit
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
 entry:
   %n = call i16 @llvm.vu.ilw(i16 0, i32 0)
-  %q1 = call <4 x float> @llvm.vu.lq(i16 1)
-  %c0 = shufflevector <4 x float> %q1, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
-  %c1 = shufflevector <4 x float> %q1, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
-  %c2 = shufflevector <4 x float> %q1, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
-  %c3 = shufflevector <4 x float> %q1, <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
-  %q2 = call <4 x float> @llvm.vu.lq(i16 2)
-  %c4 = shufflevector <4 x float> %q2, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
-  %c5 = shufflevector <4 x float> %q2, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
-  %c6 = shufflevector <4 x float> %q2, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
-  %c7 = shufflevector <4 x float> %q2, <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
-  %q3 = call <4 x float> @llvm.vu.lq(i16 3)
-  %c8 = shufflevector <4 x float> %q3, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
-  %c9 = shufflevector <4 x float> %q3, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
-  %c10 = shufflevector <4 x float> %q3, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
-  %c11 = shufflevector <4 x float> %q3, <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
-  %q4 = call <4 x float> @llvm.vu.lq(i16 4)
-  %c12 = shufflevector <4 x float> %q4, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
-  %c13 = shufflevector <4 x float> %q4, <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
-  %c14 = shufflevector <4 x float> %q4, <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
-  %c15 = shufflevector <4 x float> %q4, <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
-  %q5 = call <4 x float> @llvm.vu.lq(i16 5)
-  %c16 = shufflevector <4 x float> %q5, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
+  %c0 = call <4 x float> @llvm.vu.lq(i16 1)
+  %c1 = call <4 x float> @llvm.vu.lq(i16 2)
+  %c2 = call <4 x float> @llvm.vu.lq(i16 3)
+  %c3 = call <4 x float> @llvm.vu.lq(i16 4)
+  %c4 = call <4 x float> @llvm.vu.lq(i16 5)
+  %c5 = call <4 x float> @llvm.vu.lq(i16 6)
+  %c6 = call <4 x float> @llvm.vu.lq(i16 7)
+  %c7 = call <4 x float> @llvm.vu.lq(i16 8)
+  %c8 = call <4 x float> @llvm.vu.lq(i16 9)
+  %c9 = call <4 x float> @llvm.vu.lq(i16 10)
+  %c10 = call <4 x float> @llvm.vu.lq(i16 11)
+  %c11 = call <4 x float> @llvm.vu.lq(i16 12)
+  %c12 = call <4 x float> @llvm.vu.lq(i16 13)
+  %c13 = call <4 x float> @llvm.vu.lq(i16 14)
+  %c14 = call <4 x float> @llvm.vu.lq(i16 15)
+  %c15 = call <4 x float> @llvm.vu.lq(i16 16)
+  %c16 = call <4 x float> @llvm.vu.lq(i16 17)
   %empty = icmp sge i16 0, %n
   br i1 %empty, label %exit, label %loop
 loop:
   %i = phi i16 [ 0, %entry ], [ %i.next, %loop ]
-  %in = add i16 %i, 6
+  %in = add i16 %i, 18
   %x = call <4 x float> @llvm.vu.lq(i16 %in)
   %m0 = fmul <4 x float> %c16, %x
   %y0 = fadd <4 x float> %m0, %c15
@@ -312,7 +302,7 @@ loop:
   %y14 = fadd <4 x float> %m14, %c1
   %m15 = fmul <4 x float> %y14, %x
   %y15 = fadd <4 x float> %m15, %c0
-  %out = add i16 %i, 6
+  %out = add i16 %i, 18
   call void @llvm.vu.sq(<4 x float> %y15, i16 %out)
   %i.next = add i16 %i, 1
   %done = icmp eq i16 %i.next, %n

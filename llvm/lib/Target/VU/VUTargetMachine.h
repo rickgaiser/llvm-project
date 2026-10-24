@@ -29,6 +29,8 @@ public:
 
   const VUSubtarget *getSubtargetImpl(const Function &F) const override;
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+  void registerPassBuilderCallbacks(PassBuilder &PB) override;
+  TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
   ScheduleDAGInstrs *
   createMachineScheduler(MachineSchedContext *C) const override;
   ScheduleDAGInstrs *

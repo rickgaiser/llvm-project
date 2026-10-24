@@ -18,12 +18,18 @@
 // a word before the branch, since no word may come between the branch and its
 // delay slot.
 //
+// A loop that only has to wait because of a division before it, such as one
+// in the prologue of a pipelined loop, waits once on the way in instead of in
+// every iteration: a WAITQ in a block of its own on a fall-through edge, or
+// before the branch of a predecessor that jumps to the loop.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/VUMCTargetDesc.h"
 #include "VU.h"
 #include "VUSubtarget.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineInstrBundle.h"
@@ -114,31 +120,139 @@ static bool stepWord(const Word &W, unsigned &Need) {
   return Wait;
 }
 
+/// Returns true if \p MBB needs a WAITQ when \p Need words are still needed
+/// at its start, and sets \p Need to the words needed at its end.
+static bool stepBlock(MachineBasicBlock &MBB, unsigned &Need) {
+  bool Waits = false;
+  for (MachineInstr &MI : MBB)
+    Waits |= stepWord(getWord(MI), Need);
+  return Waits;
+}
+
+namespace {
+/// Where the WAITQ of an edge into a loop goes.
+enum class EdgeWait { BeforeBranch, NewBlock, None };
+} // namespace
+
+/// Returns the word of the branch of \p Pred to \p MBB, or end().
+static MachineBasicBlock::iterator getBranchTo(MachineBasicBlock &Pred,
+                                               MachineBasicBlock &MBB) {
+  for (auto I = Pred.begin(), E = Pred.end(); I != E; ++I)
+    for (auto J = I.getInstrIterator(), JE = std::next(I).getInstrIterator();
+         J != JE; ++J)
+      if (J->isBranch() && any_of(J->operands(), [&](const MachineOperand &MO) {
+            return MO.isMBB() && MO.getMBB() == &MBB;
+          }))
+        return I;
+  return Pred.end();
+}
+
+/// Returns where a WAITQ on the edge from \p Pred to \p MBB can go: before
+/// the branch to it (not if a division is in the delay slot after it), or
+/// in a block of its own on the fall-through edge.
+static EdgeWait getEdgeWait(MachineBasicBlock &Pred, MachineBasicBlock &MBB) {
+  MachineBasicBlock::iterator Br = getBranchTo(Pred, MBB);
+  if (Br == Pred.end())
+    return Pred.getNextNode() == &MBB ? EdgeWait::NewBlock : EdgeWait::None;
+  for (auto I = Br.getInstrIterator(), E = Pred.instr_end(); I != E; ++I)
+    if (getQLatency(*I))
+      return EdgeWait::None;
+  return EdgeWait::BeforeBranch;
+}
+
+/// Inserts a WAITQ word on the edge from \p Pred to \p MBB.
+static void waitOnEdge(MachineBasicBlock &Pred, MachineBasicBlock &MBB,
+                       const TargetInstrInfo &TII) {
+  DebugLoc DL;
+  if (getEdgeWait(Pred, MBB) == EdgeWait::BeforeBranch) {
+    // The WAITQ also delays the other edge of a conditional branch, once.
+    BuildMI(Pred, getBranchTo(Pred, MBB), DL, TII.get(VU::WAITQ));
+    return;
+  }
+  MachineFunction &MF = *MBB.getParent();
+  MachineBasicBlock *Wait = MF.CreateMachineBasicBlock(MBB.getBasicBlock());
+  MF.insert(MBB.getIterator(), Wait);
+  for (const MachineBasicBlock::RegisterMaskPair &LI : MBB.liveins())
+    Wait->addLiveIn(LI);
+  BuildMI(*Wait, Wait->end(), DL, TII.get(VU::WAITQ));
+  Pred.replaceSuccessor(&MBB, Wait);
+  Wait->addSuccessor(&MBB);
+}
+
 bool VUHazards::runOnMachineFunction(MachineFunction &MF) {
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
 
   // Words still needed at the start of each block, over all predecessors.
+  // A loop in WaitOnEntry waits on the edges into it, so only its own
+  // back edge counts.
   DenseMap<const MachineBasicBlock *, unsigned> NeedIn;
-  bool Iterate = true;
-  while (Iterate) {
-    Iterate = false;
-    for (MachineBasicBlock &MBB : MF) {
-      unsigned Need = NeedIn.lookup(&MBB);
-      for (MachineInstr &MI : MBB) {
+  SmallPtrSet<MachineBasicBlock *, 4> WaitOnEntry;
+  auto Propagate = [&] {
+    NeedIn.clear();
+    bool Iterate = true;
+    while (Iterate) {
+      Iterate = false;
+      for (MachineBasicBlock &MBB : MF) {
+        unsigned Need = NeedIn.lookup(&MBB);
         // A WAITQ is inserted where stepWord returns true.
-        stepWord(getWord(MI), Need);
-      }
-      for (MachineBasicBlock *Succ : MBB.successors()) {
-        unsigned &In = NeedIn[Succ];
-        if (Need > In) {
-          In = Need;
-          Iterate = true;
+        stepBlock(MBB, Need);
+        for (MachineBasicBlock *Succ : MBB.successors()) {
+          if (Succ != &MBB && WaitOnEntry.count(Succ))
+            continue;
+          unsigned &In = NeedIn[Succ];
+          if (Need > In) {
+            In = Need;
+            Iterate = true;
+          }
         }
       }
     }
+  };
+  Propagate();
+  for (bool Found = true; Found;) {
+    Found = false;
+    for (MachineBasicBlock &MBB : MF) {
+      if (!MBB.isSuccessor(&MBB) || WaitOnEntry.count(&MBB))
+        continue;
+      unsigned Need = NeedIn.lookup(&MBB);
+      if (!stepBlock(MBB, Need))
+        continue;
+      // The words needed when only the loop's own division is waited for.
+      unsigned Self = 0, Prev;
+      do {
+        Prev = Self;
+        Need = Self;
+        stepBlock(MBB, Need);
+        Self = std::max(Self, Need);
+      } while (Self != Prev);
+      Need = Self;
+      if (stepBlock(MBB, Need) ||
+          any_of(MBB.predecessors(), [&](MachineBasicBlock *Pred) {
+            return Pred != &MBB && getEdgeWait(*Pred, MBB) == EdgeWait::None;
+          }))
+        continue;
+      WaitOnEntry.insert(&MBB);
+      Found = true;
+    }
+    if (Found)
+      Propagate();
   }
 
   bool Changed = false;
+  for (MachineBasicBlock *Loop : WaitOnEntry) {
+    MachineBasicBlock &MBB = *Loop;
+    SmallVector<MachineBasicBlock *, 2> Preds;
+    for (MachineBasicBlock *Pred : MBB.predecessors()) {
+      unsigned Need = NeedIn.lookup(Pred);
+      stepBlock(*Pred, Need);
+      if (Pred != &MBB && Need > NeedIn.lookup(&MBB))
+        Preds.push_back(Pred);
+    }
+    for (MachineBasicBlock *Pred : Preds)
+      waitOnEdge(*Pred, MBB, TII);
+    Changed |= !Preds.empty();
+  }
+
   for (MachineBasicBlock &MBB : MF) {
     unsigned Need = NeedIn.lookup(&MBB);
     for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {

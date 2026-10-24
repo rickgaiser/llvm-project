@@ -3,12 +3,14 @@
 ; RUN: not llc -mtriple=vu %t/ret.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=RET
 ; RUN: not llc -mtriple=vu %t/load.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=LOAD
 ; RUN: not llc -mtriple=vu %t/call.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CALL
+; RUN: not llc -mtriple=vu -O3 %t/call-loop.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CALL
 ; RUN: not llc -mtriple=vu -mcpu=vu0 %t/vu1.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=VU1
 ; RUN: not llc -mtriple=vu %t/mul.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=MUL
 
 ; ARGS: error: {{.*}} VU: micro programs take no arguments
 ; RET:  error: {{.*}} VU: micro programs do not return a value
-; LOAD: error: {{.*}} VU: use the llvm.vu.* intrinsics for memory accesses
+; LOAD: error: {{.*}} VU: unsupported load type
+; LOAD: error: {{.*}} VU: memory access that is not by quadwords
 ; CALL: error: {{.*}} VU: function calls are not supported
 ; VU1:  error: {{.*}} VU: XGKICK and XTOP require VU1
 ; MUL:  error: {{.*}} VU: integer multiply by a variable
@@ -24,9 +26,11 @@ define i16 @f() {
 }
 
 ;--- load.ll
-define void @f() {
-  %v = load <4 x float>, ptr inttoptr (i16 16 to ptr)
-  store <4 x float> %v, ptr inttoptr (i16 32 to ptr)
+; Bytes, and an index by floats: the VU addresses quadwords.
+define void @f(i16 %i) {
+  %v = load i8, ptr inttoptr (i16 16 to ptr)
+  %p = getelementptr float, ptr inttoptr (i16 32 to ptr), i16 %i
+  %f = load float, ptr %p
   ret void
 }
 
@@ -34,6 +38,26 @@ define void @f() {
 declare void @g()
 define void @f() {
   call void @g()
+  ret void
+}
+
+;--- call-loop.ll
+; A call in a loop: the error, and llc ends (it used to hang).
+declare <4 x float> @g(<4 x float>)
+declare <4 x float> @llvm.vu.lq(i16)
+declare void @llvm.vu.sq(<4 x float>, i16)
+define void @f() {
+entry:
+  br label %loop
+loop:
+  %i = phi i16 [ 0, %entry ], [ %n, %loop ]
+  %v = call <4 x float> @llvm.vu.lq(i16 %i)
+  %r = call <4 x float> @g(<4 x float> %v)
+  call void @llvm.vu.sq(<4 x float> %r, i16 %i)
+  %n = add i16 %i, 1
+  %c = icmp eq i16 %n, 10
+  br i1 %c, label %done, label %loop
+done:
   ret void
 }
 

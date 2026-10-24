@@ -96,12 +96,22 @@ class ResultRegChains : public ScheduleDAGMutation {
         }
       }
     }
-    SmallVector<std::pair<SUnit *, unsigned>, 8> Edges;
+    // One edge from each operand to Start, with the largest delay (a second
+    // edge from the same instruction would not be added), in the order of
+    // the instructions.
+    DenseMap<SUnit *, unsigned> Delay;
     for (auto [SU, O] : Offset)
       for (const SDep &D : SU->Preds)
         if (D.getKind() == SDep::Data && !InGroup(D.getReg()) &&
-            !Offset.count(D.getSUnit()) && D.getLatency() > O)
-          Edges.push_back({D.getSUnit(), D.getLatency() - O});
+            !Offset.count(D.getSUnit()) && D.getLatency() > O) {
+          unsigned &L = Delay[D.getSUnit()];
+          L = std::max(L, D.getLatency() - O);
+        }
+    SmallVector<std::pair<SUnit *, unsigned>, 8> Edges(Delay.begin(),
+                                                       Delay.end());
+    llvm::sort(Edges, [](const auto &A, const auto &B) {
+      return A.first->NodeNum < B.first->NodeNum;
+    });
     for (auto [Pred, Latency] : Edges) {
       SDep Dep(Pred, SDep::Artificial);
       Dep.setLatency(Latency);

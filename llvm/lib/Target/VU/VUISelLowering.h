@@ -56,6 +56,15 @@ private:
   SDValue lowerVectorField(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerMUL(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerXOR(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerMath(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerSETCC(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerSELECT(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
+  /// A comparison or a combination of comparisons as a mask of 0.0 and 1.0,
+  /// and the field it is valid in (VUISD::AccSumFull: all), or no value.
+  std::pair<SDValue, unsigned> getMask(SDValue C, SelectionDAG &DAG) const;
   SDValue lowerUnsupported(SDValue Op, SelectionDAG &DAG,
                            const char *What) const;
   SDValue combineAccSum(SDNode *N, SelectionDAG &DAG) const;

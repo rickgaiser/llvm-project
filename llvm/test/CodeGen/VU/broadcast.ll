@@ -57,6 +57,7 @@ define void @dot_light() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %col = call <4 x float> @llvm.vu.lq(i16 2)
@@ -101,15 +102,15 @@ define void @insert_q() {
 define void @insert_field_of_broadcast() {
 ; CHECK-LABEL: insert_field_of_broadcast:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    nop lq.xyzw vf1, 2(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
-; CHECK-NEXT:    addy.xyz vf3, vf0, vf1y nop
-; CHECK-NEXT:    mulaw.xyzw acc, vf1, vf2w lq.xyzw vf1, 0(vi0)
-; CHECK-NEXT:    nop mr32.w vf3, vf3
-; CHECK-NEXT:    maddw.xyzw vf2, vf3, vf0w nop
-; CHECK-NEXT:    nop mr32.w vf1, vf2
-; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf3, 0(vi0)
+; CHECK-NEXT:    mulw.xyzw vf1, vf2, vf1w nop
+; CHECK-NEXT:    addy.xyzw vf1, vf1, vf2y nop
+; CHECK-NEXT:    nop mr32.w vf3, vf1
+; CHECK-NEXT:    nop sq.xyzw vf3, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)
   %p = call <4 x float> @llvm.vu.lq(i16 1)

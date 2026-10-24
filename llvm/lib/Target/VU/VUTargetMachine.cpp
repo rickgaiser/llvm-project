@@ -16,11 +16,13 @@
 #include "TargetInfo/VUTargetInfo.h"
 #include "VU.h"
 #include "VUTargetObjectFile.h"
+#include "VUTargetTransformInfo.h"
 #include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Function.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/Compiler.h"
 
 using namespace llvm;
@@ -39,6 +41,11 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUHazardsPass(PR);
   initializeVULoopCopiesPass(PR);
   initializeVULoopSchedulerPass(PR);
+  initializeVULowerMemoryPass(PR);
+  initializeVUEntryLoweringLegacyPass(PR);
+  initializeVUHLSLAdapterLegacyPass(PR);
+  initializeVUNarrowIntPass(PR);
+  initializeVUSinkFieldsPass(PR);
 }
 
 VUTargetMachine::VUTargetMachine(const Target &T, const Triple &TT,
@@ -189,6 +196,20 @@ public:
     return getTM<VUTargetMachine>();
   }
 
+  void addIRPasses() override {
+    // Before loop strength reduction, which would make pointer induction
+    // variables of the addresses.
+    addPass(createVUHLSLAdapterPass());
+    addPass(createVUEntryLoweringPass());
+    addPass(createVUNarrowIntPass());
+    addPass(createVULowerMemoryPass());
+    // Reductions are expanded by VUSinkFields, before ExpandReductions.
+    addPass(createVUSinkFieldsPass());
+    TargetPassConfig::addIRPasses();
+    // After LICM, next to instruction selection.
+    addPass(createVUSinkFieldsPass());
+  }
+
   bool addInstSelector() override {
     addPass(createVUISelDag(getVUTargetMachine(), getOptLevel()));
     return false;
@@ -220,6 +241,24 @@ public:
   }
 };
 } // namespace
+
+TargetTransformInfo
+VUTargetMachine::getTargetTransformInfo(const Function &F) const {
+  return TargetTransformInfo(std::make_unique<VUTTIImpl>(this, F));
+}
+
+void VUTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
+#define GET_PASS_REGISTRY "VUPassRegistry.def"
+#include "llvm/Passes/TargetPassRegistry.inc"
+
+  // Entry functions become micro programs first, so that the optimizations
+  // see the loop over the items (LICM of uniforms, for example).
+  PB.registerPipelineStartEPCallback(
+      [](ModulePassManager &MPM, OptimizationLevel) {
+        MPM.addPass(VUHLSLAdapterPass());
+        MPM.addPass(VUEntryLoweringPass());
+      });
+}
 
 TargetPassConfig *VUTargetMachine::createPassConfig(PassManagerBase &PM) {
   return new VUPassConfig(*this, PM);

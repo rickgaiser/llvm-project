@@ -40,8 +40,13 @@ public:
 
   StringRef getPassName() const override { return "VU Assembly Printer"; }
   void emitInstruction(const MachineInstr *MI) override;
+  void emitFunctionBodyStart() override { NumWords = 0; }
+  void emitFunctionBodyEnd() override;
 
 private:
+  /// The 64-bit words of the program so far.
+  unsigned NumWords = 0;
+
   void lowerInstruction(const MachineInstr &MI, MCInst &Inst) const;
   void emitBundle(const MCInst &Upper, const MCInst &Lower, unsigned Flags);
 };
@@ -85,6 +90,20 @@ void VUAsmPrinter::emitBundle(const MCInst &Upper, const MCInst &Lower,
   Bundle.addOperand(MCOperand::createInst(U));
   Bundle.addOperand(MCOperand::createInst(L));
   EmitToStreamer(*OutStreamer, Bundle);
+  ++NumWords;
+}
+
+// A program is a whole number of quadwords: VIF's MPG sends quadwords, so
+// the last word of a program of an odd number would not be sent, and the
+// word that was there before (another program's) would run in the delay
+// slot of the end.
+void VUAsmPrinter::emitFunctionBodyEnd() {
+  if (NumWords % 2) {
+    MCInst UpperNop, LowerNop;
+    UpperNop.setOpcode(VU::NOP);
+    LowerNop.setOpcode(VU::LNOP);
+    emitBundle(UpperNop, LowerNop, 0);
+  }
 }
 
 void VUAsmPrinter::emitInstruction(const MachineInstr *MI) {

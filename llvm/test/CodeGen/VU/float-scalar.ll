@@ -24,10 +24,11 @@ define void @scalar_ops() {
 ; CHECK-NEXT:    addq.x vf2, vf0, q waitq
 ; CHECK-NEXT:    addi.x vf2, vf0, i sqrt q, vf2x
 ; CHECK-NEXT:    addq.x vf3, vf0, q waitq
-; CHECK-NEXT:    mul.xyzw vf2, vf3, vf2 nop
+; CHECK-NEXT:    mulx.xyzw vf2, vf3, vf2x nop
 ; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)
   %x = extractelement <4 x float> %v, i32 0
@@ -44,8 +45,8 @@ define void @scalar_ops() {
 define void @min_max() {
 ; CHECK-LABEL: min_max:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    sub.xyzw vf2, vf0, vf0 lq.xyzw vf1, 0(vi0)
-; CHECK-NEXT:    max.xyzw vf2, vf1, vf2 nop
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    maxx.xyzw vf2, vf1, vf0x nop
 ; CHECK-NEXT:    minix.xyzw vf1, vf1, vf2x nop
 ; CHECK-NEXT:    addy.xyz vf1, vf0, vf1y nop
 ; CHECK-NEXT:    nop mr32.w vf1, vf1

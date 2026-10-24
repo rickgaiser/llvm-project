@@ -156,8 +156,14 @@ bool VUFoldInsertField::fold(MachineInstr &Ins) {
       Def->removeOperand(I);
   }
   Def->clearRegisterKills(D, TRI);
-  Def->addOperand(
-      MachineOperand::CreateReg(D, /*isDef=*/false, /*isImp=*/true));
+  // d keeps its other fields, which are undefined if they were for the
+  // insertion.
+  bool Undef = any_of(Ins.implicit_operands(), [&](const MachineOperand &MO) {
+    return MO.isReg() && MO.isUse() && MO.getReg() == D && MO.isUndef();
+  });
+  Def->addOperand(MachineOperand::CreateReg(D, /*isDef=*/false, /*isImp=*/true,
+                                            /*isKill=*/false, /*isDead=*/false,
+                                            Undef));
   Ins.eraseFromParent();
   ++NumFolded;
   return true;
