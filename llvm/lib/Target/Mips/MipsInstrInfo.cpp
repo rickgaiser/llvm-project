@@ -433,15 +433,22 @@ findLoopCounter(const MachineBasicBlock &LoopBB, ArrayRef<MachineOperand> Cond,
 
 std::unique_ptr<TargetInstrInfo::PipelinerLoopInfo>
 MipsInstrInfo::analyzeLoopForPipelining(MachineBasicBlock *LoopBB) const {
-  if (!Subtarget.isR5900() || !Subtarget.hasVU0())
+  if (!Subtarget.isR5900() ||
+      (!Subtarget.hasVU0() && !Subtarget.pipelineFPULoops()))
     return nullptr;
-  // Only loops of VU0 work: their 4-cycle operations gain from overlapping
-  // iterations.
+  // Only loops of VU0 work (and FPU and MMI work with
+  // -mips-r5900-pipeline-fpu): their 4-cycle operations gain from
+  // overlapping iterations.
   const MachineRegisterInfo &MRI = LoopBB->getParent()->getRegInfo();
   auto IsVU0 = [&](const MachineInstr &MI) {
     return any_of(MI.defs(), [&](const MachineOperand &MO) {
-      return MO.getReg().isVirtual() &&
-             MRI.getRegClass(MO.getReg()) == &Mips::VFRegsRegClass;
+      if (!MO.getReg().isVirtual())
+        return false;
+      const TargetRegisterClass *RC = MRI.getRegClass(MO.getReg());
+      if (RC == &Mips::VFRegsRegClass)
+        return Subtarget.hasVU0();
+      return Subtarget.pipelineFPULoops() &&
+             (RC == &Mips::FGR32RegClass || RC == &Mips::GPR128RegClass);
     });
   };
   if (none_of(*LoopBB, IsVU0))

@@ -222,10 +222,19 @@ bool MipsSubtarget::useAA() const { return isR5900(); }
 
 static cl::opt<bool>
     R5900Pipeliner("mips-r5900-pipeliner", cl::Hidden, cl::init(true),
-                   cl::desc("Software pipeline the VU0 loops of the R5900"));
+                   cl::desc("Software pipeline the loops of the R5900"));
+
+// Measured on the PS2: N64 To CT16 +11%, the other tests the same.
+static cl::opt<bool> R5900PipelineFPU(
+    "mips-r5900-pipeline-fpu", cl::Hidden, cl::init(true),
+    cl::desc("Also software pipeline the FPU and MMI loops of the R5900"));
 
 bool MipsSubtarget::enableMachinePipeliner() const {
-  return isR5900() && hasVU0() && R5900Pipeliner;
+  return isR5900() && (hasVU0() || R5900PipelineFPU) && R5900Pipeliner;
+}
+
+bool MipsSubtarget::pipelineFPULoops() const {
+  return isR5900() && R5900PipelineFPU;
 }
 
 void MipsSubtarget::overridePipelinerPolicy(

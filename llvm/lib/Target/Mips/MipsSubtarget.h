@@ -247,9 +247,11 @@ public:
   bool enableMachineScheduler() const override;
   bool enablePostRAMachineScheduler() const override;
   bool useAA() const override;
-  // Software pipelining of R5900 VU0 loops (MipsInstrInfo::
+  // Software pipelining of R5900 VU0, FPU and MMI loops (MipsInstrInfo::
   // analyzeLoopForPipelining), on the processor resources of the R5900 model.
   bool enableMachinePipeliner() const override;
+  /// Also pipeline loops of FPU and MMI work (-mips-r5900-pipeline-fpu).
+  bool pipelineFPULoops() const;
   bool useDFAforSMS() const override { return false; }
   void overridePipelinerPolicy(MachinePipelinerPolicy &Policy) const override;
   void getSMSMutations(std::vector<std::unique_ptr<ScheduleDAGMutation>>
