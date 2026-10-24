@@ -469,7 +469,8 @@ private:
   void checkValidNodeOrder(const NodeSetType &Circuits) const;
   bool schedulePipeline(SMSchedule &Schedule);
   bool scheduleIteratively(SMSchedule &Schedule, unsigned II,
-                           bool KeepSingleRegOrder);
+                           bool KeepSingleRegOrder,
+                           function_ref<unsigned()> ExcessPressure = nullptr);
   bool computeDelta(const MachineInstr &MI, int &Delta) const;
   MachineInstr *findDefInLoop(Register Reg);
   bool canUseLastOffsetValue(MachineInstr *MI, unsigned &BasePos,

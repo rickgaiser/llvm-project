@@ -2052,6 +2052,25 @@ public:
     }
     return false;
   }
+
+  // The registers that the schedule needs beyond the limits, summed over the
+  // pressure sets.
+  unsigned getExcess(const SwingSchedulerDAG *SSD, SMSchedule &Schedule,
+                     unsigned MarginPercent) const {
+    OrderedInstsTy OrderedInsts;
+    Instr2StageTy Stages;
+    computeScheduledInsts(SSD, Schedule, OrderedInsts, Stages);
+    const auto MaxSetPressure = computeMaxSetPressure(
+        OrderedInsts, Stages, Schedule.getMaxStageCount() + 1);
+    unsigned Excess = 0;
+    for (unsigned PSet = 0; PSet < PSetNum; PSet++) {
+      unsigned Limit = PressureSetLimit[PSet];
+      unsigned Margin = Limit * MarginPercent / 100;
+      if (Limit < MaxSetPressure[PSet] + Margin)
+        Excess += MaxSetPressure[PSet] + Margin - Limit;
+    }
+    return Excess;
+  }
 };
 
 } // end anonymous namespace
@@ -2956,8 +2975,14 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
       for (bool KeepSingleRegOrder : {false, true}) {
         Schedule.reset();
         Schedule.setInitiationInterval(II);
+        auto Excess = [&] {
+          return HRPDetector->getExcess(this, Schedule,
+                                        Policy.RegPressureMargin);
+        };
         scheduleFound =
-            scheduleIteratively(Schedule, II, KeepSingleRegOrder) &&
+            scheduleIteratively(Schedule, II, KeepSingleRegOrder,
+                                HRPDetector ? function_ref<unsigned()>(Excess)
+                                            : nullptr) &&
             (Policy.MaxStages < 0 ||
              Schedule.getMaxStageCount() <= (unsigned)Policy.MaxStages);
         if (scheduleFound)
@@ -3529,7 +3554,9 @@ Register SMSchedule::getOverlappingSingleRegValue(SUnit *SU, int Cycle,
     Register Reg;
     int Start, End;
   };
-  DenseMap<const TargetRegisterClass *, SmallVector<Value, 4>> Values;
+  // In the order of the instructions, so that the overlap found first does
+  // not depend on where the instructions are in memory.
+  MapVector<const TargetRegisterClass *, SmallVector<Value, 4>> Values;
   auto Add = [&](SUnit *DefSU) {
     for (const MachineOperand &MO : DefSU->getInstr()->all_defs()) {
       Register Reg = MO.getReg();
@@ -3541,9 +3568,14 @@ Register SMSchedule::getOverlappingSingleRegValue(SUnit *SU, int Cycle,
     }
   };
   Add(SU);
+  SmallVector<SUnit *, 32> Others;
   for (const auto &[Other, OtherCycle] : InstrToCycle)
     if (Other != SU)
-      Add(Other);
+      Others.push_back(Other);
+  llvm::sort(Others,
+             [](SUnit *A, SUnit *B) { return A->NodeNum < B->NodeNum; });
+  for (SUnit *Other : Others)
+    Add(Other);
 
   // Reads come before writes in a cycle, but only an instruction that reads
   // one value and writes the next one is ordered that way.
@@ -3646,8 +3678,9 @@ static SUnit *multipleIterations(SUnit *SU, SwingSchedulerDAG *DAG) {
 /// conflicts with are unscheduled: those that use the same resources, those
 /// that make a value of a single register class overlap with one of its
 /// values, and the successors and predecessors whose dependences it breaks.
-bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
-                                            bool KeepSingleRegOrder) {
+bool SwingSchedulerDAG::scheduleIteratively(
+    SMSchedule &Schedule, unsigned II, bool KeepSingleRegOrder,
+    function_ref<unsigned()> ExcessPressure) {
   // Cycle(Dst) >= Cycle(Src) + Latency.
   struct Constraint {
     SUnit *Src, *Dst;
@@ -3895,11 +3928,18 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
   // resources are taken, the instruction in the way may move as well.
   if (!SwpReduceLifetimes)
     return true;
+  // The registers beyond the limit of the register pressure come first: a
+  // schedule that needs them is rejected.
   auto Cost = [&] {
-    if (std::optional<unsigned> C =
+    uint64_t C;
+    if (std::optional<unsigned> TC =
             LoopPipelinerInfo->getScheduleCost(*this, Schedule))
-      return *C;
-    return Schedule.getExtraRegisters();
+      C = *TC;
+    else
+      C = Schedule.getExtraRegisters();
+    if (ExcessPressure)
+      C |= uint64_t(ExcessPressure()) << 32;
+    return C;
   };
   auto StagesFit = [&] {
     return Policy.MaxStages < 0 ||
@@ -3925,7 +3965,7 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
     SUnit *Other = nullptr;
     int OtherCycle = 0;
   };
-  unsigned Best = Cost();
+  uint64_t Best = Cost();
   for (bool Changed = true; Changed && Best != 0;) {
     Changed = false;
     for (SUnit &SU : SUnits) {
@@ -3942,7 +3982,7 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
         // Placed even if overbooked, to see if the cycle is worth making room
         // for.
         Schedule.place(&SU, Cycle);
-        unsigned NewCost = StagesFit() ? Cost() : Best;
+        uint64_t NewCost = StagesFit() ? Cost() : Best;
         Schedule.remove(&SU);
         if (NewCost >= Best)
           continue;
@@ -3964,7 +4004,7 @@ bool SwingSchedulerDAG::scheduleIteratively(SMSchedule &Schedule, unsigned II,
                 continue;
               Schedule.place(&Other, C);
               if (StagesFit())
-                if (unsigned NewCost = Cost(); NewCost < Best) {
+                if (uint64_t NewCost = Cost(); NewCost < Best) {
                   Best = NewCost;
                   BestMove = {Cycle, &Other, C};
                 }

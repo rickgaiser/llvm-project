@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/ModuloSchedule.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/MemoryLocation.h"
 #include "llvm/CodeGen/LiveIntervals.h"
@@ -2541,7 +2542,7 @@ void ModuloScheduleExpanderMVE::generateProlog(
     SmallVectorImpl<ValueMapTy> &PrologVRMap) {
   PrologVRMap.clear();
   PrologVRMap.resize(Schedule.getNumStages() - 1);
-  DenseMap<MachineInstr *, std::pair<int, int>> NewMIMap;
+  MapVector<MachineInstr *, std::pair<int, int>> NewMIMap;
   for (int PrologNum = 0; PrologNum < Schedule.getNumStages() - 1;
        ++PrologNum) {
     for (MachineInstr *MI : Schedule.getInstructions()) {
@@ -2578,7 +2579,7 @@ void ModuloScheduleExpanderMVE::generateKernel(
   KernelVRMap.resize(NumUnroll);
   SmallVector<ValueMapTy> PhiVRMap;
   PhiVRMap.resize(NumUnroll);
-  DenseMap<MachineInstr *, std::pair<int, int>> NewMIMap;
+  MapVector<MachineInstr *, std::pair<int, int>> NewMIMap;
   for (int UnrollNum = 0; UnrollNum < NumUnroll; ++UnrollNum) {
     for (MachineInstr *MI : Schedule.getInstructions()) {
       if (MI->isPHI())
@@ -2618,7 +2619,7 @@ void ModuloScheduleExpanderMVE::generateEpilog(
     SmallVectorImpl<ValueMapTy> &EpilogVRMap, InstrMapTy &LastStage0Insts) {
   EpilogVRMap.clear();
   EpilogVRMap.resize(Schedule.getNumStages() - 1);
-  DenseMap<MachineInstr *, std::pair<int, int>> NewMIMap;
+  MapVector<MachineInstr *, std::pair<int, int>> NewMIMap;
   for (int EpilogNum = 0; EpilogNum < Schedule.getNumStages() - 1;
        ++EpilogNum) {
     for (MachineInstr *MI : Schedule.getInstructions()) {
