@@ -989,12 +989,12 @@ define void @pass_array_byval() nounwind {
 ; MIPS32R6-EL-NEXT:    lhu $2, 4($1)
 ; MIPS32R6-EL-NEXT:    lbu $3, 6($1)
 ; MIPS32R6-EL-NEXT:    sll $3, $3, 16
-; MIPS32R6-EL-NEXT:    lw $4, 0($1)
+; MIPS32R6-EL-NEXT:    or $5, $2, $3
 ; MIPS32R6-EL-NEXT:    lw $25, %call16(extern_func)($gp)
 ; MIPS32R6-EL-NEXT:    .reloc $tmp0, R_MIPS_JALR, extern_func
 ; MIPS32R6-EL-NEXT:  $tmp0:
 ; MIPS32R6-EL-NEXT:    jalr $25
-; MIPS32R6-EL-NEXT:    or $5, $2, $3
+; MIPS32R6-EL-NEXT:    lw $4, 0($1)
 ; MIPS32R6-EL-NEXT:    lw $ra, 20($sp) # 4-byte Folded Reload
 ; MIPS32R6-EL-NEXT:    jr $ra
 ; MIPS32R6-EL-NEXT:    addiu $sp, $sp, 24
@@ -1011,12 +1011,12 @@ define void @pass_array_byval() nounwind {
 ; MIPS32R6-EB-NEXT:    sll $2, $2, 8
 ; MIPS32R6-EB-NEXT:    lhu $3, 4($1)
 ; MIPS32R6-EB-NEXT:    sll $3, $3, 16
-; MIPS32R6-EB-NEXT:    lw $4, 0($1)
+; MIPS32R6-EB-NEXT:    or $5, $3, $2
 ; MIPS32R6-EB-NEXT:    lw $25, %call16(extern_func)($gp)
 ; MIPS32R6-EB-NEXT:    .reloc $tmp0, R_MIPS_JALR, extern_func
 ; MIPS32R6-EB-NEXT:  $tmp0:
 ; MIPS32R6-EB-NEXT:    jalr $25
-; MIPS32R6-EB-NEXT:    or $5, $3, $2
+; MIPS32R6-EB-NEXT:    lw $4, 0($1)
 ; MIPS32R6-EB-NEXT:    lw $ra, 20($sp) # 4-byte Folded Reload
 ; MIPS32R6-EB-NEXT:    jr $ra
 ; MIPS32R6-EB-NEXT:    addiu $sp, $sp, 24

@@ -73,15 +73,13 @@ define i32 @test_musttail_many_args(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 
 define hidden i32 @callee_with_struct(%struct.large %s, i32 %x) {
 ; MIPS32-LABEL: callee_with_struct:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lw $2, 32($sp)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lw $2, 32($sp)
 ;
 ; MIPS64-LABEL: callee_with_struct:
 ; MIPS64:       # %bb.0:
-; MIPS64-NEXT:    lw $2, 4($sp)
 ; MIPS64-NEXT:    jr $ra
-; MIPS64-NEXT:    nop
+; MIPS64-NEXT:    lw $2, 4($sp)
   ret i32 %x
 }
 

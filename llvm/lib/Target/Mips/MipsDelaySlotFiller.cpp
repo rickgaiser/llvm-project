@@ -621,9 +621,11 @@ bool MemDefsUses::hasHazard_(const MachineInstr &MI) {
     return HasHazard;
   }
 
-  // No underlying objects found.
+  // No underlying objects found: a store may alias any load or store it
+  // would be moved past, and a load any store. MemDefsUses is not used where
+  // the delay slot instruction would be speculated.
   HasHazard = MI.mayStore() && (OrigSeenLoad || OrigSeenStore);
-  HasHazard |= MI.mayLoad() || OrigSeenStore;
+  HasHazard |= MI.mayLoad() && OrigSeenStore;
 
   SeenNoObjLoad |= MI.mayLoad();
   SeenNoObjStore |= MI.mayStore();
@@ -660,7 +662,7 @@ getUnderlyingObjects(const MachineInstr &MI,
     ::getUnderlyingObjects(V, Objs);
 
     for (const Value *UValue : Objs) {
-      if (!isIdentifiedObject(V))
+      if (!isIdentifiedObject(UValue))
         return false;
 
       Objects.push_back(UValue);

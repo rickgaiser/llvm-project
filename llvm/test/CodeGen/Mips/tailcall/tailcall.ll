@@ -223,8 +223,8 @@ define internal fastcc i32 @caller9_1() nounwind noinline {
 entry:
 ; ALL-LABEL: caller9_1:
 ; PIC32: jalr $25
-; PIC32R6: jalrc $25
-; PIC32MM: jalr $25
+; PIC32R6: jalr $25
+; PIC32MM: jalrs16 $25
 ; PIC32MMR6: jalr $25
 ; STATIC32: jal
 ; STATIC32MMR6: balc
@@ -264,8 +264,8 @@ define i32 @caller11() nounwind noinline {
 entry:
 ; ALL-LABEL: caller11:
 ; PIC32: jalr $25
-; PIC32R6: jalrc $25
-; PIC32MM: jalr $25
+; PIC32R6: jalr $25
+; PIC32MM: jalrs16 $25
 ; PIC32MMR6: jalr $25
 ; STATIC32: jal
 ; STATIC32MMR6: balc

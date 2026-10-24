@@ -533,9 +533,8 @@ define <4 x i32> @fshr_v4i32_shift_by_bitwidth(<4 x i32> %x, <4 x i32> %y) {
 ; CHECK-NEXT:    lw $5, 28($sp)
 ; CHECK-NEXT:    lw $4, 24($sp)
 ; CHECK-NEXT:    lw $3, 20($sp)
-; CHECK-NEXT:    lw $2, 16($sp)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    lw $2, 16($sp)
   %f = call <4 x i32> @llvm.fshr.v4i32(<4 x i32> %x, <4 x i32> %y, <4 x i32> <i32 32, i32 32, i32 32, i32 32>)
   ret <4 x i32> %f
 }

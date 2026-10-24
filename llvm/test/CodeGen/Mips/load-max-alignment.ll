@@ -7,9 +7,8 @@
 define i32 @load_max_align(ptr %arg) nounwind {
 ; CHECK-LABEL: load_max_align:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    lw $2, 0($4)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    lw $2, 0($4)
 entry:
   %result = load i32, ptr %arg, align 4294967296
   ret i32 %result

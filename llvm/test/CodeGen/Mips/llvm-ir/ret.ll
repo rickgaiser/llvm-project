@@ -11,7 +11,7 @@
 ; RUN: llc -mtriple=mips   -mcpu=mips32r2 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR32,MTHC1,NOT-R6
 ; RUN: llc -mtriple=mips   -mcpu=mips32r3 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR32,MTHC1,NOT-R6
 ; RUN: llc -mtriple=mips   -mcpu=mips32r5 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR32,MTHC1,NOT-R6
-; RUN: llc -mtriple=mips   -mcpu=mips32r6 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR32,MTHC1,R6C
+; RUN: llc -mtriple=mips   -mcpu=mips32r6 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR32,MTHC1,R6C,R6C-DS
 ; RUN: llc -mtriple=mips64 -mcpu=mips4    -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR64,DMTC1,NOT-R6
 ; RUN: llc -mtriple=mips64 -mcpu=mips64   -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR64,DMTC1,NOT-R6
 ; RUN: llc -mtriple=mips64 -mcpu=mips64r2 -asm-show-inst < %s | FileCheck %s -check-prefixes=ALL,GPR64,DMTC1,NOT-R6
@@ -23,7 +23,7 @@
 ;        Force the delay slot filler off to check that the sequence jr $ra; nop is
 ;        turned into jic 0, $ra.
 
-; RUN: llc -mtriple=mips64 -mcpu=mips64r6 -asm-show-inst -disable-mips-delay-filler < %s | FileCheck %s -check-prefixes=ALL,GPR64,DMTC1,R6C
+; RUN: llc -mtriple=mips64 -mcpu=mips64r6 -asm-show-inst -disable-mips-delay-filler < %s | FileCheck %s -check-prefixes=ALL,GPR64,DMTC1,R6C,R6C-NODS
 
 define void @ret_void() {
 ; ALL-LABEL: ret_void:
@@ -180,7 +180,9 @@ define float @ret_float_0x3() {
 
 ; NOT-R6-DAG:    jr $ra # <MCInst #{{[0-9]+}} JR
 ; R6-DAG:        jr $ra # <MCInst #{{[0-9]+}} JALR
-; R6C-DAG:       jrc $ra # <MCInst #{{[0-9]+}} JIC
+; With the delay slot filler, the constant pool load fills the delay slot.
+; R6C-DS-DAG:    jr $ra # <MCInst #{{[0-9]+}} JALR
+; R6C-NODS-DAG:  jrc $ra # <MCInst #{{[0-9]+}} JIC
 
 ; float constants are written as double constants
   ret float 0x36b8000000000000
@@ -213,7 +215,9 @@ define double @ret_double_0x3() {
 
 ; NOT-R6-DAG:    jr $ra # <MCInst #{{[0-9]+}} JR
 ; R6-DAG:        jr $ra # <MCInst #{{[0-9]+}} JALR
-; R6C-DAG:       jrc $ra # <MCInst #{{[0-9]+}} JIC
+; With the delay slot filler, the constant pool load fills the delay slot.
+; R6C-DS-DAG:    jr $ra # <MCInst #{{[0-9]+}} JALR
+; R6C-NODS-DAG:  jrc $ra # <MCInst #{{[0-9]+}} JIC
 
   ret double 0x0000000000000003
 }

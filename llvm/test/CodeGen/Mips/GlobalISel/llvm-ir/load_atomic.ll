@@ -8,9 +8,8 @@
 define i8 @atomic_load_unordered_i8(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_unordered_i8:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lbu $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lbu $2, 0($4)
   %load = load atomic i8, ptr %ptr unordered, align 1
   ret i8 %load
 }
@@ -89,9 +88,8 @@ define i64 @atomic_load_unordered_i8_zext_i64(ptr %ptr) {
 define i16 @atomic_load_unordered_i16(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_unordered_i16:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lhu $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lhu $2, 0($4)
   %load = load atomic i16, ptr %ptr unordered, align 2
   ret i16 %load
 }
@@ -147,9 +145,8 @@ define i64 @atomic_load_unordered_i16_zext_i64(ptr %ptr) {
 define i32 @atomic_load_unordered_i32(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_unordered_i32:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lw $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lw $2, 0($4)
   %load = load atomic i32, ptr %ptr unordered, align 4
   ret i32 %load
 }
@@ -173,9 +170,8 @@ define i64 @atomic_load_unordered_i64(ptr %ptr) {
 define float @atomic_load_unordered_f32(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_unordered_f32:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lwc1 $f0, 64($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lwc1 $f0, 64($4)
   %gep = getelementptr inbounds float, ptr %ptr, i32 16
   %load = load atomic float, ptr %gep unordered, align 4
   ret float %load
@@ -205,9 +201,8 @@ define double @atomic_load_unordered_f64(ptr %ptr) {
 define ptr @atomic_load_unordered_p0i8(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_unordered_p0i8:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lw $2, 64($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lw $2, 64($4)
   %gep = getelementptr inbounds ptr, ptr %ptr, i32 16
   %load = load atomic ptr, ptr %gep unordered, align 4
   ret ptr %load
@@ -220,9 +215,8 @@ define ptr @atomic_load_unordered_p0i8(ptr %ptr) {
 define i8 @atomic_load_monotonic_i8(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_monotonic_i8:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lbu $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lbu $2, 0($4)
   %load = load atomic i8, ptr %ptr monotonic, align 1
   ret i8 %load
 }
@@ -301,9 +295,8 @@ define i64 @atomic_load_monotonic_i8_zext_i64(ptr %ptr) {
 define i16 @atomic_load_monotonic_i16(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_monotonic_i16:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lhu $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lhu $2, 0($4)
   %load = load atomic i16, ptr %ptr monotonic, align 2
   ret i16 %load
 }
@@ -359,9 +352,8 @@ define i64 @atomic_load_monotonic_i16_zext_i64(ptr %ptr) {
 define i32 @atomic_load_monotonic_i32(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_monotonic_i32:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lw $2, 0($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lw $2, 0($4)
   %load = load atomic i32, ptr %ptr monotonic, align 4
   ret i32 %load
 }
@@ -385,9 +377,8 @@ define i64 @atomic_load_monotonic_i64(ptr %ptr) {
 define float @atomic_load_monotonic_f32(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_monotonic_f32:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lwc1 $f0, 64($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lwc1 $f0, 64($4)
   %gep = getelementptr inbounds float, ptr %ptr, i32 16
   %load = load atomic float, ptr %gep monotonic, align 4
   ret float %load
@@ -417,9 +408,8 @@ define double @atomic_load_monotonic_f64(ptr %ptr) {
 define ptr @atomic_load_monotonic_p0i8(ptr %ptr) {
 ; MIPS32-LABEL: atomic_load_monotonic_p0i8:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lw $2, 64($4)
 ; MIPS32-NEXT:    jr $ra
-; MIPS32-NEXT:    nop
+; MIPS32-NEXT:    lw $2, 64($4)
   %gep = getelementptr inbounds ptr, ptr %ptr, i32 16
   %load = load atomic ptr, ptr %gep monotonic, align 4
   ret ptr %load

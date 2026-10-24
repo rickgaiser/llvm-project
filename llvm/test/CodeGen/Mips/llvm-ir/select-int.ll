@@ -174,13 +174,11 @@ entry:
   ; M2:     jr      $ra
   ; M2:     nop
   ; M2:     $[[BB0]]:
-  ; M2:     lw      $[[T1:[0-9]+]], 16($sp)
   ; M2:     bnez    $[[T0]], $[[BB2]]
-  ; M2:     nop
+  ; M2:     lw      $2, 16($sp)
   ; M2:     $[[BB1]]:
-  ; M2:     lw      $[[T2:[0-9]+]], 20($sp)
   ; M2:     jr      $ra
-  ; M2:     nop
+  ; M2:     lw      $3, 20($sp)
 
   ; CMOV-32:    andi    $[[T0:[0-9]+]], $4, 1
   ; CMOV-32:    lw      $2, 16($sp)

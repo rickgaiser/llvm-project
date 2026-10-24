@@ -40,9 +40,8 @@ define double @tst_select_i1_double(i1 signext %s, double %x, double %y) {
 ; M2-NEXT:    bnez $1, $BB0_2
 ; M2-NEXT:    nop
 ; M2-NEXT:  # %bb.1: # %entry
-; M2-NEXT:    ldc1 $f0, 16($sp)
 ; M2-NEXT:    jr $ra
-; M2-NEXT:    nop
+; M2-NEXT:    ldc1 $f0, 16($sp)
 ; M2-NEXT:  $BB0_2:
 ; M2-NEXT:    mtc1 $7, $f0
 ; M2-NEXT:    nop

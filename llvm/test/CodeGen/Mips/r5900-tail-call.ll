@@ -243,9 +243,8 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; R5900-NEXT:    addiu $2, $2, %lo(ram)
 ; R5900-NEXT:    sll $1, $1, 1
 ; R5900-NEXT:    addu $1, $2, $1
-; R5900-NEXT:    lhu $2, 0($1)
 ; R5900-NEXT:    jr $ra
-; R5900-NEXT:    nop
+; R5900-NEXT:    lhu $2, 0($1)
 ; R5900-NEXT:  .LBB4_4: # %sw.a
 ; R5900-NEXT:    j ha
 ; R5900-NEXT:    sll $4, $4, 0
@@ -278,9 +277,8 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; NOTAIL-NEXT:    addiu $2, $2, %lo(ram)
 ; NOTAIL-NEXT:    sll $1, $1, 1
 ; NOTAIL-NEXT:    addu $1, $2, $1
-; NOTAIL-NEXT:    lhu $2, 0($1)
 ; NOTAIL-NEXT:    j .LBB4_7
-; NOTAIL-NEXT:    nop
+; NOTAIL-NEXT:    lhu $2, 0($1)
 ; NOTAIL-NEXT:  .LBB4_4: # %sw.a
 ; NOTAIL-NEXT:    jal ha
 ; NOTAIL-NEXT:    sll $4, $4, 0
@@ -382,9 +380,8 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; MIPS64-NEXT:    andi $2, $4, 65535
 ; MIPS64-NEXT:    sll $2, $2, 1
 ; MIPS64-NEXT:    addu $1, $1, $2
-; MIPS64-NEXT:    lhu $2, 0($1)
 ; MIPS64-NEXT:    j .LBB4_7
-; MIPS64-NEXT:    nop
+; MIPS64-NEXT:    lhu $2, 0($1)
 ; MIPS64-NEXT:  .LBB4_4: # %sw.a
 ; MIPS64-NEXT:    jal ha
 ; MIPS64-NEXT:    sll $4, $4, 0

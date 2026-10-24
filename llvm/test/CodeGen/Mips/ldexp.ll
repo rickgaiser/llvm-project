@@ -71,11 +71,11 @@ define <4 x float> @ldexp_v4f32(<4 x float> %val, <4 x i32> %exp) nounwind {
 ; SOFT-NEXT:    sw $17, 20($sp) # 4-byte Folded Spill
 ; SOFT-NEXT:    sw $16, 16($sp) # 4-byte Folded Spill
 ; SOFT-NEXT:    move $16, $7
+; SOFT-NEXT:    move $17, $6
 ; SOFT-NEXT:    move $18, $4
 ; SOFT-NEXT:    lw $4, 60($sp)
-; SOFT-NEXT:    lw $5, 76($sp)
 ; SOFT-NEXT:    jal ldexpf
-; SOFT-NEXT:    move $17, $6
+; SOFT-NEXT:    lw $5, 76($sp)
 ; SOFT-NEXT:    lw $19, 64($sp)
 ; SOFT-NEXT:    lw $20, 68($sp)
 ; SOFT-NEXT:    lw $5, 72($sp)
