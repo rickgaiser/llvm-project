@@ -16,6 +16,7 @@
 #include "VUSelectionDAGInfo.h"
 #include "VUSubtarget.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IntrinsicsVU.h"
@@ -1042,14 +1043,17 @@ static void addAccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
 /// evaluation order.
 static void collectAccTerms(SDValue V, SelectionDAG &DAG,
                             SmallVectorImpl<AccTerm> &Terms) {
-  SDValue L = V.getOperand(0), R = V.getOperand(1);
-  if (V.getOpcode() == ISD::FADD && !isAccChain(L) && isAccChain(R))
-    std::swap(L, R);
-  if (isAccChain(L))
-    collectAccTerms(L, DAG, Terms);
-  else
-    addAccLeaf(L, /*Neg=*/false, DAG, Terms);
-  addAccLeaf(R, V.getOpcode() == ISD::FSUB, DAG, Terms);
+  SumTerms S;
+  collectSumTerms(
+      V,
+      [&](SDValue X) -> std::optional<bool> {
+        if (X != V && !isAccChain(X))
+          return std::nullopt;
+        return X.getOpcode() == ISD::FSUB;
+      },
+      /*Flatten=*/false, S);
+  for (const SumTerm &T : S.Terms)
+    addAccLeaf(T.V, T.Neg, DAG, Terms);
 }
 
 /// Returns true if every FADD and FSUB of the chain may be reassociated.

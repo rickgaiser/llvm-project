@@ -32,6 +32,7 @@
 
 #include "Mips.h"
 #include "MipsInstrInfo.h"
+#include "MipsR5900Sums.h"
 #include "MipsSubtarget.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -96,8 +97,6 @@ private:
   Register One;
 
   bool isNode(Register Reg, const MachineBasicBlock &MBB) const;
-  bool collect(Register Reg, bool Neg, const MachineBasicBlock &MBB,
-               Chain &C) const;
   bool buildChain(MachineInstr &Root, Chain &C) const;
   void transformChain(MachineBasicBlock &MBB, MachineInstr &Root, Chain &C);
   bool optimizeBasicBlock(MachineBasicBlock &MBB);
@@ -154,71 +153,50 @@ static bool isZeroConstant(const MachineInstr *MI) {
          MI->getOperand(1).getReg() == Mips::R0;
 }
 
-/// Collects the terms of the value \p Reg, which the sum adds (\p Neg false)
-/// or subtracts, depth first with the operand that is a sum first.
-bool MipsR5900FPUAccChain::collect(Register Reg, bool Neg,
-                                   const MachineBasicBlock &MBB,
-                                   Chain &C) const {
-  MachineInstr *Def = MRI->getVRegDef(Reg);
-  if (isNode(Reg, MBB)) {
-    C.Nodes.push_back(Def);
-    C.Reassoc &= Def->getFlag(MachineInstr::FmReassoc);
-    Register L = Def->getOperand(1).getReg(), R = Def->getOperand(2).getReg();
-    bool Sub = Def->getOpcode() == Mips::FSUB_S;
-    // +0.0 + t is t, up to the sign of a zero.
-    if (!Sub && Def->getFlag(MachineInstr::FmNsz)) {
-      for (auto [Zero, Other] : {std::pair(L, R), std::pair(R, L)})
-        if (isZeroConstant(MRI->getVRegDef(Zero))) {
-          C.Zeros.push_back(MRI->getVRegDef(Zero));
-          return collect(Other, Neg, MBB, C);
-        }
-    }
-    bool LNode = isNode(L, MBB), RNode = isNode(R, MBB);
-    if (LNode && RNode)
-      C.Linear = false;
-    if (!LNode && RNode) {
-      // t - (sum) negates the sum; an add is commutative.
-      if (Sub)
-        C.Linear = false;
-      else
-        std::swap(L, R);
-    }
-    return collect(L, Neg, MBB, C) && collect(R, Neg != Sub, MBB, C);
-  }
-  Term T;
-  T.Neg = Neg;
-  if (Def && Def->getParent() == &MBB && Def->getOpcode() == Mips::FMUL_S &&
-      MRI->hasOneNonDBGUse(Reg)) {
-    T.A = Def->getOperand(1).getReg();
-    T.B = Def->getOperand(2).getReg();
-    T.FMul = Def;
-  } else {
-    if (MRI->getRegClass(Reg) != &Mips::FGR32RegClass)
-      return false;
-    T.A = Reg;
-  }
-  C.Terms.push_back(T);
-  return true;
-}
-
 bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root, Chain &C) const {
   const MachineBasicBlock &MBB = *Root.getParent();
-  // The root is a node whatever reads it.
-  C.Nodes.push_back(&Root);
-  C.Reassoc = Root.getFlag(MachineInstr::FmReassoc);
-  Register L = Root.getOperand(1).getReg(), R = Root.getOperand(2).getReg();
-  bool Sub = Root.getOpcode() == Mips::FSUB_S;
-  bool LNode = isNode(L, MBB), RNode = isNode(R, MBB);
-  if (LNode && RNode)
-    C.Linear = false;
-  if (!LNode && RNode) {
-    if (Sub)
-      C.Linear = false;
-    else
-      std::swap(L, R);
+  Register RootReg = Root.getOperand(0).getReg();
+  MachineSumTerms S;
+  collectMachineSumTerms(
+      RootReg, *MRI,
+      [&](Register Reg) -> std::optional<MachineSumNode> {
+        // The root is a node whatever reads it.
+        if (Reg != RootReg && !isNode(Reg, MBB))
+          return std::nullopt;
+        const MachineInstr *Def = MRI->getVRegDef(Reg);
+        return MachineSumNode{Def->getOperand(1).getReg(),
+                              Def->getOperand(2).getReg(),
+                              Def->getOpcode() == Mips::FSUB_S};
+      },
+      [](Register) { return false; }, S);
+  C.Nodes.assign(S.Nodes.begin(), S.Nodes.end());
+  C.Linear = S.Linear;
+  C.Reassoc = S.Reassoc;
+  // +0.0 + t is t, up to the sign of a zero.
+  bool Nsz = all_of(S.Nodes, [](const MachineInstr *MI) {
+    return MI->getFlag(MachineInstr::FmNsz);
+  });
+  for (const MachineSumTerm &ST : S.Terms) {
+    MachineInstr *Def = MRI->getVRegDef(ST.Reg);
+    if (Nsz && !ST.Neg && isZeroConstant(Def)) {
+      C.Zeros.push_back(Def);
+      continue;
+    }
+    // A product that only the sum reads, or a plain value.
+    Term T;
+    T.Neg = ST.Neg;
+    if (Def && Def->getParent() == &MBB && Def->getOpcode() == Mips::FMUL_S &&
+        MRI->hasOneNonDBGUse(ST.Reg)) {
+      T.A = Def->getOperand(1).getReg();
+      T.B = Def->getOperand(2).getReg();
+      T.FMul = Def;
+    } else {
+      if (MRI->getRegClass(ST.Reg) != &Mips::FGR32RegClass)
+        return false;
+      T.A = ST.Reg;
+    }
+    C.Terms.push_back(T);
   }
-  if (!collect(L, false, MBB, C) || !collect(R, Sub, MBB, C))
-    return false;
   if (!C.Linear && !C.Reassoc)
     return false;
 

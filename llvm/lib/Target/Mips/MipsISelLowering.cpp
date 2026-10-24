@@ -41,6 +41,7 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
+#include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/CodeGen/TargetFrameLowering.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
@@ -1073,54 +1074,36 @@ struct WideningMulOp {
   bool IsSubtract; // true = subtract this product, false = add
 };
 
-/// Recursively collect widening multiplies from an add/sub tree
-/// Negate parameter tracks whether we're in a subtracted subtree
+/// Collect the widening multiplies of an add/sub tree, which must all be
+/// signed or all unsigned. A value that the tree adds twice is two terms.
 static bool collectWideningMuls(SDValue V, bool &IsSigned,
-                                SmallVectorImpl<WideningMulOp> &Muls,
-                                SmallPtrSetImpl<SDNode *> &Visited,
-                                bool Negate = false) {
-  // Avoid infinite loops
-  if (!Visited.insert(V.getNode()).second)
-    return true;
-
-  SDValue LHS, RHS;
-  bool MulSigned;
-  if (isWideningMul(V, MulSigned, LHS, RHS)) {
+                                SmallVectorImpl<WideningMulOp> &Muls) {
+  SumTerms S;
+  collectSumTerms(
+      V,
+      [](SDValue X) -> std::optional<bool> {
+        if (X.getOpcode() == ISD::ADD)
+          return false;
+        if (X.getOpcode() == ISD::SUB)
+          return true;
+        return std::nullopt;
+      },
+      /*Flatten=*/true, S);
+  for (const SumTerm &T : S.Terms) {
+    SDValue LHS, RHS;
+    bool MulSigned;
+    if (!isWideningMul(T.V, MulSigned, LHS, RHS))
+      return false;
     // First multiply sets signedness, others must match
-    if (Muls.empty()) {
+    if (Muls.empty())
       IsSigned = MulSigned;
-    } else if (IsSigned != MulSigned) {
-      return false; // Mixed signed/unsigned
-    }
-    Muls.push_back({LHS, RHS, Negate});
-    return true;
+    else if (IsSigned != MulSigned)
+      return false;
+    Muls.push_back({LHS, RHS, T.Neg});
   }
-
-  if (V.getOpcode() == ISD::ADD) {
-    return collectWideningMuls(V.getOperand(0), IsSigned, Muls, Visited,
-                               Negate) &&
-           collectWideningMuls(V.getOperand(1), IsSigned, Muls, Visited,
-                               Negate);
-  }
-
-  if (V.getOpcode() == ISD::SUB) {
-    // For (A - B): A keeps current negate state, B gets flipped
-    // Note: Only signed has PMSUBW, so reject unsigned subtractions
-    return collectWideningMuls(V.getOperand(0), IsSigned, Muls, Visited,
-                               Negate) &&
-           collectWideningMuls(V.getOperand(1), IsSigned, Muls, Visited,
-                               !Negate);
-  }
-
-  return false;
+  return true;
 }
 
-/// R5900 widening multiply-add/sub chain combine
-/// Transforms: (add (sext i32 a to i64) * (sext i32 b to i64),
-///                  (sext i32 c to i64) * (sext i32 d to i64))
-/// To: PMULTW + PMADDW chain using HI:LO accumulator
-/// Also handles subtract patterns like (a*b) - (c*d) using PMSUBW.
-/// Also handles AssertSext patterns from signext function parameters.
 static SDValue performR5900WideningMADDCombine(SDNode *N, SelectionDAG &DAG,
                                                const MipsSubtarget &Subtarget) {
   // Only handle i64 adds/subs
@@ -1129,10 +1112,9 @@ static SDValue performR5900WideningMADDCombine(SDNode *N, SelectionDAG &DAG,
 
   // Collect all widening multiplies in the add/sub tree
   SmallVector<WideningMulOp, 8> Muls;
-  SmallPtrSet<SDNode *, 8> Visited;
   bool IsSigned = false;
 
-  if (!collectWideningMuls(SDValue(N, 0), IsSigned, Muls, Visited))
+  if (!collectWideningMuls(SDValue(N, 0), IsSigned, Muls))
     return SDValue();
 
   // Need at least 2 multiplies to benefit from chaining

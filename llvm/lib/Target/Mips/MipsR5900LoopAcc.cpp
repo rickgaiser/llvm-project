@@ -46,6 +46,7 @@
 
 #include "Mips.h"
 #include "MipsInstrInfo.h"
+#include "MipsR5900Sums.h"
 #include "MipsSubtarget.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -57,7 +58,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
-#include <functional>
 
 using namespace llvm;
 
@@ -217,70 +217,47 @@ bool MipsR5900LoopAcc::collectTerms(const SimpleLoop &L, const LoopSum &S,
                                     SmallVectorImpl<MachineInstr *> &Dead,
                                     bool &Reassoc) const {
   Register PhiReg = S.Phi->getOperand(0).getReg();
-  bool AllReassoc = true;
-  Reassoc = false;
-  bool FoundPhi = false;
-  // A value of the sum: an add or subtract in the loop that only the sum
-  // reads, or the PHI.
-  auto IsSumNode = [&](Register Reg) {
-    if (Reg == PhiReg)
-      return true;
-    MachineInstr *Def = MRI->getVRegDef(Reg);
-    Register L0, R0;
-    bool N0;
-    return Def && Def->getParent() == L.Body && Ops.IsAdd(*Def, L0, R0, N0) &&
-           (Reg == S.Next || MRI->hasOneNonDBGUse(Reg));
-  };
-  // Depth first, left operand first: the order of the evaluation for a
-  // chain (s + t1) + t2.
-  std::function<bool(Register, bool)> Walk = [&](Register Reg, bool Neg) {
-    if (Reg == PhiReg) {
-      // ACC holds s, not -s.
-      if (Neg || FoundPhi)
-        return false;
-      FoundPhi = true;
-      return true;
-    }
-    MachineInstr *Def = MRI->getVRegDef(Reg);
-    Register L0, R0;
-    bool N0;
-    if (IsSumNode(Reg)) {
-      Ops.IsAdd(*Def, L0, R0, N0);
-      AllReassoc &= Def->getFlag(MachineInstr::FmReassoc);
-      Dead.push_back(Def);
-      // A chain node has a leaf as one operand. The sum is read first by
-      // the add (either side: an add is commutative) or the subtract (left).
-      bool LSum = IsSumNode(L0), RSum = IsSumNode(R0);
-      if (LSum && RSum)
-        Reassoc = true;
-      if (!LSum && RSum) {
-        if (N0)
-          Reassoc = true;
-        else
-          std::swap(L0, R0);
-      }
-      return Walk(L0, Neg) && Walk(R0, Neg != N0);
-    }
-    // A leaf: a product that only the sum reads, or a plain value.
-    if (!FoundPhi)
-      Reassoc = true;
+  MachineSumTerms Sum;
+  collectMachineSumTerms(
+      S.Next, *MRI,
+      [&](Register Reg) -> std::optional<MachineSumNode> {
+        // An add or subtract in the loop that only the sum reads.
+        MachineInstr *Def = MRI->getVRegDef(Reg);
+        MachineSumNode N;
+        if (!Def || Def->getParent() != L.Body ||
+            !Ops.IsAdd(*Def, N.L, N.R, N.Sub) ||
+            (Reg != S.Next && !MRI->hasOneNonDBGUse(Reg)))
+          return std::nullopt;
+        return N;
+      },
+      [&](Register Reg) { return Reg == PhiReg; }, Sum);
+  // ACC holds s, not -s, once.
+  auto IsPhi = [&](const MachineSumTerm &T) { return T.Reg == PhiReg; };
+  if (count_if(Sum.Terms, IsPhi) != 1 || find_if(Sum.Terms, IsPhi)->Neg)
+    return false;
+  // Accumulated from s on, the terms must follow s in the order of the
+  // evaluation, or be reassociated.
+  Reassoc = !Sum.Linear || Sum.Terms[0].Reg != PhiReg;
+  if (Reassoc && !Sum.Reassoc && !Ops.Associative)
+    return false;
+  Dead.append(Sum.Nodes.begin(), Sum.Nodes.end());
+  for (const MachineSumTerm &ST : Sum.Terms) {
+    if (ST.Reg == PhiReg)
+      continue;
+    // A product that only the sum reads, or a plain value.
     Term T;
-    T.Neg = Neg;
-    if (Def && Def->getParent() == L.Body && MRI->hasOneNonDBGUse(Reg) &&
+    T.Neg = ST.Neg;
+    MachineInstr *Def = MRI->getVRegDef(ST.Reg);
+    if (Def && Def->getParent() == L.Body && MRI->hasOneNonDBGUse(ST.Reg) &&
         Ops.IsMul(*Def, T)) {
       Dead.push_back(Def);
     } else {
-      T.A = Reg;
+      T.A = ST.Reg;
       T.B = Register();
     }
     Terms.push_back(T);
-    return true;
-  };
-  if (!Walk(S.Next, false) || !FoundPhi || Terms.empty())
-    return false;
-  if (Reassoc && !AllReassoc && !Ops.Associative)
-    return false;
-  return true;
+  }
+  return !Terms.empty();
 }
 
 /// Finds the tree of adds in the exit block that adds the values \p Leaves,

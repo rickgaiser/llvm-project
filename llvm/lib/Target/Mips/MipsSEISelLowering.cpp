@@ -25,6 +25,7 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
@@ -1467,15 +1468,19 @@ static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
   if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
     return SDValue();
   SDLoc DL(N);
+  SumTerms S;
+  collectSumTerms(
+      SDValue(N, 0),
+      [&](SDValue V) -> std::optional<bool> {
+        if (V.getOpcode() == ISD::ADD && (V.getNode() == N || V.hasOneUse()))
+          return false;
+        return std::nullopt;
+      },
+      /*Flatten=*/true, S);
   SmallVector<std::pair<SDValue, SDValue>, 32> Products;
   SmallVector<SDValue, 4> Others;
-  SmallVector<SDValue, 32> Worklist = {N->getOperand(0), N->getOperand(1)};
-  while (!Worklist.empty()) {
-    SDValue V = Worklist.pop_back_val();
-    if (V.getOpcode() == ISD::ADD && V.hasOneUse()) {
-      Worklist.append({V.getOperand(0), V.getOperand(1)});
-      continue;
-    }
+  for (const SumTerm &T : S.Terms) {
+    SDValue V = T.V;
     if (V.getOpcode() == ISD::MUL && V.hasOneUse())
       if (SDValue A = narrowR5900PMULTHOperand(V.getOperand(0), DL, DAG))
         if (SDValue B = narrowR5900PMULTHOperand(V.getOperand(1), DL, DAG)) {
@@ -1486,9 +1491,6 @@ static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
   }
   if (Products.size() < 2)
     return SDValue();
-
-  // The worklist visits the terms of a chain of adds last to first.
-  std::reverse(Products.begin(), Products.end());
   SDNode *Acc = nullptr;
   for (auto [A, B] : Products) {
     SmallVector<SDValue, 3> Ops = {A, B};
@@ -2133,14 +2135,17 @@ static void addVU0AccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
 /// evaluation order.
 static void collectVU0AccTerms(SDValue V, SelectionDAG &DAG,
                                SmallVectorImpl<VU0AccTerm> &Terms) {
-  SDValue L = V.getOperand(0), R = V.getOperand(1);
-  if (V.getOpcode() == ISD::FADD && !isVU0AccChain(L) && isVU0AccChain(R))
-    std::swap(L, R);
-  if (isVU0AccChain(L))
-    collectVU0AccTerms(L, DAG, Terms);
-  else
-    addVU0AccLeaf(L, /*Neg=*/false, DAG, Terms);
-  addVU0AccLeaf(R, V.getOpcode() == ISD::FSUB, DAG, Terms);
+  SumTerms S;
+  collectSumTerms(
+      V,
+      [&](SDValue X) -> std::optional<bool> {
+        if (X != V && !isVU0AccChain(X))
+          return std::nullopt;
+        return X.getOpcode() == ISD::FSUB;
+      },
+      /*Flatten=*/false, S);
+  for (const SumTerm &T : S.Terms)
+    addVU0AccLeaf(T.V, T.Neg, DAG, Terms);
 }
 
 /// Whether \p V is a +0.0 vector, which an ACC chain leaves out.
