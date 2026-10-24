@@ -466,6 +466,13 @@ bool MachineCSEImpl::isProfitableToCSE(Register CSReg, Register Reg,
   }
   if (!MayIncreasePressure) return true;
 
+  // A register class with a single register, such as an accumulator, holds
+  // one value at a time. The reused value would live over the other values
+  // of the class, and the register allocator would have to move it to
+  // another class and back.
+  if (Reg.isVirtual() && MRI->getRegClass(Reg)->getNumRegs() == 1)
+    return false;
+
   // Heuristics #1: Don't CSE "cheap" computation if the def is not local or in
   // an immediate predecessor. We don't want to increase register pressure and
   // end up causing other computation to be spilled.
