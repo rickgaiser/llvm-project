@@ -25,8 +25,8 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
+#include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetLowering.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
@@ -1459,6 +1459,51 @@ static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
   return readR5900PMULTHResult(Mul, DL, DAG);
 }
 
+/// R5900: a tree of i32 adds with two or more multiplies among its terms to
+/// MULT of the first and MADD of the others, which accumulate in HI and LO
+/// (an ACC64 value), and adds of the other terms. This saves an add per
+/// product, and the products wait for each other in the multiplier (MADD
+/// reads the sum 2 cycles late) instead of in adds.
+static SDValue performR5900MulAddCombine(SDNode *N, SelectionDAG &DAG,
+                                         TargetLowering::DAGCombinerInfo &DCI,
+                                         const MipsSubtarget &Subtarget) {
+  // After legalization, as instruction selection: multiplies by constants
+  // are shifts and adds by then.
+  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::i32 ||
+      !DCI.isAfterLegalizeDAG())
+    return SDValue();
+  SumTerms S;
+  collectSumTerms(
+      SDValue(N, 0),
+      [&](SDValue V) -> std::optional<bool> {
+        if (V.getOpcode() == ISD::ADD && (V.getNode() == N || V.hasOneUse()))
+          return false;
+        return std::nullopt;
+      },
+      /*Flatten=*/true, S);
+  SmallVector<SDValue, 8> Products, Others;
+  for (const SumTerm &T : S.Terms)
+    (T.V.getOpcode() == ISD::MUL && T.V.hasOneUse() ? Products : Others)
+        .push_back(T.V);
+  if (Products.size() < 2)
+    return SDValue();
+
+  SDLoc DL(N);
+  SDNode *Acc = nullptr;
+  for (SDValue Mul : Products) {
+    SmallVector<SDValue, 3> Ops = {Mul.getOperand(0), Mul.getOperand(1)};
+    if (Acc)
+      Ops.push_back(SDValue(Acc, 1));
+    Acc = DAG.getMachineNode(Acc ? Mips::PseudoR5900MADDAcc
+                                 : Mips::PseudoR5900MULTAcc,
+                             DL, DAG.getVTList(MVT::i32, MVT::Untyped), Ops);
+  }
+  SDValue Sum(Acc, 0);
+  for (SDValue Other : Others)
+    Sum = DAG.getNode(ISD::ADD, DL, MVT::i32, Sum, Other);
+  return Sum;
+}
+
 /// R5900: a tree of v8i32 adds with two or more multiplies of values that fit
 /// in 16 bits among its terms to PMULTH of the first and PMADDH of the
 /// others, which accumulate in HI and LO, and adds of the other terms. The
@@ -2568,6 +2613,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::ADD:
     Val = performR5900ADDCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performR5900MulAddCombine(N, DAG, DCI, Subtarget);
     break;
   case ISD::MUL:
     if (SDValue V = performR5900MULCombine(N, DAG, Subtarget))
@@ -2692,8 +2739,6 @@ MipsSETargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
     return emitFEXP2_W_1(MI, BB);
   case Mips::FEXP2_D_1_PSEUDO:
     return emitFEXP2_D_1(MI, BB);
-  case Mips::PseudoR5900MulMulAdd:
-    return emitR5900MulMulAdd(MI, BB);
   }
 }
 
@@ -5737,41 +5782,6 @@ MachineBasicBlock *MipsSETargetLowering::emitMSACBranchPseudo(
 
 // Emit the R5900 multiply-add chain pseudo instruction.
 //
-// PseudoR5900MulMulAdd $rd, $a, $b, $c, $d
-// =>
-// R5900_MULT $temp, $a, $b   # temp = a*b, also sets HI:LO = a*b
-// R5900_MADD $rd, $c, $d     # rd = LO + c*d = a*b + c*d
-//
-// This optimization saves one instruction compared to two separate
-// multiplies followed by an add (MULT + MULT + ADDU -> MULT + MADD).
-MachineBasicBlock *
-MipsSETargetLowering::emitR5900MulMulAdd(MachineInstr &MI,
-                                         MachineBasicBlock *BB) const {
-  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
-  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
-  DebugLoc DL = MI.getDebugLoc();
-
-  // Get operands: $rd = (a * b) + (c * d)
-  Register Rd = MI.getOperand(0).getReg();
-  Register A = MI.getOperand(1).getReg();
-  Register B = MI.getOperand(2).getReg();
-  Register C = MI.getOperand(3).getReg();
-  Register D = MI.getOperand(4).getReg();
-
-  // Create a temp register for the first multiply result (unused, but needed)
-  Register Temp = RegInfo.createVirtualRegister(&Mips::GPR32RegClass);
-
-  // Emit: R5900_MULT $temp, $a, $b
-  // This computes a*b, stores low 32 bits in $temp, and sets HI:LO = a*b
-  BuildMI(*BB, MI, DL, TII->get(Mips::R5900_MULT), Temp).addReg(A).addReg(B);
-
-  // Emit: R5900_MADD $rd, $c, $d
-  // This computes rd = LO + c*d = a*b + c*d (using HI:LO set by MULT)
-  BuildMI(*BB, MI, DL, TII->get(Mips::R5900_MADD), Rd).addReg(C).addReg(D);
-
-  MI.eraseFromParent();
-  return BB;
-}
 
 // Emit the COPY_FW pseudo instruction.
 //

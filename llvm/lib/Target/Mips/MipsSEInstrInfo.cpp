@@ -457,6 +457,20 @@ bool MipsSEInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
   switch (MI.getDesc().getOpcode()) {
   default:
     return false;
+  case Mips::PseudoR5900MULTAcc:
+  case Mips::PseudoR5900MADDAcc: {
+    // A dead rd is $zero.
+    MachineOperand Rd = MI.getOperand(0);
+    if (Rd.isDead())
+      Rd = MachineOperand::CreateReg(Mips::R0, /*isDef=*/true);
+    BuildMI(MBB, MI, MI.getDebugLoc(),
+            get(MI.getOpcode() == Mips::PseudoR5900MULTAcc ? Mips::R5900_MULT
+                                                           : Mips::R5900_MADD))
+        .add(Rd)
+        .add(MI.getOperand(2))
+        .add(MI.getOperand(3));
+    break;
+  }
   case Mips::PseudoPMTHILO: {
     const DebugLoc &DL = MI.getDebugLoc();
     BuildMI(MBB, MI, DL, get(Mips::PMTLO)).add(MI.getOperand(1));

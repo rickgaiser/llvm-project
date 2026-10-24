@@ -576,3 +576,120 @@ loop:
 exit:
   ret <8 x i32> %s1
 }
+
+; INT: s += a[i] * b[i] with i32, MADD on HI and LO (ACC64), read once with
+; MFLO after the loop.
+define i32 @int_dot(ptr %a, ptr %b, i32 %n) {
+; CHECK-LABEL: int_dot:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    sll $3, $5, 0
+; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:    mtlo $zero
+; CHECK-NEXT:    mthi $zero
+; CHECK-NEXT:    addiu $1, $zero, 0
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB7_1: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lw $1, 0($4)
+; CHECK-NEXT:    addiu $2, $2, -1
+; CHECK-NEXT:    lw $5, 0($3)
+; CHECK-NEXT:    addiu $3, $3, 4
+; CHECK-NEXT:    addiu $4, $4, 4
+; CHECK-NEXT:    madd $zero, $1, $5
+; CHECK-NEXT:    bnez $2, .LBB7_1
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.2: # %exit
+; CHECK-NEXT:    mflo $2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+;
+; OFF-LABEL: int_dot:
+; OFF:       # %bb.0: # %entry
+; OFF-NEXT:    sll $3, $6, 0
+; OFF-NEXT:    sll $5, $5, 0
+; OFF-NEXT:    sll $4, $4, 0
+; OFF-NEXT:    addiu $2, $zero, 0
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB7_1: # %loop
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lw $1, 0($4)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    lw $6, 0($5)
+; OFF-NEXT:    addiu $5, $5, 4
+; OFF-NEXT:    addiu $4, $4, 4
+; OFF-NEXT:    mult $1, $1, $6
+; OFF-NEXT:    bnez $3, .LBB7_1
+; OFF-NEXT:    addu $2, $2, $1
+; OFF-NEXT:  # %bb.2: # %exit
+; OFF-NEXT:    jr $ra
+; OFF-NEXT:    nop
+entry:
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %s = phi i32 [ 0, %entry ], [ %s1, %loop ]
+  %pa = getelementptr i32, ptr %a, i32 %i
+  %pb = getelementptr i32, ptr %b, i32 %i
+  %x = load i32, ptr %pa
+  %y = load i32, ptr %pb
+  %m = mul i32 %x, %y
+  %s1 = add i32 %s, %m
+  %i1 = add i32 %i, 1
+  %c = icmp ne i32 %i1, %n
+  br i1 %c, label %loop, label %exit
+exit:
+  ret i32 %s1
+}
+
+; INT: a sum without products stays an ADDU, which is faster than a MADD.
+define i32 @int_sum(ptr %a, i32 %n) {
+; CHECK-LABEL: int_sum:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    sll $3, $5, 0
+; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:    addiu $2, $zero, 0
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB8_1: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lw $1, 0($4)
+; CHECK-NEXT:    addiu $3, $3, -1
+; CHECK-NEXT:    addiu $4, $4, 4
+; CHECK-NEXT:    addu $2, $2, $1
+; CHECK-NEXT:    bnez $3, .LBB8_1
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.2: # %exit
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+;
+; OFF-LABEL: int_sum:
+; OFF:       # %bb.0: # %entry
+; OFF-NEXT:    sll $3, $5, 0
+; OFF-NEXT:    sll $4, $4, 0
+; OFF-NEXT:    addiu $2, $zero, 0
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB8_1: # %loop
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lw $1, 0($4)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    addiu $4, $4, 4
+; OFF-NEXT:    addu $2, $2, $1
+; OFF-NEXT:    bnez $3, .LBB8_1
+; OFF-NEXT:    nop
+; OFF-NEXT:  # %bb.2: # %exit
+; OFF-NEXT:    jr $ra
+; OFF-NEXT:    nop
+entry:
+  br label %loop
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %s = phi i32 [ 0, %entry ], [ %s1, %loop ]
+  %pa = getelementptr i32, ptr %a, i32 %i
+  %x = load i32, ptr %pa
+  %s1 = add i32 %s, %x
+  %i1 = add i32 %i, 1
+  %c = icmp ne i32 %i1, %n
+  br i1 %c, label %loop, label %exit
+exit:
+  ret i32 %s1
+}

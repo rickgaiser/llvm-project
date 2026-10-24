@@ -142,12 +142,15 @@ def R5900ReadAcc : SchedReadAdvance<2, [R5900WriteMul, R5900WriteMulHILO]>;
 // HI and LO are implicit defs, so they each need their own write.
 def : InstRW<[R5900WriteMul, R5900WriteMulHILO],
              (instrs MULT, MULTu, PseudoMULT, PseudoMULTu,
-              PseudoR5900MulMulAdd)>;
+              PseudoR5900MULTAcc)>;
 def : InstRW<[R5900WriteMul, R5900WriteMulHILO, R5900WriteMulHILO],
              (instrs R5900_MULT, R5900_MULTU)>;
 def : InstRW<[R5900WriteMul, R5900WriteMulHILO, R5900WriteMulHILO,
               ReadDefault, ReadDefault, R5900ReadAcc, R5900ReadAcc],
              (instrs R5900_MADD, R5900_MADDU)>;
+def : InstRW<[R5900WriteMul, R5900WriteMulHILO, ReadDefault, ReadDefault,
+              R5900ReadAcc],
+             (instrs PseudoR5900MADDAcc)>;
 def : InstRW<[R5900WriteDiv, R5900WriteDivHILO],
              (instrs SDIV, UDIV, PseudoSDIV, PseudoUDIV)>;
 def : InstRW<[R5900WriteMoveHILO], (instrs MFHI, MFLO, MTHI, MTLO, PseudoMFHI,

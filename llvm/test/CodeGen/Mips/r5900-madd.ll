@@ -24,9 +24,9 @@ define i32 @test_chain_madd(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    sll $2, $4, 0
-; CHECK-NEXT:    mult $1, $2, $1
-; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    mult $zero, $2, $1
 ; CHECK-NEXT:    sll $1, $7, 0
+; CHECK-NEXT:    sll $2, $6, 0
 ; CHECK-NEXT:    madd $2, $2, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -42,9 +42,9 @@ define i32 @test_chain_madd_commuted(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK:       # %bb.0:
 ; CHECK-NEXT:    sll $1, $7, 0
 ; CHECK-NEXT:    sll $2, $6, 0
-; CHECK-NEXT:    mult $1, $2, $1
-; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    mult $zero, $2, $1
 ; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
 ; CHECK-NEXT:    madd $2, $2, $1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -58,17 +58,17 @@ define i32 @test_chain_madd_commuted(i32 %a, i32 %b, i32 %c, i32 %d) {
 define i32 @test_triple_madd(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
 ; CHECK-LABEL: test_triple_madd:
 ; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    mult $zero, $2, $1
+; CHECK-NEXT:    sll $1, $7, 0
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    madd $zero, $2, $1
 ; CHECK-NEXT:    sll $1, $9, 0
 ; CHECK-NEXT:    sll $2, $8, 0
-; CHECK-NEXT:    mult $1, $2, $1
-; CHECK-NEXT:    sll $2, $5, 0
-; CHECK-NEXT:    sll $3, $4, 0
-; CHECK-NEXT:    mult $2, $3, $2
-; CHECK-NEXT:    sll $3, $6, 0
-; CHECK-NEXT:    sll $2, $7, 0
-; CHECK-NEXT:    madd $2, $3, $2
+; CHECK-NEXT:    madd $2, $2, $1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addu $2, $2, $1
+; CHECK-NEXT:    nop
   %mul1 = mul i32 %a, %b
   %mul2 = mul i32 %c, %d
   %mul3 = mul i32 %e, %f

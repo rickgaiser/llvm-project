@@ -226,18 +226,17 @@ define i64 @test_mul64(i64 %a, i64 %b) {
 ; CHECK-NEXT:    sll $2, $4, 0
 ; CHECK-NEXT:    sll $1, $1, 0
 ; CHECK-NEXT:    sll $3, $5, 0
-; CHECK-NEXT:    mult $1, $2, $1
-; CHECK-NEXT:    dsrl $4, $4, 32
-; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:    mult $zero, $2, $1
+; CHECK-NEXT:    dsrl $1, $4, 32
+; CHECK-NEXT:    sll $1, $1, 0
+; CHECK-NEXT:    madd $1, $1, $3
 ; CHECK-NEXT:    multu $2, $3
 ; CHECK-NEXT:    mfhi $2
-; CHECK-NEXT:    mflo $5
-; CHECK-NEXT:    addu $1, $2, $1
-; CHECK-NEXT:    mult $3, $4, $3
-; CHECK-NEXT:    dsll $2, $5, 32
-; CHECK-NEXT:    dsrl $2, $2, 32
-; CHECK-NEXT:    addu $1, $1, $3
+; CHECK-NEXT:    mflo $3
+; CHECK-NEXT:    addu $1, $1, $2
+; CHECK-NEXT:    dsll $2, $3, 32
 ; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    dsrl $2, $2, 32
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    or $2, $2, $1
   %result = mul i64 %a, %b
@@ -289,18 +288,17 @@ define i64 @test_mul_widening_chain(i32 %a, i1 %c, i64 %b) {
 ; CHECK-NEXT:    dsrl $2, $6, 32
 ; CHECK-NEXT:    pmultw $1, $1, $4
 ; CHECK-NEXT:    sll $2, $2, 0
-; CHECK-NEXT:    sll $4, $6, 0
 ; CHECK-NEXT:    sll $3, $1, 0
 ; CHECK-NEXT:    dsrl $1, $1, 32
-; CHECK-NEXT:    mult $2, $3, $2
+; CHECK-NEXT:    mult $zero, $3, $2
 ; CHECK-NEXT:    sll $1, $1, 0
-; CHECK-NEXT:    multu $3, $4
-; CHECK-NEXT:    mfhi $3
-; CHECK-NEXT:    mflo $5
-; CHECK-NEXT:    addu $2, $3, $2
-; CHECK-NEXT:    mult $1, $1, $4
-; CHECK-NEXT:    addu $1, $2, $1
-; CHECK-NEXT:    dsll $2, $5, 32
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    madd $1, $1, $2
+; CHECK-NEXT:    multu $3, $2
+; CHECK-NEXT:    mfhi $2
+; CHECK-NEXT:    mflo $3
+; CHECK-NEXT:    addu $1, $1, $2
+; CHECK-NEXT:    dsll $2, $3, 32
 ; CHECK-NEXT:    dsll $1, $1, 32
 ; CHECK-NEXT:    dsrl $2, $2, 32
 ; CHECK-NEXT:    jr $ra

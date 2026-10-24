@@ -66,6 +66,7 @@ using namespace llvm;
 STATISTIC(NumFPU, "Number of loop sums kept in the FPU ACC");
 STATISTIC(NumVU0, "Number of loop sums kept in the VU0 ACC");
 STATISTIC(NumMMI, "Number of loop sums kept in HI and LO");
+STATISTIC(NumINT, "Number of 32-bit loop sums kept in HI and LO");
 
 static cl::opt<bool>
     DisableLoopAcc("disable-mips-r5900-loop-acc", cl::Hidden, cl::init(false),
@@ -140,6 +141,7 @@ private:
   bool convertVU0(SimpleLoop L);
   bool convertVU0Chain(SimpleLoop L);
   bool convertMMI(SimpleLoop L);
+  bool convertINT(SimpleLoop L);
 };
 
 } // end anonymous namespace
@@ -340,6 +342,11 @@ bool MipsR5900LoopAcc::isZero(Register Reg) const {
     if (!Def)
       return false;
     if (Def->isCopy()) {
+      Reg = Def->getOperand(1).getReg();
+      continue;
+    }
+    if ((Def->getOpcode() == Mips::ADDiu || Def->getOpcode() == Mips::DADDiu) &&
+        Def->getOperand(2).isImm() && Def->getOperand(2).getImm() == 0) {
       Reg = Def->getOperand(1).getReg();
       continue;
     }
@@ -1069,6 +1076,198 @@ bool MipsR5900LoopAcc::convertMMI(SimpleLoop L) {
   return true;
 }
 
+//===----------------------------------------------------------------------===//
+// INT
+//===----------------------------------------------------------------------===//
+
+/// i32 sums of 3-operand MULT products (HI and LO dead) and of MULT, MADD...
+/// chains (PseudoR5900MULTAcc, PseudoR5900MADDAcc) in HI and LO, one ACC64
+/// value: every product becomes a MADD of the sum of the previous
+/// iteration, and the sum is read once with MFLO after the loop. The low 32
+/// bits of HI:LO are the i32 sum.
+bool MipsR5900LoopAcc::convertINT(SimpleLoop L) {
+  // Only the products of the sum use HI and LO in the loop.
+  for (const MachineInstr &MI : *L.Body)
+    for (const MachineOperand &MO : MI.operands()) {
+      if (!MO.isReg() || !MO.getReg())
+        continue;
+      if (MO.getReg().isVirtual()) {
+        if (MRI->getRegClass(MO.getReg())->contains(Mips::AC0) &&
+            MI.getOpcode() != Mips::PseudoR5900MULTAcc &&
+            MI.getOpcode() != Mips::PseudoR5900MADDAcc)
+          return false;
+        continue;
+      }
+      if (TRI->regsOverlap(MO.getReg(), Mips::AC0) &&
+          !((MI.getOpcode() == Mips::R5900_MULT ||
+             MI.getOpcode() == Mips::R5900_MULTU) &&
+            MO.isDef() && MO.isDead()))
+        return false;
+    }
+
+  SumOps Ops{[](const MachineInstr &MI, Register &A, Register &B, bool &Neg) {
+               if (MI.getOpcode() != Mips::ADDu)
+                 return false;
+               A = MI.getOperand(1).getReg();
+               B = MI.getOperand(2).getReg();
+               Neg = false;
+               return true;
+             },
+             [](const MachineInstr &MI, Term &T) {
+               if (MI.getOpcode() != Mips::R5900_MULT &&
+                   MI.getOpcode() != Mips::R5900_MULTU)
+                 return false;
+               T.A = MI.getOperand(1).getReg();
+               T.B = MI.getOperand(2).getReg();
+               return true;
+             },
+             /*Associative=*/true};
+
+  struct Candidate {
+    LoopSum S;
+    SmallVector<Term, 8> Terms;
+    SmallVector<MachineInstr *, 8> Dead;
+  };
+  SmallVector<Candidate, 4> Cands;
+  for (const LoopSum &S : getSums(L, &Mips::GPR32RegClass)) {
+    Candidate C{S, {}, {}};
+    SmallVector<Term, 8> Terms;
+    bool NeedsReassoc;
+    if (!collectTerms(L, S, Ops, Terms, C.Dead, NeedsReassoc))
+      continue;
+    // A MULT, MADD... chain is its products.
+    bool OK = true;
+    for (const Term &T : Terms) {
+      MachineInstr *Def = T.B ? nullptr : MRI->getVRegDef(T.A);
+      if (!Def || Def->getParent() != L.Body ||
+          Def->getOpcode() != Mips::PseudoR5900MADDAcc ||
+          !MRI->hasOneNonDBGUse(T.A)) {
+        C.Terms.push_back(T);
+        continue;
+      }
+      SmallVector<MachineInstr *, 8> Chain = {Def};
+      while (Chain.back()->getOpcode() == Mips::PseudoR5900MADDAcc) {
+        Register AccIn = Chain.back()->getOperand(4).getReg();
+        MachineInstr *Prev = MRI->getVRegDef(AccIn);
+        if (!Prev || Prev->getParent() != L.Body ||
+            !MRI->hasOneNonDBGUse(AccIn) ||
+            (Prev->getOpcode() != Mips::PseudoR5900MADDAcc &&
+             Prev->getOpcode() != Mips::PseudoR5900MULTAcc) ||
+            !MRI->use_nodbg_empty(Prev->getOperand(0).getReg())) {
+          OK = false;
+          break;
+        }
+        Chain.push_back(Prev);
+      }
+      if (!OK)
+        break;
+      for (MachineInstr *MI : reverse(Chain)) {
+        Term P;
+        P.A = MI->getOperand(2).getReg();
+        P.B = MI->getOperand(3).getReg();
+        C.Terms.push_back(P);
+        C.Dead.push_back(MI);
+      }
+    }
+    // Only products: a plain term would take a MADD in the multiplier for
+    // an ADDU, and the ADDU of a sum has a recurrence of 1 cycle anyway.
+    if (OK && all_of(C.Terms, [](const Term &T) { return T.B.isValid(); }))
+      Cands.push_back(std::move(C));
+  }
+  if (Cands.empty())
+    return false;
+
+  // Sums that are only added together after the loop are one sum.
+  SmallVector<Register, 4> Leaves;
+  for (const Candidate &C : Cands)
+    Leaves.push_back(C.S.Next);
+  Register Root;
+  SmallVector<MachineInstr *, 4> Tree;
+  SmallVector<unsigned, 4> Chosen = {0};
+  if (Cands.size() > 1 &&
+      findExitSum(
+          L, Leaves,
+          [](const MachineInstr &MI) { return MI.getOpcode() == Mips::ADDu; },
+          Root, Tree) &&
+      all_of(drop_begin(Cands),
+             [&](const Candidate &C) { return isZero(C.S.Init); })) {
+    for (unsigned I = 1; I < Cands.size(); ++I)
+      Chosen.push_back(I);
+  } else {
+    Root = Cands[0].S.Next;
+    Tree.clear();
+  }
+
+  // Other multiplies in the loop would compete with the MADDs for the
+  // pipe 0 multiplier, and MipsR5900Mult1 can not move them to the pipe 1
+  // one any more (PS2: Dual Pipeline -5% with one of four sums in HI/LO).
+  SmallPtrSet<const MachineInstr *, 16> InSums;
+  for (unsigned I : Chosen)
+    InSums.insert(Cands[I].Dead.begin(), Cands[I].Dead.end());
+  if (any_of(*L.Body, [&](const MachineInstr &MI) {
+        return !InSums.count(&MI) &&
+               (MI.getOpcode() == Mips::R5900_MULT ||
+                MI.getOpcode() == Mips::R5900_MULTU ||
+                MI.getOpcode() == Mips::PseudoR5900MULTAcc ||
+                MI.getOpcode() == Mips::PseudoR5900MADDAcc);
+      }))
+    return false;
+
+  if (!prepareEdges(L))
+    return false;
+  const DebugLoc DL;
+  MachineBasicBlock::iterator PreEnd = L.Preheader->getFirstTerminator();
+  Register Zero = MRI->createVirtualRegister(&Mips::GPR32RegClass);
+  BuildMI(*L.Preheader, PreEnd, DL, TII->get(TargetOpcode::COPY), Zero)
+      .addReg(Mips::R0);
+  // LO = s0, HI = 0.
+  Register AccInit = MRI->createVirtualRegister(&Mips::ACC64RegClass);
+  Register Init = Cands[0].S.Init;
+  BuildMI(*L.Preheader, PreEnd, DL, TII->get(Mips::PseudoMTLOHI), AccInit)
+      .addReg(isZero(Init) ? Zero : Init)
+      .addReg(Zero);
+  Register AccPhi = MRI->createVirtualRegister(&Mips::ACC64RegClass);
+  Register Acc = AccPhi;
+  for (unsigned I : Chosen) {
+    Candidate &C = Cands[I];
+    MachineInstr *NextDef = MRI->getVRegDef(C.S.Next);
+    for (const Term &T : C.Terms) {
+      Register Rd = MRI->createVirtualRegister(&Mips::GPR32RegClass);
+      Register NewAcc = MRI->createVirtualRegister(&Mips::ACC64RegClass);
+      BuildMI(*L.Body, NextDef, NextDef->getDebugLoc(),
+              TII->get(Mips::PseudoR5900MADDAcc))
+          .addReg(Rd, RegState::Define | RegState::Dead)
+          .addReg(NewAcc, RegState::Define)
+          .addReg(T.A)
+          .addReg(T.B)
+          .addReg(Acc);
+      Acc = NewAcc;
+    }
+  }
+  BuildMI(*L.Body, L.Body->begin(), DL, TII->get(TargetOpcode::PHI), AccPhi)
+      .addReg(AccInit)
+      .addMBB(L.Preheader)
+      .addReg(Acc)
+      .addMBB(L.Body);
+  Register Out = MRI->createVirtualRegister(&Mips::GPR32RegClass);
+  BuildMI(*L.Exit, L.Exit->getFirstNonPHI(), DL, TII->get(Mips::PseudoMFLO),
+          Out)
+      .addReg(Acc);
+  replaceOutsideUses(L, Root, Out);
+  for (MachineInstr *MI : reverse(Tree))
+    MI->eraseFromParent();
+  for (unsigned I : Chosen) {
+    Candidate &C = Cands[I];
+    for (MachineInstr *MI : C.Dead)
+      MI->eraseFromParent();
+    C.S.Phi->eraseFromParent();
+  }
+  NumINT += Chosen.size();
+  LLVM_DEBUG(dbgs() << "R5900 loop ACC: " << Chosen.size() << " i32 sums in "
+                    << printMBBReference(*L.Body) << "\n");
+  return true;
+}
+
 bool MipsR5900LoopAcc::runOnMachineFunction(MachineFunction &MF) {
   STI = &MF.getSubtarget<MipsSubtarget>();
   if (!STI->isR5900() || DisableLoopAcc || skipFunction(MF.getFunction()))
@@ -1089,7 +1288,7 @@ bool MipsR5900LoopAcc::runOnMachineFunction(MachineFunction &MF) {
     if (auto L = getLoop(*MBB))
       Changed |= convertVU0(*L) || convertVU0Chain(*L);
     if (auto L = getLoop(*MBB))
-      Changed |= convertMMI(*L);
+      Changed |= convertMMI(*L) || convertINT(*L);
   }
   return Changed;
 }

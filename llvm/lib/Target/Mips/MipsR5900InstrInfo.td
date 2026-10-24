@@ -186,15 +186,18 @@ let Predicates = [IsR5900] in {
                "maddu\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI_3R_FM<0x01>;
 
-  // Pseudo instruction for multiply-add chain: (add (mul a, b), (mul c, d))
-  // Expands to: R5900_MULT + R5900_MADD
-  // This saves one instruction compared to MULT + MULT + ADDU
-  let usesCustomInserter = 1, Defs = [HI0, LO0],
-      Predicates = [IsR5900] in def PseudoR5900MulMulAdd
-      : PseudoSE<(outs GPR32Opnd:$rd),
-                 (ins GPR32Opnd:$a, GPR32Opnd:$b, GPR32Opnd:$c, GPR32Opnd:$d),
-                 [(set GPR32Opnd:$rd, (add (mul GPR32Opnd:$a, GPR32Opnd:$b),
-                                          (mul GPR32Opnd:$c, GPR32Opnd:$d)))]>;
+  // A sum of products accumulated in HI and LO as one value (ACC64): MULT,
+  // MADD..., and the sum from rd of the last MADD. Selected for i32 sums of
+  // two or more products (MipsSETargetLowering), kept in loops by
+  // MipsR5900LoopAcc, and expanded after register allocation.
+  let hasSideEffects = 0, Predicates = [IsR5900] in {
+    def PseudoR5900MULTAcc
+        : PseudoSE<(outs GPR32Opnd:$rd, ACC64:$acc),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt), []>;
+    let Constraints = "$accin = $acc" in def PseudoR5900MADDAcc
+        : PseudoSE<(outs GPR32Opnd:$rd, ACC64:$acc),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt, ACC64:$accin), []>;
+  }
 
   //===----------------------------------------------------------------------===//
   // R5900 Pipeline 1 Move Instructions
