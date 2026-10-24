@@ -582,8 +582,8 @@ static SDValue getNeg(SDValue V, const SDLoc &DL, SelectionDAG &DAG) {
 }
 
 /// sin(v): u = v / 2pi - round(v / 2pi) in [-0.5, 0.5), then an odd
-/// polynomial in u of degree 9 (error 6e-6). ESIN takes 29 cycles, is valid
-/// in [-pi/2, pi/2] only and is not pipelined; this is FMAC work only.
+/// polynomial in u of degree 9 (error 6e-6). ESIN takes 28 cycles (measured),
+/// is valid in [-pi/2, pi/2] only and is not pipelined; this is FMAC work only.
 static SDValue getSin(SDValue V, const SDLoc &DL, SelectionDAG &DAG) {
   auto Const = [&](double C) {
     return getBroadcast(DAG.getConstantFP(C, DL, MVT::f32), 0, DL, DAG);
@@ -1371,6 +1371,81 @@ static SDValue combineBroadcastPair(SDNode *N, SelectionDAG &DAG) {
   return DAG.getNode(VUISD::BCAST, DL, MVT::v4f32, Op, BA.getOperand(1));
 }
 
+namespace {
+/// A field of a vector.
+struct VUField {
+  SDValue Vec;
+  unsigned F;
+};
+} // namespace
+
+/// The field that lane \p Lane of \p V is: a field extracted from a vector,
+/// a field of a shuffle, or the field of the vector itself.
+static std::optional<VUField> getLaneField(SDValue V, unsigned Lane) {
+  if (V.getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+      V.getOperand(0).getValueType() == MVT::v4f32)
+    if (auto *C = dyn_cast<ConstantSDNode>(V.getOperand(1)))
+      if (C->getZExtValue() < 4)
+        return VUField{V.getOperand(0), (unsigned)C->getZExtValue()};
+  if (V.getValueType() != MVT::v4f32)
+    return std::nullopt;
+  if (auto *SV = dyn_cast<ShuffleVectorSDNode>(V)) {
+    int M = SV->getMaskElt(Lane);
+    if (M < 0)
+      return std::nullopt;
+    return VUField{V.getOperand(M / 4), (unsigned)M % 4};
+  }
+  return VUField{V, Lane};
+}
+
+/// Whether lane \p Lane of \p D is field \p I of the cross product A x B,
+/// A[j] * B[k] - A[k] * B[j] with j = I + 1 and k = I + 2 (mod 3). A and B
+/// are set by the first lane that is matched.
+static bool matchCrossLane(SDValue D, unsigned Lane, unsigned I, SDValue &A,
+                           SDValue &B) {
+  if (D.getOpcode() != ISD::FSUB || D.getOperand(0).getOpcode() != ISD::FMUL ||
+      D.getOperand(1).getOpcode() != ISD::FMUL)
+    return false;
+  auto Factors = [&](SDValue M) -> std::optional<std::pair<VUField, VUField>> {
+    auto X = getLaneField(M.getOperand(0), Lane);
+    auto Y = getLaneField(M.getOperand(1), Lane);
+    if (!X || !Y)
+      return std::nullopt;
+    return std::make_pair(*X, *Y);
+  };
+  auto P = Factors(D.getOperand(0)), Q = Factors(D.getOperand(1));
+  if (!P || !Q)
+    return false;
+  unsigned J = (I + 1) % 3, K = (I + 2) % 3;
+  // Product A[F1] * B[F2], in either order of its factors.
+  auto Is = [&](std::pair<VUField, VUField> Prod, unsigned F1, unsigned F2,
+                SDValue &PA, SDValue &PB) {
+    for (bool Swap : {false, true}) {
+      VUField X = Swap ? Prod.second : Prod.first;
+      VUField Y = Swap ? Prod.first : Prod.second;
+      if (X.F == F1 && Y.F == F2 && (!PA || (PA == X.Vec && PB == Y.Vec))) {
+        PA = X.Vec;
+        PB = Y.Vec;
+        return true;
+      }
+    }
+    return false;
+  };
+  SDValue NA = A, NB = B;
+  if (!Is(*P, J, K, NA, NB) || !Is(*Q, K, J, NA, NB))
+    return false;
+  A = NA;
+  B = NB;
+  return true;
+}
+
+/// The cross product A x B of fields x, y and z: OPMULA.xyz ACC, A, B and
+/// OPMSUB.xyz d, B, A. Field w of the result is undefined.
+static SDValue getCross(SDValue A, SDValue B, const SDLoc &DL,
+                        SelectionDAG &DAG) {
+  return DAG.getNode(VUISD::CROSS, DL, MVT::v4f32, A, B);
+}
+
 SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
                                             DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
@@ -1468,6 +1543,19 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
     break;
   }
   case ISD::BUILD_VECTOR: {
+    // A cross product computed field by field (HLSL cross).
+    if (N->getValueType(0) == MVT::v4f32 && !DCI.isAfterLegalizeDAG()) {
+      SDValue A, B;
+      if (matchCrossLane(N->getOperand(0), 0, 0, A, B) &&
+          matchCrossLane(N->getOperand(1), 1, 1, A, B) &&
+          matchCrossLane(N->getOperand(2), 2, 2, A, B)) {
+        SDValue Cross = getCross(A, B, DL, DAG);
+        if (N->getOperand(3).isUndef())
+          return Cross;
+        return DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v4f32, Cross,
+                           N->getOperand(3), DAG.getVectorIdxConstant(3, DL));
+      }
+    }
     // An integer vector, before i32 is legalized (there are no i32
     // registers): constants are the bits of float constants, and 16-bit
     // integers are inserted with MFIR.
@@ -1571,6 +1659,27 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
   }
   case ISD::FADD:
   case ISD::FSUB:
+    // A cross product of vectors whose field w is not needed: undefined in
+    // the shuffles, or replaced by the only user.
+    if (N->getOpcode() == ISD::FSUB && N->getValueType(0) == MVT::v4f32 &&
+        !DCI.isAfterLegalizeDAG()) {
+      SDValue A, B, D(N, 0);
+      bool WUnused = (N->hasOneUse() &&
+                      N->user_begin()->getOpcode() == ISD::INSERT_VECTOR_ELT &&
+                      N->user_begin()->getOperand(0) == D &&
+                      isa<ConstantSDNode>(N->user_begin()->getOperand(2)) &&
+                      N->user_begin()->getConstantOperandVal(2) == 3) ||
+                     all_of(N->op_values(), [](SDValue M) {
+                       return M.getOpcode() == ISD::FMUL &&
+                              all_of(M->op_values(), [](SDValue S) {
+                                auto *SV = dyn_cast<ShuffleVectorSDNode>(S);
+                                return SV && SV->getMaskElt(3) < 0;
+                              });
+                     });
+      if (WUnused && matchCrossLane(D, 0, 0, A, B) &&
+          matchCrossLane(D, 1, 1, A, B) && matchCrossLane(D, 2, 2, A, B))
+        return getCross(A, B, DL, DAG);
+    }
     if (SDValue R = combineBroadcastPair(N, DAG))
       return R;
     if (!DCI.isAfterLegalizeDAG())

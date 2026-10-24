@@ -32,6 +32,11 @@ def SDT_VUBcast : SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>, SDTCisFP<1>,
 def VUbcast : SDNode<"VUISD::BCAST", SDT_VUBcast>;
 
 
+// The cross product of fields x, y and z (OPMULA, OPMSUB); w is undefined.
+def VUcross : SDNode<"VUISD::CROSS", SDTypeProfile<1, 2, [
+                     SDTCisVT<0, v4f32>, SDTCisVT<1, v4f32>,
+                     SDTCisVT<2, v4f32>]>>;
+
 // A sum of products computed through ACC: MULA, MADDA/MSUBA..., MADD/MSUB.
 // The operands are (a, b, field, negate) for each term; see
 // VUTargetLowering::combineAccSum. Selected in VUDAGToDAGISel.
@@ -109,6 +114,9 @@ def LOADF32 : VUPseudo<(outs VF:$d), (ins f32imm:$c),
 
 // Splat field f of s: ADD<f>.xyz d, vf0, s; MUL<f>.w d, vf0, s
 def SPLAT : VUPseudo<(outs VF:$d), (ins VF:$s, i32imm:$f), [], IIC_VUUpper2>;
+// OPMULA.xyz acc, a, b: (a.y b.z, a.z b.x, a.x b.y); OPMSUB.xyz d, b, a
+// subtracts (b.y a.z, b.z a.x, b.x a.y).
+def : Pat<(VUcross VF:$a, VF:$b), (OPMSUB (OPMULA VF:$a, VF:$b), VF:$b, VF:$a)>;
 def : Pat<(VUbcast (v4f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 def : Pat<(VUbcast (f32 VF:$s), timm:$f), (SPLAT VF:$s, timm:$f)>;
 

@@ -321,27 +321,28 @@ static unsigned getResultLatency(const MachineInstr &MI, Register Reg) {
   case VU::WAITP:
     return 0;
 
-  // EFU (VU1).
+  // EFU (VU1), measured on the PS2 (bench/vuuarch, "<op>, WAITP" bodies
+  // with DIV's convention: DIV, WAITQ takes 8 for a latency of 7).
   case VU::ESADD:
-    return 11;
+    return 10;
   case VU::ESQRT:
   case VU::ESUM:
   case VU::ERCPR:
-    return 12;
+    return 11;
   case VU::ERSADD:
   case VU::ELENG:
   case VU::ERSQRT:
-    return 18;
+    return 17;
   case VU::ERLENG:
-    return 24;
+    return 23;
   case VU::ESIN:
-    return 29;
+    return 28;
   case VU::EEXP:
-    return 44;
+    return 43;
   case VU::EATAN:
   case VU::EATANxy:
   case VU::EATANxz:
-    return 54;
+    return 53;
 
   // Integer loads go through the FMAC pipeline.
   case VU::ILW:

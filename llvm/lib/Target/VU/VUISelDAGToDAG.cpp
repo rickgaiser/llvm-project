@@ -177,12 +177,23 @@ std::pair<SDValue, SDValue> VUDAGToDAGISel::selectField(SDValue V,
 void VUDAGToDAGISel::selectDivSqrt(SDNode *N) {
   SDLoc DL(N);
   SmallVector<SDValue, 4> Ops;
-  for (const SDValue &Op : N->ops()) {
+  SmallVector<SDValue, 2> Operands(N->ops());
+  unsigned Opc = N->getOpcode() == ISD::FDIV ? VU::DIV : VU::SQRT;
+  // a / sqrt(b) is one RSQRT: 13 cycles of the divider instead of 7 for the
+  // SQRT, its WAITQ, and 7 for the DIV (measured, bench/vuuarch). It rounds
+  // once instead of twice.
+  if (Opc == VU::DIV && Operands[1].getOpcode() == ISD::FSQRT &&
+      Operands[1].hasOneUse() &&
+      (N->getFlags().hasApproximateFuncs() ||
+       Operands[1]->getFlags().hasApproximateFuncs())) {
+    Opc = VU::RSQRT;
+    Operands[1] = Operands[1].getOperand(0);
+  }
+  for (const SDValue &Op : Operands) {
     auto [Reg, Field] = selectField(Op, DL);
     Ops.push_back(Reg);
     Ops.push_back(Field);
   }
-  unsigned Opc = N->getOpcode() == ISD::FDIV ? VU::DIV : VU::SQRT;
   SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::f32, Ops), 0);
   SDValue MoveOps[] = {CurDAG->getTargetConstant(8, DL, MVT::i32),
                        CurDAG->getRegister(VU::VF0, MVT::v4f32), Q};
