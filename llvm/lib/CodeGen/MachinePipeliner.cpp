@@ -168,6 +168,12 @@ static cl::opt<unsigned> SwpIterativeBudget(
     cl::desc("The number of times that iterative modulo scheduling may "
              "schedule each instruction for one II"));
 
+static cl::opt<uint64_t> SwpLifetimeBudget(
+    "pipeliner-lifetime-budget", cl::Hidden, cl::init(500000000),
+    cl::desc("The work of shortening the lifetimes of one iterative modulo "
+             "schedule: the evaluations of the register pressure times the "
+             "square of the number of instructions"));
+
 static cl::opt<bool> SwpReduceLifetimes(
     "pipeliner-reduce-lifetimes", cl::Hidden, cl::init(true),
     cl::desc("Move instructions of an iterative modulo schedule within their "
@@ -3930,16 +3936,36 @@ bool SwingSchedulerDAG::scheduleIteratively(
     return true;
   // The registers beyond the limit of the register pressure come first: a
   // schedule that needs them is rejected.
-  auto Cost = [&] {
-    uint64_t C;
+  auto TargetCost = [&]() -> uint64_t {
     if (std::optional<unsigned> TC =
             LoopPipelinerInfo->getScheduleCost(*this, Schedule))
-      C = *TC;
-    else
-      C = Schedule.getExtraRegisters();
+      return *TC;
+    return Schedule.getExtraRegisters();
+  };
+  auto Cost = [&] {
+    uint64_t C = TargetCost();
     if (ExcessPressure)
       C |= uint64_t(ExcessPressure()) << 32;
     return C;
+  };
+  // The cost of the schedule if it is lower than Best, else Best. The
+  // register pressure, which takes long to compute, only when it can make
+  // the difference: with no registers beyond the limit in Best, a move that
+  // does not lower the rest of the cost does not lower the cost.
+  // The register pressure of a schedule takes time quadratic in the number
+  // of instructions: its evaluations are limited.
+  uint64_t NumPressureEvals = 0;
+  uint64_t MaxPressureEvals =
+      std::max<uint64_t>(SwpLifetimeBudget / (uint64_t(N) * N + 1), 100);
+  auto LowerCost = [&](uint64_t Best) {
+    uint64_t TC = TargetCost();
+    if (!(Best >> 32) && TC >= Best)
+      return Best;
+    if (ExcessPressure) {
+      ++NumPressureEvals;
+      TC |= uint64_t(ExcessPressure()) << 32;
+    }
+    return std::min(TC, Best);
   };
   auto StagesFit = [&] {
     return Policy.MaxStages < 0 ||
@@ -3969,6 +3995,11 @@ bool SwingSchedulerDAG::scheduleIteratively(
   for (bool Changed = true; Changed && Best != 0;) {
     Changed = false;
     for (SUnit &SU : SUnits) {
+      if (NumPressureEvals > MaxPressureEvals) {
+        LLVM_DEBUG(dbgs() << "\tthe lifetimes are not shortened further\n");
+        Changed = false;
+        break;
+      }
       if (SU.getInstr()->isPHI())
         continue;
       int Old = *Schedule.getCycle(&SU);
@@ -3982,7 +4013,7 @@ bool SwingSchedulerDAG::scheduleIteratively(
         // Placed even if overbooked, to see if the cycle is worth making room
         // for.
         Schedule.place(&SU, Cycle);
-        uint64_t NewCost = StagesFit() ? Cost() : Best;
+        uint64_t NewCost = StagesFit() ? LowerCost(Best) : Best;
         Schedule.remove(&SU);
         if (NewCost >= Best)
           continue;
@@ -4004,7 +4035,7 @@ bool SwingSchedulerDAG::scheduleIteratively(
                 continue;
               Schedule.place(&Other, C);
               if (StagesFit())
-                if (uint64_t NewCost = Cost(); NewCost < Best) {
+                if (uint64_t NewCost = LowerCost(Best); NewCost < Best) {
                   Best = NewCost;
                   BestMove = {Cycle, &Other, C};
                 }
