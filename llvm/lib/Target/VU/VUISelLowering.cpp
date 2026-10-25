@@ -95,17 +95,15 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::UINT_TO_FP, VT, Custom);
 
   // 16-bit integers.
-  for (unsigned Op : {ISD::MULHS,     ISD::MULHU,   ISD::SDIV,
-                      ISD::UDIV,      ISD::SREM,    ISD::UREM,
-                      ISD::SDIVREM,   ISD::UDIVREM, ISD::SMUL_LOHI,
-                      ISD::UMUL_LOHI, ISD::SRA,     ISD::SRL,
-                      ISD::ROTL,      ISD::ROTR,    ISD::CTPOP,
-                      ISD::CTLZ,      ISD::CTTZ,    ISD::BSWAP,
-                      ISD::SELECT_CC, ISD::BR_CC,   ISD::SIGN_EXTEND_INREG,
-                      ISD::BR_JT,     ISD::BRIND})
+  for (unsigned Op :
+       {ISD::MULHS, ISD::MULHU, ISD::SDIVREM, ISD::UDIVREM, ISD::SMUL_LOHI,
+        ISD::UMUL_LOHI, ISD::ROTL, ISD::ROTR, ISD::CTPOP, ISD::CTLZ, ISD::CTTZ,
+        ISD::BSWAP, ISD::SELECT_CC, ISD::BR_CC, ISD::SIGN_EXTEND_INREG,
+        ISD::BR_JT, ISD::BRIND})
     setOperationAction(Op, MVT::i16, Expand);
   for (unsigned Op :
-       {ISD::LOAD, ISD::STORE, ISD::MUL, ISD::SHL, ISD::XOR, ISD::SELECT})
+       {ISD::LOAD, ISD::STORE, ISD::MUL, ISD::SHL, ISD::XOR, ISD::SELECT,
+        ISD::SRL, ISD::SRA, ISD::UDIV, ISD::SDIV, ISD::UREM, ISD::SREM})
     setOperationAction(Op, MVT::i16, Custom);
   for (MVT VT : {MVT::i1, MVT::i8})
     for (auto Ext : {ISD::EXTLOAD, ISD::SEXTLOAD, ISD::ZEXTLOAD})
@@ -257,6 +255,73 @@ SDValue VUTargetLowering::lowerMUL(SDValue Op, SelectionDAG &DAG) const {
   if (!Sum)
     return Zero;
   return Negate ? DAG.getNode(ISD::SUB, DL, MVT::i16, Zero, Sum) : Sum;
+}
+
+SDValue VUTargetLowering::lowerDIV(SDValue Op, SelectionDAG &DAG) const {
+  // There is no integer divider and no shifter: a shift right or a division
+  // by a constant is a multiplication in VF, truncated towards zero by FTOI0.
+  // x * 2^-k is exact. For other divisors, x * m with m = 1/c rounded up by
+  // 2^-18 is at least x/c and less than the next multiple of 1/c for every
+  // 16-bit x, so the truncation gives the quotient.
+  SDLoc DL(Op);
+  unsigned Opc = Op.getOpcode();
+  SDValue X = Op.getOperand(0);
+  bool Shift = Opc == ISD::SRL || Opc == ISD::SRA;
+  auto *CN = dyn_cast<ConstantSDNode>(Op.getOperand(1));
+  if (!CN)
+    return lowerUnsupported(Op, DAG,
+                            Shift ? "VU: shift by a variable"
+                                  : "VU: integer division by a variable");
+  bool Signed = Opc == ISD::SRA || Opc == ISD::SDIV || Opc == ISD::SREM;
+  APInt C = CN->getAPIntValue().trunc(16);
+  if (Shift) {
+    unsigned K = std::min<uint64_t>(CN->getZExtValue(), 15);
+    if (K == 0)
+      return X;
+    // MFIR sign-extends: x >>u k is (x >> k) & (0xffff >> k), the mask an
+    // IADDIU immediate.
+    if (Opc == ISD::SRL && !DAG.SignBitIsZero(X))
+      return DAG.getNode(
+          ISD::AND, DL, MVT::i16,
+          DAG.getNode(ISD::SRA, DL, MVT::i16, X, Op.getOperand(1)),
+          DAG.getConstant(0xffff >> K, DL, MVT::i16));
+    C = APInt::getOneBitSet(16, K);
+  }
+  if (C.isZero())
+    return DAG.getUNDEF(MVT::i16);
+  SDValue Q;
+  if (C.isOne()) {
+    Q = X;
+  } else if (Signed && !Shift && C.isAllOnes()) {
+    Q = DAG.getNode(ISD::SUB, DL, MVT::i16, DAG.getConstant(0, DL, MVT::i16),
+                    X);
+  } else {
+    // A negative divisor is a negative factor.
+    APInt AbsC = Signed && !Shift ? C.abs() : C;
+    double M = AbsC.isPowerOf2()
+                   ? std::ldexp(1.0, -(int)AbsC.logBase2())
+                   : (1.0 + std::ldexp(1.0, -18)) / AbsC.getZExtValue();
+    if (Signed && !Shift && C.isNegative())
+      M = -M;
+    SDValue F = DAG.getNode(Signed ? ISD::SINT_TO_FP : ISD::UINT_TO_FP, DL,
+                            MVT::f32, X);
+    F = DAG.getNode(ISD::FMUL, DL, MVT::f32, F,
+                    DAG.getConstantFP(M, DL, MVT::f32));
+    // x >> k rounds down: (x + 2^15) * 2^-k is not negative, and exact.
+    double Bias = Opc == ISD::SRA ? 0x8000 * M : 0;
+    if (Bias)
+      F = DAG.getNode(ISD::FADD, DL, MVT::f32, F,
+                      DAG.getConstantFP(Bias, DL, MVT::f32));
+    Q = DAG.getNode(ISD::FP_TO_SINT, DL, MVT::i16, F);
+    if (Bias)
+      Q = DAG.getNode(ISD::SUB, DL, MVT::i16, Q,
+                      DAG.getConstant((int)Bias, DL, MVT::i16));
+  }
+  if (Opc == ISD::UREM || Opc == ISD::SREM)
+    Q = DAG.getNode(ISD::SUB, DL, MVT::i16, X,
+                    DAG.getNode(ISD::MUL, DL, MVT::i16, Q,
+                                DAG.getConstant(C, DL, MVT::i16)));
+  return Q;
 }
 
 SDValue VUTargetLowering::lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const {
@@ -950,6 +1015,13 @@ SDValue VUTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::MUL:
   case ISD::SHL:
     return lowerMUL(Op, DAG);
+  case ISD::SRL:
+  case ISD::SRA:
+  case ISD::UDIV:
+  case ISD::SDIV:
+  case ISD::UREM:
+  case ISD::SREM:
+    return lowerDIV(Op, DAG);
   case ISD::XOR:
     return lowerXOR(Op, DAG);
   case ISD::BRCOND:

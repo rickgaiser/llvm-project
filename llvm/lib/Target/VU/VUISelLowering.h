@@ -31,6 +31,20 @@ public:
                           const CallBase &I, MachineFunction &MF,
                           unsigned Intrinsic) const override;
 
+  /// A division by a constant is a multiplication in VF (see lowerDIV),
+  /// shorter than the generic expansions with shifts.
+  bool isIntDivCheap(EVT VT, AttributeList Attr) const override {
+    return VT == MVT::i16;
+  }
+  SDValue BuildSDIVPow2(SDNode *N, const APInt &Divisor, SelectionDAG &DAG,
+                        SmallVectorImpl<SDNode *> &Created) const override {
+    return SDValue(N, 0);
+  }
+  SDValue BuildSREMPow2(SDNode *N, const APInt &Divisor, SelectionDAG &DAG,
+                        SmallVectorImpl<SDNode *> &Created) const override {
+    return SDValue(N, 0);
+  }
+
   /// Any f32 constant can be loaded with LOI.
   bool isFPImmLegal(const APFloat &Imm, EVT VT,
                     bool ForCodeSize) const override {
@@ -56,6 +70,7 @@ private:
   SDValue lowerVectorField(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerIntrinsic(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerMUL(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerDIV(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerXOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerMath(SDValue Op, SelectionDAG &DAG) const;

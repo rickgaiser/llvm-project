@@ -6,6 +6,8 @@
 ; RUN: not llc -mtriple=vu -O3 %t/call-loop.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CALL
 ; RUN: not llc -mtriple=vu -mcpu=vu0 %t/vu1.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=VU1
 ; RUN: not llc -mtriple=vu %t/mul.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=MUL
+; RUN: not llc -mtriple=vu %t/shift.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=SHIFT
+; RUN: not llc -mtriple=vu %t/div.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=DIV
 ; RUN: not llc -mtriple=vu %t/half.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=HALF
 ; RUN: not llc -mtriple=vu %t/room.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROOM
 ; RUN: not llc -mtriple=vu %t/indexed-carry.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ICARRY
@@ -21,6 +23,8 @@
 ; CALL: error: {{.*}} VU: function calls are not supported
 ; VU1:  error: {{.*}} VU: XGKICK and XTOP require VU1
 ; MUL:  error: {{.*}} VU: integer multiply by a variable
+; SHIFT: error: {{.*}} VU: shift by a variable
+; DIV:  error: {{.*}} VU: integer division by a variable
 ; HALF: error: {{.*}} VU: 16-bit load from the high half of a field
 ; ROOM: error: {{.*}} VU: the buffer of 3 quadwords has no room for a batch
 ; ICARRY: error: {{.*}} VU: an indexed vertex program cannot carry prev from vertex to vertex
@@ -89,6 +93,28 @@ define void @f() {
   %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
   %b = call i16 @llvm.vu.ilw(i16 1, i32 0)
   %m = mul i16 %a, %b
+  call void @llvm.vu.isw(i16 %m, i16 2, i32 0)
+  ret void
+}
+
+;--- shift.ll
+declare i16 @llvm.vu.ilw(i16, i32)
+declare void @llvm.vu.isw(i16, i16, i32)
+define void @f() {
+  %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
+  %b = call i16 @llvm.vu.ilw(i16 1, i32 0)
+  %m = lshr i16 %a, %b
+  call void @llvm.vu.isw(i16 %m, i16 2, i32 0)
+  ret void
+}
+
+;--- div.ll
+declare i16 @llvm.vu.ilw(i16, i32)
+declare void @llvm.vu.isw(i16, i16, i32)
+define void @f() {
+  %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
+  %b = call i16 @llvm.vu.ilw(i16 1, i32 0)
+  %m = udiv i16 %a, %b
   call void @llvm.vu.isw(i16 %m, i16 2, i32 0)
   ret void
 }
