@@ -237,8 +237,14 @@ Value *VUNarrowInt::narrow(Instruction &I) {
       return nullptr;
     }
   }
-  if (auto *LI = dyn_cast<LoadInst>(&I); LI && isWide(T))
-    return B.CreateLoad(I16, LI->getPointerOperand(), I.getName());
+  if (auto *LI = dyn_cast<LoadInst>(&I); LI && isWide(T)) {
+    // The alias scopes keep the loads of the next item free to pass the
+    // stores of this one (VUEntryLowering).
+    LoadInst *L = B.CreateLoad(I16, LI->getPointerOperand(), I.getName());
+    L->copyMetadata(*LI, {LLVMContext::MD_alias_scope, LLVMContext::MD_noalias,
+                          LLVMContext::MD_tbaa});
+    return L;
+  }
   if (auto *II = dyn_cast<IntrinsicInst>(&I); II && isWide(T)) {
     switch (II->getIntrinsicID()) {
     case Intrinsic::smin:

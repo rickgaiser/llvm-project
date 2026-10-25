@@ -149,3 +149,44 @@ define void @halves() {
   store i16 %t, ptr inttoptr (i16 32 to ptr)
   ret void
 }
+
+; The rows of a matrix at a run-time index from a run-time base: one IADD for
+; the base and the index, the rows at the offsets of the LQs.
+define void @matrix_rows() {
+; CHECK-LABEL: matrix_rows:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop xitop vi1
+; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    ftoi0.x vf1, vf1 nop
+; CHECK-NEXT:    nop mtir vi2, vf1x
+; CHECK-NEXT:    nop iadd vi3, vi2, vi2
+; CHECK-NEXT:    nop iadd vi2, vi2, vi3
+; CHECK-NEXT:    nop iadd vi1, vi1, vi2
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi1)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi1)
+; CHECK-NEXT:    nop lq.xyzw vf3, 2(vi1)
+; CHECK-NEXT:    add.xyzw vf1, vf1, vf2 nop
+; CHECK-NEXT:    add.xyzw vf1, vf1, vf3 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 3(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %top = call i16 @llvm.vu.xitop()
+  %b = shl i16 %top, 4
+  %base = inttoptr i16 %b to ptr
+  %v = load <4 x float>, ptr inttoptr (i16 16 to ptr)
+  %x = extractelement <4 x float> %v, i32 0
+  %i = fptosi float %x to i16
+  %r0 = getelementptr [8 x [3 x <4 x float>]], ptr %base, i16 0, i16 %i, i16 0
+  %r1 = getelementptr [8 x [3 x <4 x float>]], ptr %base, i16 0, i16 %i, i16 1
+  %r2 = getelementptr [8 x [3 x <4 x float>]], ptr %base, i16 0, i16 %i, i16 2
+  %a = load <4 x float>, ptr %r0
+  %c = load <4 x float>, ptr %r1
+  %d = load <4 x float>, ptr %r2
+  %s = fadd <4 x float> %a, %c
+  %t = fadd <4 x float> %s, %d
+  store <4 x float> %t, ptr inttoptr (i16 48 to ptr)
+  ret void
+}
+
+declare i16 @llvm.vu.xitop()

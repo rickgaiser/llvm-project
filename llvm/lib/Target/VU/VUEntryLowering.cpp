@@ -388,7 +388,8 @@ static void forEachAccess(Value *Ptr, function_ref<void(Instruction *)> Fn) {
 
 /// The inputs and uniforms are not written, and the outputs not read: alias
 /// scopes tell the pipeliner that the loads of the next vertex can pass the
-/// stores of this one.
+/// stores of this one. The items of a compute program are \p Out, read and
+/// written: only the loads of the uniforms pass their stores.
 void EntryLowering::addAliasScopes(ArrayRef<Value *> In,
                                    ArrayRef<Value *> Out) {
   MDBuilder MDB(Ctx);
@@ -736,8 +737,13 @@ bool EntryLowering::run(std::string &Header) {
     });
   }
   uint64_t DataQW = 1 + UniQW;
-  if (Items)
-    replaceGlobal(Items, qwPointer(B, Items, B.getInt16(DataQW)));
+  if (Items) {
+    Value *ItemsPtr = qwPointer(B, Items, B.getInt16(DataQW));
+    replaceGlobal(Items, ItemsPtr);
+    // A compute program reads and writes its items, and only reads the
+    // uniforms (addAliasScopes).
+    OutPtrs.push_back(ItemsPtr);
+  }
   for (IntrinsicInst *II : CountCalls) {
     II->replaceAllUsesWith(Count);
     II->eraseFromParent();
@@ -842,7 +848,7 @@ bool EntryLowering::run(std::string &Header) {
     B.CreateBr(Body);
   }
 
-  if (Vertex)
+  if (!OutPtrs.empty())
     addAliasScopes(InPtrs, OutPtrs);
   hoistToEntry(Entry);
   // The GIF tag in front of the outputs, at the start of each batch.

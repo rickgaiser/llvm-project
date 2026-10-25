@@ -145,20 +145,26 @@ bool VULowerMemory::decomposePointer(Value *P, int64_t Scale, Address &A) {
   return false;
 }
 
-/// The quadword address of byte address \p A plus \p Quad quadwords.
+/// The quadword address of byte address \p A plus \p Quad quadwords. The
+/// constant is added last: it becomes the offset of the instruction, and the
+/// accesses at different offsets from the same terms share their sum (the
+/// rows of a matrix at a run-time index).
 Value *VULowerMemory::getQuadword(IRBuilder<> &B, const Address &A,
                                   int64_t Quad) {
   Type *I16 = B.getInt16Ty();
-  Value *Q = B.getInt16(A.Const / 16 + Quad);
+  Value *Q = nullptr;
   for (auto [V, Scale] : A.Terms) {
     if (!Scale)
       continue;
     Value *T = B.CreateSExtOrTrunc(V, I16);
     if (Scale != 16)
       T = B.CreateMul(T, ConstantInt::getSigned(I16, Scale / 16));
-    Q = B.CreateAdd(T, Q);
+    Q = Q ? B.CreateAdd(Q, T) : T;
   }
-  return Q;
+  int64_t Const = A.Const / 16 + Quad;
+  if (!Q)
+    return B.getInt16(Const);
+  return Const ? B.CreateAdd(Q, B.getInt16(Const)) : Q;
 }
 
 /// The element type of a scalar or vector value and its number of elements,
