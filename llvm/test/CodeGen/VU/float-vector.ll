@@ -81,6 +81,7 @@ define void @fixed_point() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %v = call <4 x float> @llvm.vu.lq(i16 0)
   %m4 = fmul <4 x float> %v, <float 16.0, float 16.0, float 16.0, float 16.0>
   %i4 = fptosi <4 x float> %m4 to <4 x i32>
@@ -99,5 +100,45 @@ define void @fixed_point() {
   %i3 = fptosi <4 x float> %m3 to <4 x i32>
   %f3 = bitcast <4 x i32> %i3 to <4 x float>
   call void @llvm.vu.sq(<4 x float> %f3, i16 4)
+  ret void
+}
+
+; Vectors of 3 and 2 fields, widened with undefined fields: still ITOF15 and
+; FTOI4.
+define void @itof15_3() {
+; CHECK-LABEL: itof15_3:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    itof15.xyzw vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %i = bitcast <4 x float> %v to <4 x i32>
+  %s = shufflevector <4 x i32> %i, <4 x i32> poison, <3 x i32> <i32 0, i32 1, i32 2>
+  %f = sitofp <3 x i32> %s to <3 x float>
+  %m = fmul <3 x float> %f, splat (float 0x3F00000000000000)
+  %w = shufflevector <3 x float> %m, <3 x float> poison, <4 x i32> <i32 0, i32 1, i32 2, i32 poison>
+  call void @llvm.vu.sq(<4 x float> %w, i16 1)
+  ret void
+}
+
+define void @ftoi4_2() {
+; CHECK-LABEL: ftoi4_2:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    ftoi4.xyzw vf1, vf1 nop
+; CHECK-NEXT:    nop sq.xyzw vf1, 1(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %s = shufflevector <4 x float> %v, <4 x float> poison, <2 x i32> <i32 0, i32 1>
+  %m = fmul <2 x float> %s, splat (float 16.0)
+  %i = fptosi <2 x float> %m to <2 x i32>
+  %w = shufflevector <2 x i32> %i, <2 x i32> poison, <4 x i32> <i32 0, i32 1, i32 poison, i32 poison>
+  %f = bitcast <4 x i32> %w to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f, i16 1)
   ret void
 }

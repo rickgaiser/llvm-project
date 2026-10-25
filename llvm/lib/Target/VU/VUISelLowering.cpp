@@ -1406,7 +1406,8 @@ static SDValue combineLaneOp(SDNode *N, SelectionDAG &DAG) {
 /// Returns n if \p C is a splat of 2^n, or of 2^-n if \p Inverse, for the
 /// fraction bits of the fixed-point conversions, or 0.
 static unsigned getFractionBits(SDValue C, bool Inverse) {
-  ConstantFPSDNode *CN = isConstOrConstSplatFP(C);
+  // Undefined fields are those that a 2- or 3-field vector was widened by.
+  ConstantFPSDNode *CN = isConstOrConstSplatFP(C, /*AllowUndefs=*/true);
   if (!CN)
     return 0;
   for (int N : {4, 12, 15})
@@ -1427,7 +1428,7 @@ static SDValue stripFactor(SDValue V, double C, SelectionDAG &DAG,
   if (V.getOpcode() == ISD::FMUL && V->getFlags().hasAllowReassociation()) {
     SDValue A = V.getOperand(0), B = V.getOperand(1);
     for (int I = 0; I != 2; ++I, std::swap(A, B)) {
-      if (ConstantFPSDNode *CN = isConstOrConstSplatFP(B);
+      if (ConstantFPSDNode *CN = isConstOrConstSplatFP(B, /*AllowUndefs=*/true);
           CN && CN->isExactlyValue(C))
         return A;
       if (SDValue A2 = stripFactor(A, C, DAG, Depth + 1))
