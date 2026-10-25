@@ -23,10 +23,16 @@
 // every iteration: a WAITQ in a block of its own on a fall-through edge, or
 // before the branch of a predecessor that jumps to the loop.
 //
+// The clipping flags have no interlock either: a flag test (FCAND, FCOR,
+// FCEQ, FCGET) sees a CLIP (or FCSET) 4 cycles after it. There is no wait
+// instruction: a test that comes too early gets empty words before it, as
+// many as the cycle model (VUWords) counts as a stall.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/VUMCTargetDesc.h"
 #include "VU.h"
+#include "VUInstrInfo.h"
 #include "VUSubtarget.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -172,6 +178,84 @@ static void waitOnEdge(MachineBasicBlock &Pred, MachineBasicBlock &MBB,
   Wait->addSuccessor(&MBB);
 }
 
+/// The latency of the clipping flags written by \p MI in words, or 0.
+static unsigned getCFLatency(const MachineInstr &MI) {
+  int Idx = MI.findRegisterDefOperandIdx(VU::CF, /*TRI=*/nullptr);
+  return Idx < 0 ? 0 : VUInstrInfo::getResultLatency(MI, Idx);
+}
+
+/// A test of the clipping flags (CLIP reads them too, in its pipeline).
+static bool testsCF(const Word &W) {
+  return any_of(W.Instrs, [](const MachineInstr *MI) {
+    return MI->readsRegister(VU::CF, nullptr) && !getCFLatency(*MI);
+  });
+}
+
+/// Steps over one word for the clipping flags, as stepWord does for Q.
+/// Returns the empty words that must come before it.
+static unsigned stepWordCF(const Word &W, unsigned &Need) {
+  unsigned Wait = testsCF(W) ? Need : 0;
+  Need -= Wait;
+  unsigned Latency = 0;
+  for (const MachineInstr *MI : W.Instrs)
+    Latency = std::max(Latency, getCFLatency(*MI));
+  if (Latency)
+    Need = Latency - 1;
+  else if (Need)
+    --Need;
+  return Wait;
+}
+
+/// Puts empty words before the tests of the clipping flags that come too
+/// early after a CLIP on some path.
+static bool fixClipFlagTests(MachineFunction &MF, const TargetInstrInfo &TII) {
+  DenseMap<const MachineBasicBlock *, unsigned> NeedIn;
+  for (bool Iterate = true; Iterate;) {
+    Iterate = false;
+    for (MachineBasicBlock &MBB : MF) {
+      unsigned Need = NeedIn.lookup(&MBB);
+      for (MachineInstr &MI : MBB)
+        stepWordCF(getWord(MI), Need);
+      for (MachineBasicBlock *Succ : MBB.successors()) {
+        unsigned &In = NeedIn[Succ];
+        if (Need > In) {
+          In = Need;
+          Iterate = true;
+        }
+      }
+    }
+  }
+  bool Changed = false;
+  for (MachineBasicBlock &MBB : MF) {
+    unsigned Need = NeedIn.lookup(&MBB);
+    for (auto I = MBB.begin(), E = MBB.end(); I != E; ++I) {
+      Word W = getWord(*I);
+      unsigned Wait = stepWordCF(W, Need);
+      if (!Wait)
+        continue;
+      // In a delay slot the words go before the branch, which must not write
+      // the flags itself.
+      auto At = I;
+      if (any_of(W.Instrs, [](const MachineInstr *MI) {
+            return MI->getOpcode() == VU::DELAY_SLOT;
+          })) {
+        At = std::prev(I);
+        while (At->isMetaInstruction())
+          --At;
+        if (any_of(getWord(*At).Instrs,
+                   [](const MachineInstr *MI) { return getCFLatency(*MI); }))
+          report_fatal_error("VU: a clipping flag test in the delay slot of "
+                             "the word of its CLIP");
+      }
+      DebugLoc DL = W.Instrs.front()->getDebugLoc();
+      for (unsigned K = 0; K != Wait; ++K)
+        BuildMI(MBB, At, DL, TII.get(VU::NOP));
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 bool VUHazards::runOnMachineFunction(MachineFunction &MF) {
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
 
@@ -288,5 +372,6 @@ bool VUHazards::runOnMachineFunction(MachineFunction &MF) {
       Changed = true;
     }
   }
+  Changed |= fixClipFlagTests(MF, TII);
   return Changed;
 }

@@ -317,7 +317,8 @@ def FTOI12 : U2<0x16, "ftoi12">;
 def FTOI15 : U2<0x17, "ftoi15">;
 
 // CLIPw.xyz fs, ft.w: judge fs.xyz against +/-|ft.w| and update the clipping
-// flags.
+// flags (shifting the judgements before).
+let Defs = [CF], Uses = [CF] in
 def CLIP : VUUpperExt<0x1f, (outs), (ins VF:$fs, VF:$ft),
                       "clipw.xyz\t$fs, ${ft}w"> {
   bits<5> fs;
@@ -666,18 +667,21 @@ class ClipFlagTest<bits<7> op, string mn>
   let Inst{24} = 0;
   let Inst{23-0} = imm;
   let Defs = [VI1];
+  let Uses = [CF];
 }
 
 def FCEQ  : ClipFlagTest<0x10, "fceq">;
 def FCAND : ClipFlagTest<0x12, "fcand">;
 def FCOR  : ClipFlagTest<0x13, "fcor">;
 
+let Defs = [CF] in
 def FCSET : VULowerOp<0x11, (outs), (ins uimm24:$imm), "fcset\t$imm"> {
   bits<24> imm;
   let Inst{24} = 0;
   let Inst{23-0} = imm;
 }
 
+let Uses = [CF] in
 def FCGET : VULowerOp<0x1c, (outs VI:$it), (ins), "fcget\t$it"> {
   bits<5> it;
   let Inst{24-21} = 0;

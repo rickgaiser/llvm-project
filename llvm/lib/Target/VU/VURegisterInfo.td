@@ -31,12 +31,15 @@ def I   : VUReg<0, "i">,   DwarfRegNum<[49]>; // Immediate (LOI)
 def Q   : VUReg<0, "q">,   DwarfRegNum<[50]>; // FDIV result
 def P   : VUReg<0, "p">,   DwarfRegNum<[51]>; // EFU result (VU1)
 def R   : VUReg<0, "r">,   DwarfRegNum<[52]>; // Random number
+def CF  : VUReg<0, "cf">,  DwarfRegNum<[53]>; // Clipping flags
 
 // VF registers hold vectors, and scalar floats in the x field.
 def VF : RegisterClass<"VU", [v4f32, v4i32, f32], 128,
                        (sequence "VF%u", 0, 31)>;
 def VI : RegisterClass<"VU", [i16], 16, (sequence "VI%u", 0, 15)>;
 def ACCR : RegisterClass<"VU", [v4f32], 128, (add ACC)>;
+// The result of the clipping flag tests (FCAND, FCOR, FCEQ).
+def VI1R : RegisterClass<"VU", [i16], 16, (add VI1)>;
 // An ACC value that is not read or written by an FMAC instruction for a while
 // can be kept in a VF register; see getLargestLegalSuperClass.
 def ACCVF : RegisterClass<"VU", [v4f32], 128, (add VF, ACC)>;

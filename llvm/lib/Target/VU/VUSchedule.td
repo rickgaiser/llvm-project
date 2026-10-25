@@ -40,6 +40,8 @@ def IIC_VULower : InstrItinClass;
 // Pseudos: two upper instructions, or a LOI and an upper instruction.
 def IIC_VUUpper2 : InstrItinClass;
 def IIC_VULoi : InstrItinClass;
+// CLIP and a test of its flags (CLIP_FCAND).
+def IIC_VUClipTest : InstrItinClass;
 // FDIV: DIV and SQRT, RSQRT.
 def IIC_VUFdiv7 : InstrItinClass;
 def IIC_VUFdiv13 : InstrItinClass;
@@ -55,7 +57,8 @@ def VUItineraries
     : ProcessorItineraries<[VU_UPPER, VU_LOWER], [],
         !listconcat(
           [InstrItinData<IIC_VUUpper, [InstrStage<1, [VU_UPPER]>]>,
-           InstrItinData<IIC_VUUpper2, [InstrStage<1, [VU_UPPER]>]>],
+           InstrItinData<IIC_VUUpper2, [InstrStage<1, [VU_UPPER]>]>,
+           InstrItinData<IIC_VUClipTest, [InstrStage<1, [VU_UPPER]>]>],
           !foreach(C, LowerClasses,
                    InstrItinData<C, [InstrStage<1, [VU_LOWER]>]>))>;
 
@@ -110,6 +113,13 @@ def VUWriteLoi : SchedWriteRes<[VULowerRes, VUUpperRes]> {
   let RetireOOO = 1;
   let NumMicroOps = 2;
 }
+// Pseudo: CLIP, and the test 4 cycles later (the pipeliner reserves both
+// slots in the first cycle).
+def VUWriteClipTest : SchedWriteRes<[VUUpperRes, VULowerRes]> {
+  let Latency = 5;
+  let RetireOOO = 1;
+  let NumMicroOps = 2;
+}
 def VUWriteFdiv7 : SchedWriteRes<[VULowerRes, VUFdivRes]> {
   let Latency = 7;
   let RetireOOO = 1;
@@ -125,6 +135,7 @@ def : ItinRW<[VUWriteUpper], [IIC_VUUpper]>;
 def : ItinRW<[VUWriteLower], [IIC_VULower]>;
 def : ItinRW<[VUWriteUpper2], [IIC_VUUpper2]>;
 def : ItinRW<[VUWriteLoi], [IIC_VULoi]>;
+def : ItinRW<[VUWriteClipTest], [IIC_VUClipTest]>;
 def : ItinRW<[VUWriteFdiv7], [IIC_VUFdiv7]>;
 def : ItinRW<[VUWriteFdiv13], [IIC_VUFdiv13]>;
 foreach N = [10, 11, 17, 23, 28, 43, 53] in {

@@ -29,7 +29,7 @@
 ; HDR:      #define VU_SHADE_MAX_N 62
 ; HDR:      #define VU_SHADE_OUT_AT 131
 ; HDR:      #define VU_SHADE_REGS 0x51ull
-; HDR:      #define VU_SHADE_INPUTS {{[{][{]}}0x8, 0, 12}, {0xe, 1, 4}}
+; HDR:      #define VU_SHADE_INPUTS {{[{][{]}}0x8, 0, 12, 0x0}, {0xe, 1, 4, 0x0}}
 
 ; Two contexts by default; one leaves the buffers more room.
 ; HDR1:     #define VU_SHADE_BUF_QW 509
@@ -51,7 +51,7 @@
 @prev = internal addrspace(5) global <4 x float> zeroinitializer, !vu.carry !6
 
 ;.
-; CHECK: @vu.header = private constant [1281 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 0\0A#define VU_SHADE_SCALE 4  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units
+; CHECK: @vu.header = private constant [1321 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 0\0A#define VU_SHADE_SCALE 4  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units
 ; CHECK: @llvm.used = appending global [1 x ptr] [ptr @vu.header], section "llvm.metadata"
 ;.
 define void @shade() #0 {

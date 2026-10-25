@@ -39,6 +39,7 @@
 
 #include "VU.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -92,6 +93,7 @@ struct Slot {
   unsigned Code = 0;
   bool Unsigned = false;
   unsigned Bytes = 0;
+  unsigned Fill = 0;   // inputs: fields (bit 0 = x) that the VIF sets to 1.0
   uint64_t Offset = 0; // uniforms: bytes from the start of the block
 };
 
@@ -117,6 +119,7 @@ class EntryLowering {
   Value *qwPointer(IRBuilder<> &B, GlobalVariable *GV, Value *QW,
                    uint64_t ByteOffset = 0);
   void replaceGlobal(GlobalVariable *GV, Value *Ptr);
+  void dropIgnoredFields(const Slot &S);
   void hoistToEntry(BasicBlock *Entry);
   void addAliasScopes(ArrayRef<Value *> In, ArrayRef<Value *> Out);
   void buildGather(IRBuilder<> &B, Value *Top, Value *Out, Value *NQ,
@@ -225,6 +228,15 @@ void EntryLowering::collectGlobals() {
         }
         S.Code = It->Code;
         S.Bytes = It->Bytes;
+        // A float vector input with more fields than a 32-bit format gives:
+        // the VIF sets the others to 1.0 (STMASK, COL), float3 st with
+        // V2_32 is (s, t, 1). The program loads them as the others.
+        auto *VT = dyn_cast<FixedVectorType>(GV.getValueType());
+        unsigned VN = (S.Code >> 2) + 1;
+        if (VT && VT->getElementType()->isFloatTy() && (S.Code & 3) == 0 &&
+            K != "s32" && VT->getNumElements() > VN)
+          for (unsigned L = VN; L != VT->getNumElements(); ++L)
+            S.Fill |= 1 << L;
         Inputs.push_back(S);
       } else {
         auto It =
@@ -293,6 +305,34 @@ void EntryLowering::replaceGlobal(GlobalVariable *GV, Value *Ptr) {
     if (auto *I = dyn_cast<Instruction>(U.getUser());
         I && I->getFunction() == &F)
       U.set(Ptr);
+}
+
+/// The fields of a GIF register that PACKED mode does not read are undefined
+/// in the stores to it, so nothing computes them: w of ST, z and w of UV, x,
+/// y and z of FOG. Float vectors only: InstCombine may move the fields of an
+/// integer vector into others, which the VU has no exact instruction for.
+void EntryLowering::dropIgnoredFields(const Slot &S) {
+  unsigned Ignored = StringSwitch<unsigned>(S.Kind)
+                         .Case("st", 0x8)
+                         .Case("uv", 0xC)
+                         .Case("fog", 0x7)
+                         .Default(0);
+  if (!Ignored)
+    return;
+  for (Instruction &I : instructions(F)) {
+    auto *SI = dyn_cast<StoreInst>(&I);
+    auto *VT = SI ? dyn_cast<FixedVectorType>(SI->getValueOperand()->getType())
+                  : nullptr;
+    if (!VT || VT->getNumElements() != 4 ||
+        !VT->getElementType()->isFloatTy() ||
+        SI->getPointerOperand()->stripPointerCasts() != S.GV)
+      continue;
+    SmallVector<int, 4> Mask;
+    for (int L = 0; L != 4; ++L)
+      Mask.push_back(Ignored & (1 << L) ? PoisonMaskElem : L);
+    IRBuilder<> B(SI);
+    SI->setOperand(0, B.CreateShuffleVector(SI->getValueOperand(), Mask));
+  }
 }
 
 /// Moves the loads from uniforms, and the address arithmetic for them, out of
@@ -442,6 +482,16 @@ void EntryLowering::buildGather(IRBuilder<> &B, Value *Top, Value *Out,
   PPkt->addIncoming(B.CreateAdd(PPkt, B.getInt16(4 * NOut)), Loop);
   B.CreateCondBr(B.CreateICmpEQ(KNext, NQ, "k.last"), Kick, Loop);
   B.SetInsertPoint(Kick);
+}
+
+/// The STMASK word that fills fields \p Fill from COL (binary 10 in each
+/// write cycle) and writes the others from the data (00).
+static uint32_t fillMask(unsigned Fill) {
+  uint32_t Row = 0;
+  for (unsigned L = 0; L != 4; ++L)
+    if (Fill & (1 << L))
+      Row |= 2u << (2 * L);
+  return Row * 0x01010101u;
 }
 
 static std::string upper(StringRef S) {
@@ -721,6 +771,7 @@ bool EntryLowering::run(std::string &Header) {
         InPtrs.push_back(Ptr);
       }
       for (auto [K, S] : enumerate(Outputs)) {
+        dropIgnoredFields(S);
         Value *Ptr = qwPointer(B, S.GV, B.CreateAdd(POut, B.getInt16(K)));
         replaceGlobal(S.GV, Ptr);
         OutPtrs.push_back(Ptr);
@@ -859,8 +910,10 @@ bool EntryLowering::run(std::string &Header) {
     H << "#define " << P << "INPUTS {";
     for (auto [K, S] : enumerate(Inputs))
       H << (K ? ", " : "") << "{0x" << utohexstr(S.Code, true) << ", "
-        << S.Unsigned << ", " << S.Bytes << "}";
-    H << "}  /* UNPACK format, unsigned, bytes */\n";
+        << S.Unsigned << ", " << S.Bytes << ", 0x"
+        << utohexstr(fillMask(S.Fill), true) << "}";
+    H << "}  /* UNPACK format, unsigned, bytes, STMASK (fields 1.0 from COL) "
+         "*/\n";
   } else {
     H << "#define " << P << "N 0  /* the item count, field x */\n";
     if (Items)

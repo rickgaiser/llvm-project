@@ -54,6 +54,18 @@ def int_vu_xgkick : DefaultAttrsIntrinsic<[], [llvm_i16_ty], []>;
 // next MSCNT continues after it, with the registers as they were.
 def int_vu_yield : DefaultAttrsIntrinsic<[], [], [IntrHasSideEffects]>;
 
+// Clipping. CLIPw.xyz judges fields x, y and z of the first operand against
+// +/-|w| of the second; the clipping flags keep the last four judgements (six
+// bits each, the last in bits 0-5), shifting the oldest out. FCAND is 1 when
+// the flags and the mask have a bit in common. The flags are inaccessible
+// memory: the calls keep their order.
+def int_vu_clip : DefaultAttrsIntrinsic<[], [llvm_v4f32_ty, llvm_v4f32_ty],
+                                        [IntrInaccessibleMemOnly]>;
+def int_vu_fcand
+    : DefaultAttrsIntrinsic<[llvm_i16_ty], [llvm_i32_ty],
+                            [IntrInaccessibleMemOnly, IntrReadMem,
+                             ImmArg<ArgIndex<0>>, Range<RetIndex, 0, 2>]>;
+
 // The index of the item (vertex or element) that the code of a "vu-entry"
 // function works on, and the number of items of the batch; replaced by
 // VUEntryLowering (see VUEntryLowering.cpp).

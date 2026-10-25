@@ -119,7 +119,7 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
                        ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT,
                        ISD::EXTRACT_VECTOR_ELT, ISD::SINT_TO_FP,
                        ISD::UINT_TO_FP, ISD::SELECT, ISD::VSELECT,
-                       ISD::BUILD_VECTOR, ISD::FDIV});
+                       ISD::BUILD_VECTOR, ISD::FDIV, ISD::INTRINSIC_W_CHAIN});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -160,11 +160,57 @@ SDValue VUTargetLowering::lowerBUILD_VECTOR(SDValue Op,
   if (SDValue Splat = BV->getSplatValue())
     return DAG.getNode(VUISD::SPLAT, DL, MVT::v4f32, Splat);
 
-  // Insert the defined fields one by one.
+  // Fields taken from the same field of a vector: start from the vector that
+  // gives the most of them (one that nothing else reads first: it needs no
+  // copy for the tied insertions), and merge those of the others by MOVE.
+  auto InPlace = [&](unsigned I) -> SDValue {
+    SDValue Elt = Op.getOperand(I);
+    if (Elt.getOpcode() != ISD::EXTRACT_VECTOR_ELT ||
+        Elt.getOperand(0).getValueType() != MVT::v4f32 ||
+        !isa<ConstantSDNode>(Elt.getOperand(1)) ||
+        Elt.getConstantOperandVal(1) != I)
+      return SDValue();
+    return Elt.getOperand(0);
+  };
+  SmallVector<std::pair<SDValue, unsigned>, 4> Sources; // vector, field mask
+  for (unsigned I = 0; I != 4; ++I)
+    if (SDValue V = InPlace(I)) {
+      auto *It = find_if(Sources, [&](auto &S) { return S.first == V; });
+      if (It == Sources.end())
+        It = &Sources.emplace_back(V, 0);
+      It->second |= 8 >> I;
+    }
+  // Read only by the extracts of this BUILD_VECTOR.
+  auto OnlyHere = [&](SDValue V) {
+    return all_of(V->uses(), [&](SDUse &U) {
+      SDNode *User = U.getUser();
+      return User->getOpcode() == ISD::EXTRACT_VECTOR_ELT &&
+             all_of(User->uses(),
+                    [&](SDUse &E) { return E.getUser() == Op.getNode(); });
+    });
+  };
   SDValue Vec = DAG.getUNDEF(MVT::v4f32);
+  unsigned Done = 0;
+  if (!Sources.empty()) {
+    auto *Base =
+        std::max_element(Sources.begin(), Sources.end(), [&](auto &A, auto &B) {
+          return std::make_pair(OnlyHere(A.first), popcount(A.second)) <
+                 std::make_pair(OnlyHere(B.first), popcount(B.second));
+        });
+    Vec = Base->first;
+    Done = Base->second;
+    for (auto &[V, M] : Sources)
+      if (V != Base->first) {
+        Vec = DAG.getNode(VUISD::MERGE, DL, MVT::v4f32, Vec, V,
+                          DAG.getTargetConstant(M, DL, MVT::i32));
+        Done |= M;
+      }
+  }
+
+  // Insert the other defined fields one by one.
   for (unsigned I = 0; I != 4; ++I) {
     SDValue Elt = Op.getOperand(I);
-    if (Elt.isUndef())
+    if (Elt.isUndef() || (Done & (8 >> I)))
       continue;
     Vec = DAG.getNode(ISD::INSERT_VECTOR_ELT, DL, MVT::v4f32, Vec, Elt,
                       DAG.getVectorIdxConstant(I, DL));
@@ -1039,15 +1085,20 @@ static void addAccLeaf(SDValue V, bool Neg, SelectionDAG &DAG,
   Terms.push_back({V, DAG.getRegister(VU::VF0, MVT::v4f32), 3, Neg});
 }
 
+static bool isFromOutside(SDValue V, DenseMap<SDNode *, bool> &Known);
+static const ConstantFPSDNode *getConstSplat(SDValue V);
+
 /// Collects the terms of a left-linear chain of FADD and FSUB nodes, in
-/// evaluation order.
+/// evaluation order. A sum of values from outside the block is one term:
+/// MachineLICM computes it before the loop.
 static void collectAccTerms(SDValue V, SelectionDAG &DAG,
                             SmallVectorImpl<AccTerm> &Terms) {
   SumTerms S;
+  DenseMap<SDNode *, bool> Outside;
   collectSumTerms(
       V,
       [&](SDValue X) -> std::optional<bool> {
-        if (X != V && !isAccChain(X))
+        if (X != V && (!isAccChain(X) || isFromOutside(X, Outside)))
           return std::nullopt;
         return X.getOpcode() == ISD::FSUB;
       },
@@ -1148,11 +1199,17 @@ SDValue VUTargetLowering::combineAccSum(SDNode *N, SelectionDAG &DAG) const {
   //   amb + lcol * d.x  ->  MULAw acc, amb, vf0; MADDx r, lcol, d
   // (not MULAx acc, lcol, d; MADDw r, amb, vf0: one FMAC latency longer.)
   // Other terms keep their order: moving them only lengthens the time ACC is
-  // held.
+  // held. So does a sum with a constant, which may be a magic number that
+  // rounds the sum it is added to (vu::rgba8, combineConstantAdd): every sum
+  // after it would be rounded.
   if (AccOrder && isReassocChain(SDValue(N, 0))) {
     DenseMap<SDNode *, bool> Known;
     auto IsReady = [&](const AccTerm &T) {
-      return isFromOutside(T.A, Known) && isFromOutside(T.B, Known);
+      bool AddsConst =
+          T.A.getOpcode() == ISD::FADD && (getConstSplat(T.A.getOperand(0)) ||
+                                           getConstSplat(T.A.getOperand(1)));
+      return !AddsConst && isFromOutside(T.A, Known) &&
+             isFromOutside(T.B, Known);
     };
     SmallVector<AccTerm, 8> Sorted(Terms);
     std::stable_partition(Sorted.begin(), Sorted.end(), IsReady);
@@ -1321,6 +1378,119 @@ static SDValue stripFactor(SDValue V, double C, SelectionDAG &DAG,
     if (SDValue S = DAG.getSplatValue(V))
       if (SDValue S2 = stripFactor(S, C, DAG, Depth + 1))
         return DAG.getSplat(VT, DL, S2);
+  }
+  return SDValue();
+}
+
+/// The constant of a vector whose fields are all the same constant: a splat,
+/// or a broadcast of one.
+static const ConstantFPSDNode *getConstSplat(SDValue V) {
+  if (V.getOpcode() == VUISD::SPLAT || V.getOpcode() == VUISD::BCAST)
+    return dyn_cast<ConstantFPSDNode>(V.getOperand(0));
+  return isConstOrConstSplatFP(V);
+}
+
+/// A value that the loop does not compute: from another block, or constant.
+static bool isLiveIn(SDValue V) {
+  return V.getOpcode() == ISD::CopyFromReg || getConstSplat(V);
+}
+
+/// The sum tree \p X (reassociable adds, read once) without an addend \p U
+/// from outside of it, or no value.
+static SDValue withoutLiveIn(SDValue X, SDValue &U, SelectionDAG &DAG,
+                             unsigned Depth = 0) {
+  if (Depth > 4 || X.getOpcode() != ISD::FADD || !X.hasOneUse() ||
+      !X->getFlags().hasAllowReassociation())
+    return SDValue();
+  for (unsigned J : {0, 1}) {
+    SDValue Op = X.getOperand(J), Other = X.getOperand(1 - J);
+    if (Op.getOpcode() == ISD::CopyFromReg) {
+      U = Op;
+      return Other;
+    }
+    if (SDValue R = withoutLiveIn(Op, U, DAG, Depth + 1))
+      return DAG.getNode(ISD::FADD, SDLoc(X), X.getValueType(), R, Other,
+                         X->getFlags());
+  }
+  return SDValue();
+}
+
+/// v + c, for a constant c, moved towards the values it can join: the add
+/// of a magic number (vu::rgba8) after an add of a uniform and a clamp
+/// becomes one add of the uniform plus the magic number, which MachineLICM
+/// takes out of the loop.
+///   shuffle (a, b) + c    ->  shuffle (a + c, b + c)   (b from outside)
+///   min (a, c1) + c2      ->  min (a + c2, c1 + c2)    (c1 + c2 exact)
+///   (x + u) + c           ->  x + (u + c)              (u from outside)
+/// The first two are exact: c is the same in every field, and rounding is
+/// monotonic. The last needs reassociation; u may be deeper in the sum, and
+/// is then taken out of it.
+/// Before ACC chains are made of the sums (combineAccSum), and before the
+/// types are legalized (float3 values).
+static SDValue combineConstantAdd(SDNode *N, SelectionDAG &DAG) {
+  EVT VT = N->getValueType(0);
+  if (N->getOpcode() != ISD::FADD || !VT.isVector() ||
+      VT.getVectorElementType() != MVT::f32)
+    return SDValue();
+  SDLoc DL(N);
+  SDNodeFlags Flags = N->getFlags();
+  for (unsigned I : {0, 1}) {
+    SDValue V = N->getOperand(I), C = N->getOperand(1 - I);
+    const ConstantFPSDNode *CN = getConstSplat(C);
+    if (!CN || !V.hasOneUse())
+      continue;
+    // c as a vector of the type of x.
+    auto Add = [&](SDValue X) {
+      if (X.isUndef())
+        return X;
+      EVT XT = X.getValueType();
+      SDValue CX = XT == VT ? C
+                            : DAG.getSplat(XT, DL,
+                                           DAG.getConstantFP(CN->getValueAPF(),
+                                                             DL, MVT::f32));
+      return DAG.getNode(ISD::FADD, DL, XT, X, CX, Flags);
+    };
+    switch (V.getOpcode()) {
+    case VUISD::MERGE:
+    case ISD::VECTOR_SHUFFLE: {
+      SDValue A = V.getOperand(0), B = V.getOperand(1);
+      if (!isLiveIn(A) && !isLiveIn(B) && !A.isUndef() && !B.isUndef())
+        break;
+      if (V.getOpcode() == VUISD::MERGE)
+        return DAG.getNode(VUISD::MERGE, DL, VT, Add(A), Add(B),
+                           V.getOperand(2));
+      return DAG.getVectorShuffle(VT, DL, Add(A), Add(B),
+                                  cast<ShuffleVectorSDNode>(V)->getMask());
+    }
+    case ISD::FMINNUM:
+    case ISD::FMAXNUM:
+      for (unsigned J : {0, 1}) {
+        const ConstantFPSDNode *Bound = getConstSplat(V.getOperand(1 - J));
+        if (!Bound)
+          continue;
+        APFloat Sum = Bound->getValueAPF();
+        if (Sum.add(CN->getValueAPF(), APFloat::rmNearestTiesToEven) !=
+            APFloat::opOK)
+          continue;
+        return DAG.getNode(
+            V.getOpcode(), DL, VT, Add(V.getOperand(J)),
+            DAG.getSplat(VT, DL, DAG.getConstantFP(Sum, DL, MVT::f32)),
+            V->getFlags());
+      }
+      break;
+    case ISD::FADD: {
+      // u + c is added last, as c was: with a magic number, every sum after
+      // it would be rounded.
+      SDValue U;
+      if (!Flags.hasAllowReassociation())
+        break;
+      if (SDValue X = withoutLiveIn(V, U, DAG))
+        return DAG.getNode(ISD::FADD, DL, VT, X, Add(U), Flags);
+      break;
+    }
+    default:
+      break;
+    }
   }
   return SDValue();
 }
@@ -1498,6 +1668,24 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
         getMask(N->getOperand(0), DAG).first)
       return lowerSELECT(SDValue(N, 0), DAG);
     break;
+  }
+  case ISD::INTRINSIC_W_CHAIN: {
+    // A test of the clipping flags right after the CLIP that sets them: one
+    // node (CLIP_FCAND), which the pipeliner keeps together.
+    if (N->getConstantOperandVal(1) != Intrinsic::vu_fcand)
+      break;
+    SDValue Chain = N->getOperand(0);
+    SDNode *Clip = Chain.getNode();
+    if (Clip->getOpcode() != ISD::INTRINSIC_VOID ||
+        Clip->getConstantOperandVal(1) != Intrinsic::vu_clip)
+      break;
+    SDValue Test = DAG.getNode(
+        VUISD::CLIP_TEST, DL, DAG.getVTList(MVT::i16, MVT::Other),
+        {Clip->getOperand(0), Clip->getOperand(2), Clip->getOperand(3),
+         DAG.getTargetConstant(N->getConstantOperandVal(2), DL, MVT::i32)});
+    // The users of the CLIP's chain come after the pair.
+    DAG.ReplaceAllUsesOfValueWith(Chain, Test.getValue(1));
+    return DCI.CombineTo(N, Test.getValue(0), Test.getValue(1));
   }
   case ISD::FP_TO_SINT: {
     // fp_to_sint (v * 2^n) -> FTOI<n> v. The multiplication is exact.
@@ -1697,6 +1885,8 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
         return getCross(A, B, DL, DAG);
     }
     if (SDValue R = combineBroadcastPair(N, DAG))
+      return R;
+    if (SDValue R = combineConstantAdd(N, DAG))
       return R;
     if (!DCI.isAfterLegalizeDAG())
       break;

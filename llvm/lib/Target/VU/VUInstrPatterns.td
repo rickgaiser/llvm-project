@@ -49,6 +49,11 @@ def VUftoi : SDNode<"VUISD::FTOI", SDTypeProfile<1, 2, [SDTCisVT<0, v4i32>,
 def VUitof : SDNode<"VUISD::ITOF", SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
                                    SDTCisVT<1, v4i32>, SDTCisVT<2, i32>]>>;
 
+// The fields of mask $m (8 = x ... 1 = w) from $s, the others from $src.
+def VUmerge : SDNode<"VUISD::MERGE", SDTypeProfile<1, 3, [SDTCisVT<0, v4f32>,
+                     SDTCisSameAs<1, 0>, SDTCisSameAs<2, 0>,
+                     SDTCisVT<3, i32>]>>;
+
 // Insert a VI register, sign-extended to 32 bits, into field $f of an
 // integer vector.
 def VUinsertvi : SDNode<"VUISD::INSERT_VI", SDTypeProfile<1, 3, [
@@ -152,6 +157,14 @@ def : Pat<(vector_insert (v4f32 VF:$src),
 }
 
 // Insert Q into field f of src: ADDq.<f> d, vf0, q, MULq.w d, vf0, q for w.
+// Fields of s into the same fields of src: MOVE<m> d, s, a lower
+// instruction, exact for every value. VUFoldInsertField writes them in place
+// when s has no other reader.
+let Constraints = "$d = $src" in
+def MERGE_FIELDS : VUPseudo<(outs VF:$d), (ins VF:$src, VF:$s, i32imm:$m),
+    [(set (v4f32 VF:$d), (VUmerge (v4f32 VF:$src), (v4f32 VF:$s), timm:$m))],
+    IIC_VULower>;
+
 // VUFoldQ makes it from an INSERT_FIELD of a division result.
 let Constraints = "$d = $src" in
 def INSERT_Q : VUPseudo<(outs VF:$d), (ins VF:$src, QR:$q, i16imm:$f), [],
@@ -162,6 +175,26 @@ let Constraints = "$d = $src" in
 def INSERT_VI : VUPseudo<(outs VF:$d), (ins VF:$src, VI:$s, i32imm:$f),
     [(set (v4i32 VF:$d), (VUinsertvi (v4i32 VF:$src), (i16 VI:$s), timm:$f))],
     IIC_VULower>;
+
+// Clipping (llvm.vu.clip, llvm.vu.fcand). FCAND writes VI1 (VI1R, a class of
+// one register, like ACC and Q); the pseudos give the result a register
+// operand. A CLIP and the test that reads its flags are one instruction for
+// the pipeliner (VUISD::CLIP_TEST), so they stay in one stage; the clipping
+// flags (CF) order them after register allocation, and VUHazards keeps the
+// test 4 cycles after the CLIP.
+let Uses = [CF] in
+def FCAND_VI1 : VUPseudo<(outs VI1R:$d), (ins uimm24:$m), [], IIC_VULower>;
+let Defs = [CF], Uses = [CF] in
+def CLIP_FCAND : VUPseudo<(outs VI1R:$d), (ins VF:$fs, VF:$ft, uimm24:$m),
+                          [], IIC_VUClipTest>;
+def VUclipTest : SDNode<"VUISD::CLIP_TEST", SDTypeProfile<1, 3, [
+                        SDTCisVT<0, i16>, SDTCisVT<1, v4f32>,
+                        SDTCisVT<2, v4f32>, SDTCisVT<3, i32>]>,
+                        [SDNPHasChain]>;
+def : Pat<(int_vu_clip (v4f32 VF:$fs), (v4f32 VF:$ft)), (CLIP VF:$fs, VF:$ft)>;
+def : Pat<(i16 (int_vu_fcand timm:$m)), (FCAND_VI1 timm:$m)>;
+def : Pat<(i16 (VUclipTest (v4f32 VF:$fs), (v4f32 VF:$ft), timm:$m)),
+          (CLIP_FCAND VF:$fs, VF:$ft, timm:$m)>;
 
 // Negation: LOI -1.0; MULi.xyzw d, s, i
 let Defs = [I] in

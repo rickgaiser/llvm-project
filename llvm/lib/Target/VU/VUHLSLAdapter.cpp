@@ -26,7 +26,9 @@
 //  * static variables (10) that are written keep their value from item to
 //    item (as in C), others are constants;
 //  * the llvm.spv.* intrinsics become generic IR, llvm.matrix.multiply sums
-//    of products, and the convergence tokens go away.
+//    of products, and the convergence tokens go away;
+//  * calls to the functions that vu.hlsli declares without a body,
+//    vu::__<name>, become the VU intrinsics llvm.vu.<name> (clip, fcand).
 //
 //===----------------------------------------------------------------------===//
 
@@ -47,6 +49,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
 
 using namespace llvm;
@@ -116,6 +119,7 @@ class Adapter {
   void lowerStatics();
   void lowerResources();
   void lowerIntrinsics();
+  void lowerVUFunctions();
 
 public:
   Adapter(Module &M) : M(M), Ctx(M.getContext()) {}
@@ -695,6 +699,93 @@ void Adapter::lowerIntrinsics() {
     }
 }
 
+/// The name of the VU function \p F: <name> of vu::__<name> (mangled
+/// _ZN2vu<length>__<name>...), or empty.
+static StringRef getVUFunction(const Function &F) {
+  StringRef N = F.getName();
+  if (!F.isDeclaration() || !N.consume_front("_ZN2vu"))
+    return "";
+  unsigned Len;
+  if (N.consumeInteger(10, Len) || N.size() < Len)
+    return "";
+  N = N.take_front(Len);
+  return N.consume_front("__") ? N : "";
+}
+
+void Adapter::lowerVUFunctions() {
+  if (none_of(M, [](const Function &F) {
+        return !getVUFunction(F).empty() && !F.use_empty();
+      }))
+    return;
+  // vu.hlsli's functions around them are inlined into the entry first, where
+  // their operands are known (a constant mask). The copies in vu.hlsli's own
+  // functions are left; those are not used, and go away.
+  for (bool Changed = true; Changed;) {
+    Changed = false;
+    SmallVector<CallBase *, 8> Calls;
+    for (Instruction &I : instructions(*Entry))
+      if (auto *CB = dyn_cast<CallBase>(&I))
+        if (Function *Callee = CB->getCalledFunction();
+            Callee && !Callee->isDeclaration())
+          Calls.push_back(CB);
+    for (CallBase *CB : Calls) {
+      InlineFunctionInfo IFI;
+      Changed |= InlineFunction(*CB, IFI).isSuccess();
+    }
+  }
+  for (Function &F : make_early_inc_range(M)) {
+    StringRef Name = getVUFunction(F);
+    if (Name.empty())
+      continue;
+    for (User *U : make_early_inc_range(F.users())) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI || CI->getCalledFunction() != &F || CI->getFunction() != Entry)
+        continue;
+      IRBuilder<> B(CI);
+      Type *F4 = FixedVectorType::get(B.getFloatTy(), 4);
+      // A float vector of 1 to 4 fields as the fields of a VU vector.
+      auto Vec4 = [&](Value *V) -> Value * {
+        auto *VT = dyn_cast<FixedVectorType>(V->getType());
+        if (!VT)
+          return B.CreateInsertElement(PoisonValue::get(F4), V, uint64_t(0));
+        SmallVector<int, 4> Mask;
+        for (unsigned K = 0; K != 4; ++K)
+          Mask.push_back(K < VT->getNumElements() ? int(K) : PoisonMaskElem);
+        return B.CreateShuffleVector(V, Mask);
+      };
+      Value *R = nullptr;
+      if (Name == "clip" && CI->arg_size() == 2) {
+        // clip(float3 v, float w): w is read from field w.
+        B.CreateIntrinsic(
+            Intrinsic::vu_clip, {},
+            {Vec4(CI->getArgOperand(0)),
+             B.CreateInsertElement(PoisonValue::get(F4), CI->getArgOperand(1),
+                                   uint64_t(3))});
+      } else if (Name == "fcand" && CI->arg_size() == 1) {
+        auto *Mask = dyn_cast<ConstantInt>(CI->getArgOperand(0));
+        if (!Mask || !isUInt<24>(Mask->getZExtValue())) {
+          error("vu::clipped: the mask is a 24-bit constant");
+          R = PoisonValue::get(CI->getType());
+        } else {
+          R = B.CreateZExt(
+              B.CreateIntrinsic(B.getInt16Ty(), Intrinsic::vu_fcand,
+                                {B.getInt32(Mask->getZExtValue())}),
+              CI->getType());
+        }
+      } else {
+        error("unknown VU function vu::__" + Name);
+        R = CI->getType()->isVoidTy() ? nullptr
+                                      : PoisonValue::get(CI->getType());
+      }
+      if (R)
+        CI->replaceAllUsesWith(R);
+      CI->eraseFromParent();
+    }
+    if (F.use_empty())
+      F.eraseFromParent();
+  }
+}
+
 bool Adapter::run() {
   for (Function &F : M) {
     Attribute S = F.getFnAttribute("hlsl.shader");
@@ -727,6 +818,7 @@ bool Adapter::run() {
   lowerStatics();
   lowerResources();
   lowerIntrinsics();
+  lowerVUFunctions();
 
   Entry->removeFnAttr("hlsl.shader");
   Entry->removeFnAttr("hlsl.numthreads");

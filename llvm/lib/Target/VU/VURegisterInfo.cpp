@@ -36,7 +36,8 @@ BitVector VURegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   // VF0 is (0, 0, 0, 1) and VI0 is 0.
   Reserved.set(VU::VF0);
   Reserved.set(VU::VI0);
-  for (MCRegister R : {VU::I, VU::P, VU::R})
+  // CF: the clipping flags, ordered by its implicit operands only.
+  for (MCRegister R : {VU::I, VU::P, VU::R, VU::CF})
     Reserved.set(R);
   return Reserved;
 }
@@ -58,13 +59,17 @@ bool VURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
 const TargetRegisterClass *
 VURegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC,
                                           const MachineFunction &MF) const {
-  // There is only one ACC and one Q. When the register allocator splits a
+  // There is only one ACC, one Q and one VI1 for FCAND. When the register
+  // allocator splits a
   // value that overlaps another one, the part between its uses can move to a
   // VF register.
   if (RC == &VU::ACCRRegClass)
     return &VU::ACCVFRegClass;
   if (RC == &VU::QRRegClass)
     return &VU::QVFRegClass;
+  // A clipping flag test result (VI1) can move to another VI register.
+  if (RC == &VU::VI1RRegClass)
+    return &VU::VIRegClass;
   return RC;
 }
 

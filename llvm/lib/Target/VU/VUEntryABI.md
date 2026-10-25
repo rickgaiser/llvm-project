@@ -59,9 +59,14 @@ A private global without `!vu.carry` starts each item with its initializer.
 Formats (UNPACK, `vn_vl`; a `u` suffix zero-extends): `s32 s16 s8 v2_32 v2_16
 v2_8 v3_32 v3_16 v3_8 v4_32 v4_16 v4_8 v4_5`. The program reads one quadword
 per input: UNPACK has already turned the format into four 32-bit fields
-(floats for `_32`, integers otherwise).
+(floats for `_32`, integers otherwise). A float vector input with more fields
+than a `_32` format gives (`<3 x float>` from `v2_32`) has the others set to
+1.0 by the VIF (the header's STMASK for the input; COL is 1.0): the program
+loads them like the others.
 
-GIF registers (PACKED): `rgbaq st uv xyzf2 xyz2 fog xyzf3 xyz3`.
+GIF registers (PACKED): `rgbaq st uv xyzf2 xyz2 fog xyzf3 xyz3`. The fields
+that PACKED mode does not read are undefined in the stores of float outputs:
+w of `st`, z and w of `uv`, x, y and z of `fog`.
 
 ## Intrinsics
 
@@ -70,6 +75,12 @@ GIF registers (PACKED): `rgbaq st uv xyzf2 xyz2 fog xyzf3 xyz3`.
 | `i16 @llvm.vu.item.index()` | the index of the item in the batch |
 | `i16 @llvm.vu.item.count()` | the number of items in the batch |
 | `void @llvm.vu.yield()` | the end of a run (E bit); MSCNT continues after it with the registers kept (made by the entry lowering) |
+| `void @llvm.vu.clip(<4 x float> v, <4 x float> w)` | CLIPw.xyz: judges x, y, z of `v` against ±\|w.w\|; the clipping flags keep the last four judgements (six bits each, the last in bits 0-5) |
+| `i16 @llvm.vu.fcand(i32 immarg mask)` | FCAND: 1 when the clipping flags and `mask` (24 bits) have a bit in common, else 0 |
+
+The clipping flags are inaccessible memory to the IR: the calls keep their
+order. A test sees a CLIP 4 cycles after it (no interlock; the compiler keeps
+the distance).
 
 ## Layouts
 
@@ -168,6 +179,9 @@ memory, not of the buffer), for a compute program `N <items> SIZE ENTRY
 ITEM_QW FORMAT DBUF`, and for both the quadword of each uniform (`<uniform>`:
 from 0 in the uniforms of a vertex program, in data memory for a compute
 program; with its field in a comment if it does not start a quadword) and `SPILL_QW`.
+`INPUTS` has one `{format, unsigned, bytes, STMASK}` per input; STMASK is 0,
+or the mask that fills the fields of 1.0 from COL (the EE sets COL to 1.0 and
+the UNPACK's mask bit).
 
 ## Spills
 
@@ -198,6 +212,7 @@ llc -mtriple=vu -mcpu=vu0|vu1 -O3 -filetype=obj
 | the structured buffer (`resource.getpointer`, `getdimensions.x`) | the items; `llvm.vu.item.count` |
 | `SV_DispatchThreadID` (`spv.thread.id` 0) | `llvm.vu.item.index` |
 | a static (10) that is written | a private global with `!vu.carry` |
+| calls to a declared `vu::__<name>` (vu.hlsli: `__clip`, `__fcand`), after inlining into the entry | `llvm.vu.<name>` |
 | `llvm.spv.*` math, `llvm.matrix.multiply` | generic IR |
 | convergence tokens | removed |
 

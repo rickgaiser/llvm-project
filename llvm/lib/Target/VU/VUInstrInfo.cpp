@@ -229,6 +229,26 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     break;
   }
 
+  case VU::FCAND_VI1:
+    Build(VU::FCAND).add(MI.getOperand(1));
+    break;
+
+  case VU::CLIP_FCAND:
+    Build(VU::CLIP).add(MI.getOperand(1)).add(MI.getOperand(2));
+    Build(VU::FCAND).add(MI.getOperand(3));
+    break;
+
+  case VU::MERGE_FIELDS: {
+    // MOVE<m> d, s; the tied source is kept in the other fields.
+    RegState SrcState =
+        RegState::Implicit | getUndefRegState(MI.getOperand(1).isUndef());
+    BuildDef(VU::MOVE, MI.getOperand(0).getReg())
+        .addImm(MI.getOperand(3).getImm())
+        .add(MI.getOperand(2))
+        .addReg(MI.getOperand(0).getReg(), SrcState);
+    break;
+  }
+
   case VU::INSERT_Q: {
     // The tied source; undefined when it was an IMPLICIT_DEF.
     RegState SrcState =
