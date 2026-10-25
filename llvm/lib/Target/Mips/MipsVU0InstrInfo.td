@@ -192,12 +192,14 @@ def MipsVU0DIVQ : SDNode<"MipsISD::VU0_DIVQ",
 // The cross product of fields x, y and z: VOPMULA.xyz ACC, a, b and
 // VOPMSUB.xyz d, b, a. Field w is undefined.
 // Q = a.<fa> / b.<fb> (VDIV), in field x of the result (VADDQ.x vf0, Q).
-def MipsVU0QDIV : SDNode<"MipsISD::VU0_QDIV",
-                         SDTypeProfile<1, 4, [SDTCisVT<0, v4f32>,
-                                              SDTCisVT<1, v4f32>,
-                                              SDTCisVT<2, i32>,
-                                              SDTCisVT<3, v4f32>,
-                                              SDTCisVT<4, i32>]>>;
+def SDT_MipsVU0QOp : SDTypeProfile<1, 4, [SDTCisVT<0, v4f32>,
+                                          SDTCisVT<1, v4f32>,
+                                          SDTCisVT<2, i32>,
+                                          SDTCisVT<3, v4f32>,
+                                          SDTCisVT<4, i32>]>;
+def MipsVU0QDIV : SDNode<"MipsISD::VU0_QDIV", SDT_MipsVU0QOp>;
+// Q = a.<fa> / sqrt(b.<fb>) (VRSQRT), the same way.
+def MipsVU0QRSQRT : SDNode<"MipsISD::VU0_QRSQRT", SDT_MipsVU0QOp>;
 
 def MipsVU0CROSS : SDNode<"MipsISD::VU0_CROSS",
                           SDTypeProfile<1, 2, [SDTCisVT<0, v4f32>,
@@ -714,6 +716,23 @@ def VDIV_V : InstSE<(outs VU0QV:$q), (ins VFOpnd:$fs, vu0fieldsel:$fsf,
   let Inst{20 -16} = ft;
   let Inst{15 -11} = fs;
   let Inst{10 -0} = 0b01110111100;
+}
+
+def VRSQRT_V : InstSE<(outs VU0QV:$q), (ins VFOpnd:$fs, vu0fieldsel:$fsf,
+                                             VFOpnd:$ft, vu0fieldsel:$ftf),
+                      "vrsqrt\t$$Q, $fs$fsf, $ft$ftf", [], FrmR, "vrsqrt_v"> {
+  bits<5> fs;
+  bits<2> fsf;
+  bits<5> ft;
+  bits<2> ftf;
+  bits<32> Inst;
+  let Inst{31 -26} = 0b010010; // COP2
+  let Inst{25} = 1;            // CO bit
+  let Inst{24 -23} = ftf;
+  let Inst{22 -21} = fsf;
+  let Inst{20 -16} = ft;
+  let Inst{15 -11} = fs;
+  let Inst{10 -0} = 0b01110111110;
 }
 
 def VWAITQ_V : InstSE<(outs VU0QV:$qd), (ins VU0QV:$q), "vwaitq", [], FrmR,

@@ -815,19 +815,25 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
   unsigned Opcode = Node->getOpcode();
   SDLoc DL(Node);
 
-  // (a, fa, b, fb): VDIV Q, a.fa, b.fb; VWAITQ; the Q for the reader, and
-  // a glue that keeps the three together, so that the Q values of two
-  // divisions do not overlap.
+  // (a, fa, b, fb): VDIV Q, a.fa, b.fb (VRSQRT for VU0_QRSQRT); VWAITQ; the
+  // Q for the reader, and a glue that keeps the three together, so that the
+  // Q values of two divisions do not overlap.
+  auto IsQOp = [](SDValue V) {
+    return V.getOpcode() == MipsISD::VU0_QDIV ||
+           V.getOpcode() == MipsISD::VU0_QRSQRT;
+  };
   auto SelectQDiv = [&](SDNode *QDiv) {
+    unsigned Opc = QDiv->getOpcode() == MipsISD::VU0_QRSQRT ? Mips::VRSQRT_V
+                                                            : Mips::VDIV_V;
     SDNode *Div =
-        CurDAG->getMachineNode(Mips::VDIV_V, DL, MVT::f32, MVT::Glue,
+        CurDAG->getMachineNode(Opc, DL, MVT::f32, MVT::Glue,
                                {QDiv->getOperand(0), QDiv->getOperand(1),
                                 QDiv->getOperand(2), QDiv->getOperand(3)});
     return CurDAG->getMachineNode(Mips::VWAITQ_V, DL, MVT::f32, MVT::Glue,
                                   {SDValue(Div, 0), SDValue(Div, 1)});
   };
 
-  if (Opcode == MipsISD::VU0_QDIV) {
+  if (Opcode == MipsISD::VU0_QDIV || Opcode == MipsISD::VU0_QRSQRT) {
     // Q into field x: VADDQ.x vf0, Q.
     SDNode *Wait = SelectQDiv(Node);
     ReplaceNode(Node, CurDAG->getMachineNode(
@@ -848,8 +854,7 @@ bool MipsSEDAGToDAGISel::trySelect(SDNode *Node) {
         break;
       SDValue BC = Node->getOperand(I);
       if (BC.getOpcode() != MipsISD::VU0_BCAST || !BC.hasOneUse() ||
-          BC.getConstantOperandVal(1) != 0 ||
-          BC.getOperand(0).getOpcode() != MipsISD::VU0_QDIV ||
+          BC.getConstantOperandVal(1) != 0 || !IsQOp(BC.getOperand(0)) ||
           !BC.getOperand(0).hasOneUse())
         continue;
       unsigned Opc = Opcode == ISD::FMUL   ? Mips::VMULQ_V

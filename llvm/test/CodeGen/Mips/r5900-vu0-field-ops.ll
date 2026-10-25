@@ -214,3 +214,96 @@ define <4 x float> @q_two_uses(<4 x float> %v, ptr %p) {
 }
 
 declare float @llvm.maxnum.f32(float, float)
+
+; With approximate functions c / sqrt(a field) is one VRSQRT through Q, and the
+; sum of fields under the square root stays in the VU0: the length scale of a
+; normal (127 / |t|).
+define <4 x float> @q_rsqrt(<4 x float> %t) {
+; CHECK-LABEL: q_rsqrt:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf12, $vf12
+; CHECK-NEXT:    lui $1, %hi(.LCPI6_0)
+; CHECK-NEXT:    vaddy.xyzw $vf2, $vf1, $vf1
+; CHECK-NEXT:    vaddz.xyzw $vf1, $vf2, $vf1
+; CHECK-NEXT:    lqc2 $vf2, %lo(.LCPI6_0)($1)
+; CHECK-NEXT:    lui $1, %hi(.LCPI6_1)
+; CHECK-NEXT:    vaddx.xyzw $vf1, $vf1, $vf2
+; CHECK-NEXT:    lqc2 $vf2, %lo(.LCPI6_1)($1)
+; CHECK-NEXT:    vrsqrt $Q, $vf2x, $vf1x
+; CHECK-NEXT:    vwaitq
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vmulq.xyzw $vf1, $vf12, $Q
+;
+; OFF-LABEL: q_rsqrt:
+; OFF:       # %bb.0:
+; OFF-NEXT:    vmul.xyzw $vf1, $vf12, $vf12
+; OFF-NEXT:    qmfc2 $1, $vf1
+; OFF-NEXT:    dsrl32 $2, $1, 0
+; OFF-NEXT:    mtc1 $1, $f0
+; OFF-NEXT:    mtc1 $2, $f1
+; OFF-NEXT:    pcpyud $1, $1, $1
+; OFF-NEXT:    add.s $f0, $f0, $f1
+; OFF-NEXT:    mtc1 $1, $f1
+; OFF-NEXT:    lui $1, %hi(.LCPI6_0)
+; OFF-NEXT:    add.s $f0, $f0, $f1
+; OFF-NEXT:    lwc1 $f1, %lo(.LCPI6_0)($1)
+; OFF-NEXT:    lui $1, %hi(.LCPI6_1)
+; OFF-NEXT:    add.s $f0, $f0, $f1
+; OFF-NEXT:    lwc1 $f1, %lo(.LCPI6_1)($1)
+; OFF-NEXT:    rsqrt.s $f0, $f1, $f0
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
+; OFF-NEXT:    jr $ra
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+  %t2 = fmul nnan ninf <4 x float> %t, %t
+  %x = extractelement <4 x float> %t2, i32 0
+  %y = extractelement <4 x float> %t2, i32 1
+  %z = extractelement <4 x float> %t2, i32 2
+  %s1 = fadd nnan ninf float %x, %y
+  %s2 = fadd nnan ninf float %s1, %z
+  %s = fadd nnan ninf float %s2, 1.0e-30
+  %r = call nnan ninf afn float @llvm.sqrt.f32(float %s)
+  %k = fdiv nnan ninf afn float 127.0, %r
+  %i = insertelement <4 x float> poison, float %k, i32 0
+  %b = shufflevector <4 x float> %i, <4 x float> poison, <4 x i32> zeroinitializer
+  %m = fmul nnan ninf <4 x float> %t, %b
+  ret <4 x float> %m
+}
+
+; Without them, SQRT.S and DIV.S.
+define <4 x float> @q_sqrt_div(<4 x float> %t) {
+; CHECK-LABEL: q_sqrt_div:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    qmfc2 $1, $vf12
+; CHECK-NEXT:    mtc1 $1, $f0
+; CHECK-NEXT:    lui $1, %hi(.LCPI7_0)
+; CHECK-NEXT:    sqrt.s $f0, $f0
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI7_0)($1)
+; CHECK-NEXT:    div.s $f0, $f1, $f0
+; CHECK-NEXT:    mfc1 $1, $f0
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+;
+; OFF-LABEL: q_sqrt_div:
+; OFF:       # %bb.0:
+; OFF-NEXT:    qmfc2 $1, $vf12
+; OFF-NEXT:    mtc1 $1, $f0
+; OFF-NEXT:    lui $1, %hi(.LCPI7_0)
+; OFF-NEXT:    sqrt.s $f0, $f0
+; OFF-NEXT:    lwc1 $f1, %lo(.LCPI7_0)($1)
+; OFF-NEXT:    div.s $f0, $f1, $f0
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
+; OFF-NEXT:    jr $ra
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+  %x = extractelement <4 x float> %t, i32 0
+  %r = call nnan ninf float @llvm.sqrt.f32(float %x)
+  %k = fdiv nnan ninf float 127.0, %r
+  %i = insertelement <4 x float> poison, float %k, i32 0
+  %b = shufflevector <4 x float> %i, <4 x float> poison, <4 x i32> zeroinitializer
+  %m = fmul nnan ninf <4 x float> %t, %b
+  ret <4 x float> %m
+}
+
+declare float @llvm.sqrt.f32(float)

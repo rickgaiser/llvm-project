@@ -338,7 +338,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
                          ISD::FMINNUM, ISD::BITCAST, ISD::SETCC,
                          ISD::FP_TO_SINT, ISD::FDIV, ISD::STORE,
-                         ISD::SINT_TO_FP, ISD::UINT_TO_FP});
+                         ISD::SINT_TO_FP, ISD::UINT_TO_FP, ISD::FSQRT});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -2150,9 +2150,21 @@ static SDValue performVU0BCASTCombine(SDNode *N, SelectionDAG &DAG) {
 // A division is one through Q (VDIV), which its users read directly
 // (VUFoldQ of the VU target; MipsSEDAGToDAGISel::trySelect):
 //   v * splat (1 / v.w)  ->  VDIV Q, vf0w, v.w; VWAITQ; VMULq v, Q
+// and with approximate functions a / sqrt(b) one through VRSQRT:
+//   v * splat (c / sqrt(v.x))  ->  VRSQRT Q, c, v.x; VWAITQ; VMULq v, Q
 
 static bool isVU0LaneOpOpcode(unsigned Opc) {
   return isVU0BroadcastPairOp(Opc) || Opc == ISD::FDIV;
+}
+
+/// The operand of \p V if it is sqrt with approximate functions, as the
+/// divisor of an FDIV with them: c / sqrt(b) is one VRSQRT.
+static SDValue getVU0RsqrtOperand(SDNode *Div, SDValue V) {
+  if (V.getOpcode() != ISD::FSQRT || !V.hasOneUse() ||
+      !V->getFlags().hasApproximateFuncs() ||
+      !Div->getFlags().hasApproximateFuncs())
+    return SDValue();
+  return V.getOperand(0);
 }
 
 static bool isVU0Lane(SDValue V) {
@@ -2256,6 +2268,13 @@ static SDValue performVU0LaneOpCombine(SDNode *N, SelectionDAG &DAG,
           U->getOpcode() == ISD::SCALAR_TO_VECTOR ||
           U->getOpcode() == ISD::INSERT_VECTOR_ELT)
         return true;
+      // The square root of a VRSQRT (c / sqrt(V)).
+      if (U->getOpcode() == ISD::FSQRT && U->hasOneUse() && Depth < 3) {
+        SDNode *D = *U->user_begin();
+        return D->getOpcode() == ISD::FDIV && D->getOperand(1).getNode() == U &&
+               getVU0RsqrtOperand(D, SDValue(U, 0)) &&
+               isVU0FieldOperand(D->getOperand(0)) && GoesToVU0(D, Depth + 1);
+      }
       if (Depth >= 3 || !isVU0LaneOpOpcode(U->getOpcode()) ||
           U->getValueType(0) != MVT::f32)
         return false;
@@ -2273,6 +2292,17 @@ static SDValue performVU0LaneOpCombine(SDNode *N, SelectionDAG &DAG,
   SDLoc DL(N);
   SDValue X = N->getOperand(0), Y = N->getOperand(1);
   if (N->getOpcode() == ISD::FDIV) {
+    if (SDValue B = getVU0RsqrtOperand(N, Y);
+        B && isVU0FieldOperand(X) && isVU0FieldOperand(B) &&
+        !isa<ConstantFPSDNode>(B) && isVU0QReadAsBroadcast(N)) {
+      auto [A, FA] = getVU0FieldOf(X, DAG);
+      auto [BV, FB] = getVU0FieldOf(B, DAG);
+      SDValue Q = DAG.getNode(MipsISD::VU0_QRSQRT, DL, MVT::v4f32,
+                              {A, DAG.getTargetConstant(FA, DL, MVT::i32), BV,
+                               DAG.getTargetConstant(FB, DL, MVT::i32)});
+      return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, Q,
+                         DAG.getVectorIdxConstant(0, DL));
+    }
     // At least one operand is a field of a vector or a load, and Q is read
     // only as a broadcast (MipsSEDAGToDAGISel::trySelect).
     if (!isVU0FieldOperand(X) || !isVU0FieldOperand(Y) ||
@@ -2763,6 +2793,14 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::FDIV:
     Val = performVU0LaneOpCombine(N, DAG, Subtarget);
+    break;
+  case ISD::FSQRT:
+    // Once the operand is a field of a vector, the division by the square
+    // root can be a VRSQRT (performVU0LaneOpCombine).
+    if (Subtarget.hasVU0() && isVU0Lane(N->getOperand(0)))
+      for (SDNode *U : N->users())
+        if (U->getOpcode() == ISD::FDIV)
+          DCI.AddToWorklist(U);
     break;
   case ISD::FP_TO_SINT:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
