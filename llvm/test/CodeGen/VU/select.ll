@@ -27,6 +27,7 @@ define void @vselect_ogt() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %x = call <4 x float> @llvm.vu.lq(i16 2)
@@ -85,6 +86,7 @@ define void @vselect_zero() {
 ; CHECK-NEXT:    mul.xyzw vf1, vf3, vf1 nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %x = call <4 x float> @llvm.vu.lq(i16 2)
@@ -171,6 +173,7 @@ define void @step() {
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %b = call <4 x float> @llvm.vu.lq(i16 1)
   %c = fcmp oge <4 x float> %b, %a
@@ -240,6 +243,7 @@ define void @branch() {
 ; CHECK-NEXT:  .LBB7_2: ; %e
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
 entry:
   %a = call <4 x float> @llvm.vu.lq(i16 0)
   %ax = extractelement <4 x float> %a, i32 0
@@ -291,24 +295,25 @@ define void @int_select() {
 define void @uitofp_i16() {
 ; CHECK-LABEL: uitofp_i16:
 ; CHECK:       ; %bb.0:
-; CHECK-NEXT:    sub.xyzw vf2, vf0, vf0 ilw.x vi1, 0(vi0)
-; CHECK-NEXT:    nop loi 0x7f000000
-; CHECK-NEXT:    addi.x vf3, vf0, i loi 0x47800000
+; CHECK-NEXT:    nop ilw.x vi1, 0(vi0)
+; CHECK-NEXT:    nop loi 0xff000000
+; CHECK-NEXT:    addi.x vf2, vf0, i loi 0x47800000
+; CHECK-NEXT:    addi.x vf3, vf0, i nop
 ; CHECK-NEXT:    nop mfir.x vf1, vi1
 ; CHECK-NEXT:    itof0.x vf1, vf1 nop
-; CHECK-NEXT:    sub.xyzw vf4, vf2, vf1 nop
+; CHECK-NEXT:    mulx.xyzw vf2, vf1, vf2x nop
 ; CHECK-NEXT:    mulaw.xyzw acc, vf1, vf0w nop
-; CHECK-NEXT:    mulx.xyzw vf3, vf4, vf3x nop
-; CHECK-NEXT:    addi.x vf4, vf0, i nop
-; CHECK-NEXT:    maxx.xyzw vf3, vf3, vf0x nop
-; CHECK-NEXT:    miniw.xyzw vf3, vf3, vf0w nop
-; CHECK-NEXT:    maddx.xyzw vf1, vf3, vf4x nop
+; CHECK-NEXT:    maxx.xyzw vf2, vf2, vf0x nop
+; CHECK-NEXT:    miniw.xyzw vf2, vf2, vf0w nop
+; CHECK-NEXT:    maddx.xyzw vf1, vf2, vf3x nop
+; CHECK-NEXT:    sub.xyzw vf2, vf0, vf0 nop
 ; CHECK-NEXT:    addx.x vf1, vf0, vf1x nop
 ; CHECK-NEXT:    addx.y vf1, vf0, vf2x nop
 ; CHECK-NEXT:    addx.z vf1, vf0, vf2x nop
 ; CHECK-NEXT:    nop mr32.w vf1, vf2
 ; CHECK-NEXT:    nop sq.xyzw vf1, 4(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
   %f = uitofp i16 %a to float

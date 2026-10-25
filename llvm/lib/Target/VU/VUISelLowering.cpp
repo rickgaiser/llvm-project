@@ -377,12 +377,15 @@ static SDValue getOnes(const SDLoc &DL, SelectionDAG &DAG) {
   return getBroadcast(DAG.getRegister(VU::VF0, MVT::v4f32), 3, DL, DAG);
 }
 
-/// 1.0 in the fields where \p D > 0, 0.0 in the others: D * 2^127, clamped
-/// to 0 ... 1. The VU has no denormals and saturates instead of overflowing,
-/// so every D > 0 (at least 2^-126) gives at least 2.0.
-static SDValue getPositiveMask(SDValue D, const SDLoc &DL, SelectionDAG &DAG) {
+/// 1.0 in the fields where \p D > 0 (D < 0 if \p Negate), 0.0 in the
+/// others: D * 2^127 (-2^127), clamped to 0 ... 1. The VU has no denormals
+/// and saturates instead of overflowing, so every D > 0 (at least 2^-126)
+/// gives at least 2.0.
+static SDValue getPositiveMask(SDValue D, const SDLoc &DL, SelectionDAG &DAG,
+                               bool Negate = false) {
   SDValue Big = getBroadcast(
-      DAG.getConstantFP(std::ldexp(1.0, 127), DL, MVT::f32), 0, DL, DAG);
+      DAG.getConstantFP(std::ldexp(Negate ? -1.0 : 1.0, 127), DL, MVT::f32), 0,
+      DL, DAG);
   SDValue M = DAG.getNode(ISD::FMUL, DL, MVT::v4f32, D, Big);
   M = DAG.getNode(
       ISD::FMAXNUM, DL, MVT::v4f32, M,
@@ -654,10 +657,7 @@ SDValue VUTargetLowering::lowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const {
   SDValue F = DAG.getNode(ISD::SINT_TO_FP, DL, VT, V);
   if (!Vector)
     F = DAG.getNode(VUISD::VEC, DL, MVT::v4f32, F);
-  SDValue Neg =
-      getPositiveMask(DAG.getNode(ISD::FSUB, DL, MVT::v4f32,
-                                  DAG.getConstantFP(0.0, DL, MVT::v4f32), F),
-                      DL, DAG);
+  SDValue Neg = getPositiveMask(F, DL, DAG, /*Negate=*/true);
   SDValue Res = DAG.getNode(
       ISD::FADD, DL, MVT::v4f32, F,
       DAG.getNode(
