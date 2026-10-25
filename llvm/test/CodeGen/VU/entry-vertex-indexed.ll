@@ -20,9 +20,12 @@
 ; ASM:         xitop vi{{[0-9]+}}
 ; ASM:       .LBB0_1: ; %vu.batch
 ; ASM:         xtop vi[[TOP:[0-9]+]]
-; ASM-DAG:     ilw.x vi{{[0-9]+}}, 0(vi[[TOP]])
-; ASM-DAG:     ilw.z vi{{[0-9]+}}, 0(vi[[TOP]])
-; ASM-DAG:     ilw.w vi{{[0-9]+}}, 0(vi[[TOP]])
+; ASM:         ilw.x vi{{[0-9]+}}, 0(vi[[TOP]])
+; The index counts and the context's tag after the vertices, for the gather.
+; ASM:       %vu.done
+; ASM:         xtop vi[[TOP2:[0-9]+]]
+; ASM-DAG:     ilw.z vi{{[0-9]+}}, 0(vi[[TOP2]])
+; ASM-DAG:     ilw.w vi{{[0-9]+}}, 0(vi[[TOP2]])
 ; ASM-DAG:     xitop vi{{[0-9]+}}
 ; ASM:         isw.x vi{{[0-9]+}}, 979(vi0)
 ; ASM:         isw.y vi{{[0-9]+}}, 979(vi0)
@@ -87,12 +90,6 @@ define void @shade() #0 {
 ; CHECK:       [[VU_BATCH]]:
 ; CHECK-NEXT:    [[COUNTS:%.*]] = call i16 @llvm.vu.xtop()
 ; CHECK-NEXT:    [[N:%.*]] = call i16 @llvm.vu.ilw(i16 [[COUNTS]], i32 0)
-; CHECK-NEXT:    [[UNI:%.*]] = call i16 @llvm.vu.ilw(i16 [[COUNTS]], i32 2)
-; CHECK-NEXT:    [[NI:%.*]] = call i16 @llvm.vu.ilw(i16 [[COUNTS]], i32 3)
-; CHECK-NEXT:    [[CTX1:%.*]] = call i16 @llvm.vu.xitop()
-; CHECK-NEXT:    [[TAG:%.*]] = call <4 x float> @llvm.vu.lq(i16 [[CTX1]])
-; CHECK-NEXT:    [[EOP:%.*]] = call i16 @llvm.vu.ilw(i16 [[CTX1]], i32 0)
-; CHECK-NEXT:    [[TAG_X:%.*]] = or i16 [[EOP]], [[NI]]
 ; CHECK-NEXT:    [[EMPTY:%.*]] = icmp eq i16 [[N]], 0
 ; CHECK-NEXT:    [[IN:%.*]] = add i16 [[COUNTS]], 1
 ; CHECK-NEXT:    br i1 [[EMPTY]], label %[[VU_DONE:.*]], label %[[VU_ITEM:.*]]
@@ -129,12 +126,19 @@ define void @shade() #0 {
 ; CHECK-NEXT:    [[LAST:%.*]] = icmp eq i16 [[I_NEXT]], [[N]]
 ; CHECK-NEXT:    br i1 [[LAST]], label %[[VU_DONE]], label %[[VU_ITEM]]
 ; CHECK:       [[VU_DONE]]:
+; CHECK-NEXT:    [[TOP2:%.*]] = call i16 @llvm.vu.xtop()
+; CHECK-NEXT:    [[UNI:%.*]] = call i16 @llvm.vu.ilw(i16 [[TOP2]], i32 2)
+; CHECK-NEXT:    [[NI:%.*]] = call i16 @llvm.vu.ilw(i16 [[TOP2]], i32 3)
+; CHECK-NEXT:    [[CTX3:%.*]] = call i16 @llvm.vu.xitop()
+; CHECK-NEXT:    [[TAG:%.*]] = call <4 x float> @llvm.vu.lq(i16 [[CTX3]])
+; CHECK-NEXT:    [[EOP:%.*]] = call i16 @llvm.vu.ilw(i16 [[CTX3]], i32 0)
+; CHECK-NEXT:    [[TAG_X:%.*]] = or i16 [[EOP]], [[NI]]
 ; CHECK-NEXT:    call void @llvm.vu.isw(i16 -32768, i16 979, i32 0)
 ; CHECK-NEXT:    call void @llvm.vu.isw(i16 0, i16 979, i32 1)
 ; CHECK-NEXT:    call void @llvm.vu.xgkick(i16 979)
 ; CHECK-NEXT:    call void @llvm.vu.sq(<4 x float> [[TAG]], i16 254)
 ; CHECK-NEXT:    call void @llvm.vu.isw(i16 [[TAG_X]], i16 254, i32 0)
-; CHECK-NEXT:    [[IDX:%.*]] = add i16 [[COUNTS]], 39
+; CHECK-NEXT:    [[IDX:%.*]] = add i16 [[TOP2]], 39
 ; CHECK-NEXT:    [[NOIDX:%.*]] = icmp eq i16 [[UNI]], 0
 ; CHECK-NEXT:    br i1 [[NOIDX]], label %[[VU_KICK:.*]], label %[[VU_GATHER:.*]]
 ; CHECK:       [[VU_GATHER]]:

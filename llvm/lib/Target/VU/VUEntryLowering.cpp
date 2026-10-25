@@ -586,6 +586,8 @@ bool EntryLowering::run(std::string &Header) {
 
   Value *Top = nullptr, *Count, *Out = nullptr, *Tag = nullptr, *TagX = nullptr,
         *NQ = nullptr, *UniBase = nullptr, *CtxP = nullptr;
+  // The batch's index counts and the context's GIF tag (vertex programs).
+  std::function<void(IRBuilder<> &)> LoadHead;
   uint64_t BufQW = 0, MaxN = 0, Align = 1, InAt = 0, OutAt = 0;
   // An indexed vertex program: MaxN vertices, MaxI indices (see buildGather).
   uint64_t Indexed =
@@ -685,26 +687,32 @@ bool EntryLowering::run(std::string &Header) {
     // w the indices (indexed).
     B.SetInsertPoint(Start);
     Top = B.CreateIntrinsic(Intrinsic::vu_xtop, {}, {}, nullptr, "top");
-    auto Field = [&](unsigned K, const Twine &Name) {
+    auto Field = [&](IRBuilder<> &B, unsigned K, const Twine &Name) {
       return B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Top, B.getInt32(K)},
                                nullptr, Name);
     };
-    Count = Field(0, "n");
-    Value *NLoop = Count;
-    if (Indexed) {
-      NQ = Field(2, "nq");
-      NLoop = Field(3, "ni");
-    }
+    Count = Field(B, 0, "n");
     // The context's GIF tag, loaded in each batch (the context is not
     // written while its batches run; each MSCNT sets ITOP again): no
     // registers are kept for it across the batches. It has NLOOP 0, so the
     // low half of x is the EOP bit.
-    Value *CtxB =
-        B.CreateIntrinsic(Intrinsic::vu_xitop, {}, {}, nullptr, "ctx");
-    Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {CtxB}, nullptr, "tag");
-    Value *EOP = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {CtxB, B.getInt32(0)},
-                                   nullptr, "eop");
-    TagX = B.CreateOr(EOP, NLoop, "tag.x");
+    LoadHead = [&, Field](IRBuilder<> &B) {
+      Value *NLoop = Count;
+      if (Indexed) {
+        NQ = Field(B, 2, "nq");
+        NLoop = Field(B, 3, "ni");
+      }
+      Value *CtxB =
+          B.CreateIntrinsic(Intrinsic::vu_xitop, {}, {}, nullptr, "ctx");
+      Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {CtxB}, nullptr, "tag");
+      Value *EOP = B.CreateIntrinsic(Intrinsic::vu_ilw, {},
+                                     {CtxB, B.getInt32(0)}, nullptr, "eop");
+      TagX = B.CreateOr(EOP, NLoop, "tag.x");
+    };
+    // Indexed, the head is only needed after the vertices, for the gather
+    // (vu.done): it is loaded there, not kept in registers through the loop.
+    if (!Indexed)
+      LoadHead(B);
     Out = Indexed ? static_cast<Value *>(B.getInt16(OutAt))
                   : B.CreateAdd(Top, B.getInt16(OutAt), "out");
   } else {
@@ -800,6 +808,9 @@ bool EntryLowering::run(std::string &Header) {
 
     B.SetInsertPoint(Done);
     if (Indexed) {
+      // XTOP is the same until the next MSCNT.
+      Top = B.CreateIntrinsic(Intrinsic::vu_xtop, {}, {}, nullptr, "top");
+      LoadHead(B);
       // Wait until the GIF has read the packet of the batch before: the
       // empty tag (NLOOP 0, EOP) is sent after it.
       Value *Empty = B.getInt16(EmptyAt);
