@@ -69,6 +69,7 @@ GIF registers (PACKED): `rgbaq st uv xyzf2 xyz2 fog xyzf3 xyz3`.
 |---|---|
 | `i16 @llvm.vu.item.index()` | the index of the item in the batch |
 | `i16 @llvm.vu.item.count()` | the number of items in the batch |
+| `void @llvm.vu.yield()` | the end of a run (E bit); MSCNT continues after it with the registers kept (made by the entry lowering) |
 
 ## Layouts
 
@@ -80,18 +81,27 @@ quadwords each, from `CTX_AT`:
 1 ...            uniforms (UNI_QW quadwords)
 ```
 
-The EE writes a context once per draw, and the counts of each batch name it.
-With two (the default) the EE uses them by turns, one per draw that has
-batches: VIF1 gets to the context of draw d + 2 after the MSCALs of draw
-d + 1, which wait until the batches of draw d have ended, so a context is not
-written while a batch reads it. With one, the EE puts a FLUSHE in front of
-it: the batches of the draw before end first.
+The EE writes a context once per draw and names it with ITOP. With two (the
+default) the EE uses them by turns, one per draw that has batches: VIF1 gets
+to the context of draw d + 2 after the MSCAL of draw d + 1, which waits until
+the batches of draw d have ended, so a context is not written while a batch
+reads it. With one, the EE puts a FLUSHE in front of it: the batches of the
+draw before end first.
+
+**Runs.** The first batch of a draw starts the program with MSCAL `ENTRY`:
+the init loads the uniforms of the context at ITOP into registers, then the
+batch runs. A batch ends with XGKICK and `llvm.vu.yield` (an E bit in the
+middle of the program); the other batches of the draw start with MSCNT, which
+continues after it, with the registers as the batch before left them, at the
+start of the next batch. Each batch is one MSCAL or MSCNT, so the batches
+take the two buffers by turns. Each batch reads the context's GIF tag again
+(at ITOP: MSCNT sets ITOP from ITOPS as MSCAL does).
 
 **Vertex program** (VU1, double buffered: VIF1 BASE 0, OFFSET `BUF_QW`), at
 XTOP:
 
 ```
-0                counts (from the EE): x the vertex count, y the context
+0                counts (from the EE): x the vertex count
 IN_AT ...        inputs, ITEM_QW quadwords per vertex
 OUT_AT           GIF tag (the context's, with NLOOP = the vertex count)
 OUT_AT + 1 ...   outputs, OUT_QW quadwords per vertex
@@ -109,8 +119,8 @@ Each of the two buffers (VIF1 BASE 0, OFFSET `BUF_QW`, which the layout sets)
 has, at XTOP:
 
 ```
-0                counts (from the EE): x vertices, y the context, z index
-                 quadwords, w indices (the packet's NLOOP)
+0                counts (from the EE): x vertices, z index quadwords,
+                 w indices (the packet's NLOOP)
 IN_AT ...        inputs, ITEM_QW quadwords per vertex
 IDX_AT ...       indices: UNPACK V4-8U, four to a quadword (sent as whole
                  quadwords of 16 bytes); each is the vertex times OUT_QW

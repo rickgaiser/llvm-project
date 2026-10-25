@@ -41,6 +41,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUFoldInsertFieldPass(PR);
   initializeVUHazardsPass(PR);
   initializeVULoopCopiesPass(PR);
+  initializeVULoopLayoutPass(PR);
   initializeVULoopSchedulerPass(PR);
   initializeVULowerMemoryPass(PR);
   initializeVUEntryLoweringLegacyPass(PR);
@@ -205,6 +206,7 @@ public:
   }
 
   void addPreEmitPass() override {
+    addPass(createVULoopLayoutPass());
     if (getOptLevel() != CodeGenOptLevel::None)
       addPass(createVUPacketizerPass());
     addPass(createVUDelaySlotFillerPass());

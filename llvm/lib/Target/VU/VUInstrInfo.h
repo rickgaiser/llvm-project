@@ -47,6 +47,12 @@ public:
 
   bool isReMaterializableImpl(const MachineInstr &MI) const override;
 
+  /// Nothing is hoisted out of a loop over program runs (one with a YIELD,
+  /// the batches of a vertex program): it would take a register in every
+  /// batch to save an instruction in the init.
+  bool shouldHoist(const MachineInstr &MI,
+                   const MachineLoop *FromLoop) const override;
+
   // Scheduling. All latencies are in micro instruction words.
 
   /// Returns the number of words after \p MI until its result in operand

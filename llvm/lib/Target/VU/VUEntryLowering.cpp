@@ -507,11 +507,17 @@ bool EntryLowering::run(std::string &Header) {
   for (Instruction &I : make_early_inc_range(*Body))
     if (auto *AI = dyn_cast<AllocaInst>(&I); AI && AI->isStaticAlloca())
       AI->moveBefore(*Entry, Entry->end());
-  IRBuilder<> B(Entry);
+  // A vertex program starts at vu.entry for the first batch of a draw (MSCAL:
+  // the init, which takes the context into registers, then the batch), and
+  // at vu.batch for the others (MSCNT after the yield that ends a batch). Each
+  // batch is one MSCAL or MSCNT, so the batches take the two buffers by turns.
+  BasicBlock *Start =
+      Vertex ? BasicBlock::Create(Ctx, "vu.batch", &F, Body) : Entry;
+  IRBuilder<> B(Entry), SB(Start);
   Type *I16 = B.getInt16Ty();
 
   // The private globals: an alloca each, set at the start of each item (or
-  // once, for !vu.carry), and promoted to registers below.
+  // of each batch, for !vu.carry), and promoted to registers below.
   SmallVector<AllocaInst *, 4> Allocas;
   SmallVector<std::pair<AllocaInst *, GlobalVariable *>, 4> PerItemInit;
   for (GlobalVariable *GV : Privates) {
@@ -522,14 +528,14 @@ bool EntryLowering::run(std::string &Header) {
     retargetPointer(GV, AI);
     if (GV->getMetadata("vu.carry") || !PerItem) {
       if (GV->hasInitializer())
-        B.CreateStore(GV->getInitializer(), AI);
+        SB.CreateStore(GV->getInitializer(), AI);
     } else {
       PerItemInit.push_back({AI, GV});
     }
   }
 
   Value *Top = nullptr, *Count, *Out = nullptr, *Tag = nullptr, *TagX = nullptr,
-        *NQ = nullptr, *UniBase = nullptr;
+        *NQ = nullptr, *UniBase = nullptr, *CtxP = nullptr;
   uint64_t BufQW = 0, MaxN = 0, Align = 1, InAt = 0, OutAt = 0;
   // An indexed vertex program: MaxN vertices, MaxI indices (see buildGather).
   uint64_t Indexed =
@@ -619,27 +625,36 @@ bool EntryLowering::run(std::string &Header) {
     }
     if (Failed)
       return true;
-    // The counts at XTOP: x the vertices, y the context, z the index
-    // quadwords and w the indices (indexed).
+    // The init: the context at ITOP.
+    CtxP = B.CreateIntrinsic(Intrinsic::vu_xitop, {}, {}, nullptr, "ctx");
+    if (UniQW)
+      UniBase = B.CreateAdd(CtxP, B.getInt16(1), "uni");
+    B.CreateBr(Start);
+
+    // A batch: the counts at XTOP, x the vertices, z the index quadwords and
+    // w the indices (indexed).
+    B.SetInsertPoint(Start);
     Top = B.CreateIntrinsic(Intrinsic::vu_xtop, {}, {}, nullptr, "top");
     auto Field = [&](unsigned K, const Twine &Name) {
       return B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Top, B.getInt32(K)},
                                nullptr, Name);
     };
     Count = Field(0, "n");
-    Value *Ctx = Field(1, "ctx");
     Value *NLoop = Count;
     if (Indexed) {
       NQ = Field(2, "nq");
       NLoop = Field(3, "ni");
     }
-    // The context's GIF tag has NLOOP 0: its low half of x is the EOP bit.
-    Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {Ctx}, nullptr, "tag");
-    Value *EOP = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Ctx, B.getInt32(0)},
+    // The context's GIF tag, loaded in each batch (the context is not
+    // written while its batches run; each MSCNT sets ITOP again): no
+    // registers are kept for it across the batches. It has NLOOP 0, so the
+    // low half of x is the EOP bit.
+    Value *CtxB =
+        B.CreateIntrinsic(Intrinsic::vu_xitop, {}, {}, nullptr, "ctx");
+    Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {CtxB}, nullptr, "tag");
+    Value *EOP = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {CtxB, B.getInt32(0)},
                                    nullptr, "eop");
     TagX = B.CreateOr(EOP, NLoop, "tag.x");
-    if (UniQW)
-      UniBase = B.CreateAdd(Ctx, B.getInt16(1), "uni");
     Out = Indexed ? static_cast<Value *>(B.getInt16(OutAt))
                   : B.CreateAdd(Top, B.getInt16(OutAt), "out");
   } else {
@@ -681,20 +696,20 @@ bool EntryLowering::run(std::string &Header) {
 
     B.SetInsertPoint(Item);
     PHINode *I = B.CreatePHI(I16, 2, "i");
-    I->addIncoming(B.getInt16(0), Entry);
+    I->addIncoming(B.getInt16(0), Start);
     PHINode *PIn = nullptr, *POut = nullptr;
     LoopPhis.push_back(I);
     if (Vertex) {
       PIn = B.CreatePHI(I16, 2, "pi");
       POut = B.CreatePHI(I16, 2, "po");
       LoopPhis.append({PIn, POut});
-      // The start values, in front of Entry's branch.
-      IRBuilder<> EB(Entry->getTerminator());
-      PIn->addIncoming(EB.CreateAdd(Top, EB.getInt16(InAt), "in"), Entry);
+      // The start values, in front of the batch's branch.
+      IRBuilder<> EB(Start->getTerminator());
+      PIn->addIncoming(EB.CreateAdd(Top, EB.getInt16(InAt), "in"), Start);
       // Indexed: the outputs go to the table, for the gather.
       POut->addIncoming(Indexed ? static_cast<Value *>(EB.getInt16(TabAt))
                                 : EB.CreateAdd(Out, EB.getInt16(1), "o1"),
-                        Entry);
+                        Start);
     }
     for (auto [AI, GV] : PerItemInit)
       if (GV->hasInitializer())
@@ -746,9 +761,15 @@ bool EntryLowering::run(std::string &Header) {
       B.CreateIntrinsic(Intrinsic::vu_isw, {}, {TagX, Out, B.getInt32(0)});
       buildGather(B, Top, Out, NQ, TabAt, IdxAt, Outputs.size());
     }
-    if (Vertex)
+    if (Vertex) {
+      // The batch ends; MSCNT starts the next one.
       B.CreateIntrinsic(Intrinsic::vu_xgkick, {}, {Out});
-    B.CreateRetVoid();
+      B.CreateIntrinsic(Intrinsic::vu_yield, ArrayRef<Type *>(),
+                        ArrayRef<Value *>());
+      B.CreateBr(Start);
+    } else {
+      B.CreateRetVoid();
+    }
 
     // A straight-line item is a loop of one block, which the pipeliner takes.
     MergeBlockIntoPredecessor(Body);
@@ -762,10 +783,9 @@ bool EntryLowering::run(std::string &Header) {
   if (Vertex)
     addAliasScopes(InPtrs, OutPtrs);
   hoistToEntry(Entry);
-  // The GIF tag in front of the outputs, after the loads of the uniforms:
-  // they stay in the entry block, before the loop.
+  // The GIF tag in front of the outputs, at the start of each batch.
   if (Tag && !Indexed) {
-    IRBuilder<> EB(Entry->getTerminator());
+    IRBuilder<> EB(Start->getTerminator());
     EB.CreateIntrinsic(Intrinsic::vu_sq, {}, {Tag, Out});
     EB.CreateIntrinsic(Intrinsic::vu_isw, {}, {TagX, Out, EB.getInt32(0)});
   }
@@ -787,7 +807,11 @@ bool EntryLowering::run(std::string &Header) {
       H << "  /* field " << "xyzw"[S.Offset % 16 / 4] << " */";
     H << "\n";
   }
-  H << "#define " << P << "ENTRY 0  /* micro address, 64-bit units */\n";
+  H << "#define " << P << "ENTRY 0  /* micro address, 64-bit units"
+    << (Vertex ? "; MSCAL (ITOP = the context) for the first batch of a "
+                 "draw, MSCNT for the others"
+               : "")
+    << " */\n";
   if (Vertex) {
     uint64_t Regs = 0;
     for (auto [K, S] : enumerate(Outputs))
@@ -809,8 +833,7 @@ bool EntryLowering::run(std::string &Header) {
     H << "#define " << P << "ALIGN " << Align
       << "  /* batches start at multiples of it */\n";
     H << "#define " << P
-      << "COUNTS 0  /* x vertices, y context, z index quadwords, w indices "
-         "*/\n";
+      << "COUNTS 0  /* x vertices, z index quadwords, w indices */\n";
     H << "#define " << P << "IN_AT " << InAt << "  /* first item */\n";
     H << "#define " << P << "OUT_AT " << OutAt
       << (Indexed ? "  /* the output GIF tag, one for both buffers */\n"

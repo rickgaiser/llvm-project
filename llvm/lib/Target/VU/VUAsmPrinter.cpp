@@ -111,8 +111,9 @@ void VUAsmPrinter::emitInstruction(const MachineInstr *MI) {
   UpperNop.setOpcode(VU::NOP);
   LowerNop.setOpcode(VU::LNOP);
 
-  if (MI->getOpcode() == VU::PROGRAM_END) {
-    // The E bit ends the program after the next word (its delay slot).
+  if (MI->getOpcode() == VU::PROGRAM_END || MI->getOpcode() == VU::YIELD) {
+    // The E bit ends the program after the next word (its delay slot); after
+    // a YIELD, MSCNT continues with the word after that.
     emitBundle(UpperNop, LowerNop, VU::FlagE);
     emitBundle(UpperNop, LowerNop, 0);
     return;

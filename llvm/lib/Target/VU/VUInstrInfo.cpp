@@ -11,6 +11,7 @@
 #include "VUSubtarget.h"
 #include "llvm/CodeGen/DFAPacketizer.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Constants.h"
@@ -133,6 +134,15 @@ void VUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
       .addFrameIndex(FrameIdx)
       .addReg(VU::VI0)
       .setMIFlags(Flags);
+}
+
+bool VUInstrInfo::shouldHoist(const MachineInstr &MI,
+                              const MachineLoop *FromLoop) const {
+  for (const MachineBasicBlock *MBB : FromLoop->blocks())
+    for (const MachineInstr &I : *MBB)
+      if (I.getOpcode() == VU::YIELD)
+        return false;
+  return true;
 }
 
 bool VUInstrInfo::isReMaterializableImpl(const MachineInstr &MI) const {

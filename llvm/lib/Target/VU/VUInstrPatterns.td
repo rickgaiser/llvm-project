@@ -93,6 +93,12 @@ class VUPseudo<dag outs, dag ins, list<dag> pattern = [],
 let isReturn = 1, isTerminator = 1, isBarrier = 1, hasSideEffects = 1 in
 def PROGRAM_END : VUPseudo<(outs), (ins), [(VUret)]>;
 
+// The same words in the middle of the program: the run ends, and the next
+// MSCNT continues after them with the registers kept (llvm.vu.yield). The
+// VIF writes VU memory while the program stands.
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1 in
+def YIELD : VUPseudo<(outs), (ins)>;
+
 // A NOP in the delay slot of a branch.
 let isTerminator = 1, isCodeGenOnly = 1 in
 def DSNOP : VUUpperExt<0x2f, (outs), (ins), "nop"> {
@@ -343,6 +349,7 @@ def : Pat<(i16 (int_vu_xitop)), (XITOP)>;
 let Predicates = [HasVU1] in {
 def : Pat<(i16 (int_vu_xtop)), (XTOP)>;
 def : Pat<(int_vu_xgkick (i16 VI:$a)), (XGKICK VI:$a)>;
+def : Pat<(int_vu_yield), (YIELD)>;
 }
 
 //===----------------------------------------------------------------------===//
