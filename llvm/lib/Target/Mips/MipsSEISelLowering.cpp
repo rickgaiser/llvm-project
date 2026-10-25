@@ -25,6 +25,7 @@
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/CodeGen/SelectionDAGAddressAnalysis.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/SelectionDAGSums.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
@@ -320,6 +321,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // This allows recognizing shuffle+fmul -> VMULbc patterns
     setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v4f32, Custom);
     setOperationAction(ISD::BUILD_VECTOR, MVT::v4f32, Custom);
+    setOperationAction(ISD::SCALAR_TO_VECTOR, MVT::v4f32, Custom);
 
     // Enable extract/insert for element access
     // VU0 has no native element access, so we use QMFC2/QMTC2 + GPR ops
@@ -335,7 +337,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     // Note: VU0_BLEND is a target node that's always eligible for DAG combine
     setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
                          ISD::FMINNUM, ISD::BITCAST, ISD::SETCC,
-                         ISD::FP_TO_SINT, ISD::FDIV});
+                         ISD::FP_TO_SINT, ISD::FDIV, ISD::STORE,
+                         ISD::SINT_TO_FP, ISD::UINT_TO_FP});
   }
 
   if (!Subtarget.useSoftFloat()) {
@@ -776,6 +779,8 @@ bool MipsSETargetLowering::allowsMisalignedMemoryAccesses(
   }
 }
 
+static SDValue lowerVU0SCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG);
+
 SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
                                              SelectionDAG &DAG) const {
   switch(Op.getOpcode()) {
@@ -801,6 +806,8 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   case ISD::FMA:
     return lowerFMA(Op, DAG);
   case ISD::BUILD_VECTOR:       return lowerBUILD_VECTOR(Op, DAG);
+  case ISD::SCALAR_TO_VECTOR:
+    return lowerVU0SCALAR_TO_VECTOR(Op, DAG);
   case ISD::SETCC:
     if (Op.getValueType().isVector()) {
       assert(Subtarget.isR5900());
@@ -1574,18 +1581,49 @@ extendR5900MMI(SDValue Src, bool Signed, const SDLoc &DL, SelectionDAG &DAG) {
           Interleave(Half ? Mips::PEXTUH : Mips::PEXTUB)};
 }
 
+/// R5900: a v4i8 or v4i16 (the low word or doubleword of a GPR) extended to
+/// v4i32 by interleaving it with $zero (PEXTLB, PEXTLH). For a sign extension
+/// the elements go to the high bytes, then PSRAW.
+static SDValue extendR5900Narrow(SDValue Src, bool Signed, const SDLoc &DL,
+                                 SelectionDAG &DAG) {
+  bool Bytes = Src.getValueType() == MVT::v4i8;
+  MVT VT = Bytes ? MVT::v16i8 : MVT::v8i16;
+  SDValue Bits = DAG.getAnyExtOrTrunc(
+      DAG.getBitcast(Bytes ? MVT::i32 : MVT::i64, Src), DL, MVT::i64);
+  SDValue V = DAG.getTargetInsertSubreg(
+      Mips::sub_64, DL, VT,
+      SDValue(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, VT), 0), Bits);
+  auto Interleave = [&](unsigned Opc, MVT VT, SDValue V) {
+    SDValue Zero = DAG.getRegister(Mips::R0_128, VT);
+    return SDValue(
+        DAG.getMachineNode(Opc, DL, VT, Signed ? V : Zero, Signed ? Zero : V),
+        0);
+  };
+  if (Bytes)
+    V = DAG.getBitcast(MVT::v8i16, Interleave(Mips::PEXTLB, MVT::v16i8, V));
+  V = DAG.getBitcast(MVT::v4i32, Interleave(Mips::PEXTLH, MVT::v8i16, V));
+  if (Signed)
+    V = DAG.getNode(ISD::SRA, DL, MVT::v4i32, V,
+                    DAG.getConstant(Bytes ? 24 : 16, DL, MVT::v4i32));
+  return V;
+}
+
 /// R5900: sign, zero or any extension of v8i16 or v16i8 to elements two or
-/// four times as wide, before type legalization splits it through the stack.
+/// four times as wide, or of v4i8 or v4i16 to v4i32, before type legalization
+/// splits it through the stack.
 static SDValue performR5900ExtendCombine(SDNode *N, SelectionDAG &DAG,
                                          const MipsSubtarget &Subtarget) {
   SDValue Src = N->getOperand(0);
   EVT VT = N->getValueType(0);
   EVT SrcVT = Src.getValueType();
+  bool Signed = N->getOpcode() == ISD::SIGN_EXTEND;
+  SDLoc DL(N);
+  if (Subtarget.isR5900() && VT == MVT::v4i32 &&
+      (SrcVT == MVT::v4i8 || SrcVT == MVT::v4i16))
+    return extendR5900Narrow(Src, Signed, DL, DAG);
   if (!Subtarget.isR5900() || (SrcVT != MVT::v8i16 && SrcVT != MVT::v16i8) ||
       !VT.isSimple() || VT.getScalarSizeInBits() > 32)
     return SDValue();
-  bool Signed = N->getOpcode() == ISD::SIGN_EXTEND;
-  SDLoc DL(N);
   auto [Lo, Hi] = extendR5900MMI(Src, Signed, DL, DAG);
   if (Lo.getValueType().getScalarSizeInBits() == VT.getScalarSizeInBits())
     return DAG.getNode(ISD::CONCAT_VECTORS, DL, VT, Lo, Hi);
@@ -1613,17 +1651,30 @@ static SDValue truncateR5900MMI(SDValue Src, EVT VT, const SDLoc &DL,
                      Lo);
 }
 
-/// R5900: (v8i16 (trunc v8i32)) and (v16i8 (trunc v16i16 or v16i32)) to
-/// PPACH/PPACB, before type legalization splits the source through the stack.
+/// R5900: (v8i16 (trunc v8i32)), (v16i8 (trunc v16i16 or v16i32)) and
+/// (v4i16 or v4i8 (trunc v4i32)) to PPACH/PPACB, before type legalization
+/// splits the source through the stack.
 static SDValue performR5900TRUNCATECombine(SDNode *N, SelectionDAG &DAG,
                                            const MipsSubtarget &Subtarget) {
   EVT VT = N->getValueType(0);
   SDValue Src = N->getOperand(0);
   EVT SrcVT = Src.getValueType();
+  SDLoc DL(N);
+  // v4i32 to v4i16 or v4i8: the low doubleword or word of PPACH (and PPACB).
+  if (Subtarget.isR5900() && SrcVT == MVT::v4i32 &&
+      (VT == MVT::v4i16 || VT == MVT::v4i8)) {
+    SDValue V = DAG.getNode(MipsISD::PPACH, DL, MVT::v8i16, Src, Src);
+    if (VT == MVT::v4i8)
+      V = DAG.getNode(MipsISD::PPACB, DL, MVT::v16i8, V, V);
+    SDValue Bits = DAG.getTargetExtractSubreg(Mips::sub_64, DL, MVT::i64, V);
+    return DAG.getBitcast(
+        VT,
+        DAG.getZExtOrTrunc(Bits, DL, VT == MVT::v4i8 ? MVT::i32 : MVT::i64));
+  }
   if (!Subtarget.isR5900() || (VT != MVT::v8i16 && VT != MVT::v16i8) ||
       !SrcVT.isSimple() || SrcVT.getScalarSizeInBits() > 32)
     return SDValue();
-  return truncateR5900MMI(Src, VT, SDLoc(N), DAG);
+  return truncateR5900MMI(Src, VT, DL, DAG);
 }
 
 static SDValue performVSELECTCombine(SDNode *N, SelectionDAG &DAG) {
@@ -1777,6 +1828,83 @@ static SDValue performBITCASTCombine(SDNode *N, SelectionDAG &DAG,
   return NewLoad;
 }
 
+/// The store of field \p Idx of \p V, as f32, at \p Offset bytes from the
+/// store \p St, or null.
+static StoreSDNode *findVU0FieldStore(StoreSDNode *St, SDValue V, unsigned Idx,
+                                      int64_t Offset, SelectionDAG &DAG) {
+  BaseIndexOffset Base = BaseIndexOffset::match(St, DAG);
+  for (SDNode *U : V->users()) {
+    if (U->getOpcode() != ISD::EXTRACT_VECTOR_ELT ||
+        U->getValueType(0) != MVT::f32 ||
+        !isa<ConstantSDNode>(U->getOperand(1)) ||
+        U->getConstantOperandVal(1) != Idx || !U->hasOneUse())
+      continue;
+    auto *Other = dyn_cast<StoreSDNode>(*U->user_begin());
+    if (!Other || Other == St || !ISD::isNormalStore(Other) ||
+        !Other->isSimple() || Other->getValue() != SDValue(U, 0))
+      continue;
+    int64_t Off;
+    if (Base.equalBaseIndex(BaseIndexOffset::match(Other, DAG), DAG, Off) &&
+        Off == Offset)
+      return Other;
+  }
+  return nullptr;
+}
+
+/// VU0: a field of a vector stored as f32 is stored with SW from the GPR that
+/// QMFC2 moves the vector to (PCPYUD for z and w, DSRL for y and w), without
+/// an MTC1 and an SWC1. Fields x and y, or z and w, stored next to each other
+/// at an aligned address are one SD.
+static SDValue performVU0STORECombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  auto *St = cast<StoreSDNode>(N);
+  SDValue Val = St->getValue();
+  if (!Subtarget.hasVU0() || !ISD::isNormalStore(St) || !St->isSimple() ||
+      Val.getValueType() != MVT::f32 ||
+      Val.getOpcode() != ISD::EXTRACT_VECTOR_ELT ||
+      Val.getOperand(0).getValueType() != MVT::v4f32 ||
+      !isa<ConstantSDNode>(Val.getOperand(1)) ||
+      Val.getConstantOperandVal(1) > 3 || !Val.hasOneUse())
+    return SDValue();
+  SDLoc DL(N);
+  unsigned Idx = Val.getConstantOperandVal(1);
+  SDValue V = DAG.getBitcast(MVT::v4i32, Val.getOperand(0));
+  if (Idx >= 2)
+    V = SDValue(DAG.getMachineNode(Mips::PCPYUD, DL, MVT::v4i32, V, V), 0);
+  SDValue Dword = DAG.getTargetExtractSubreg(Mips::sub_64, DL, MVT::i64, V);
+
+  // The other field of the doubleword, stored next to this one (whichever of
+  // the two stores is combined first).
+  bool High = Idx & 1;
+  if (StoreSDNode *Other = findVU0FieldStore(St, Val.getOperand(0), Idx ^ 1,
+                                             High ? -4 : 4, DAG)) {
+    StoreSDNode *Lo = High ? Other : St, *Hi = High ? St : Other;
+    // After the chains of both, when one store is not on the other's chain
+    // further back.
+    SDValue Chain;
+    if (Hi->getChain() == SDValue(Lo, 0) || Hi->getChain() == Lo->getChain())
+      Chain = Lo->getChain();
+    else if (Lo->getChain() == SDValue(Hi, 0))
+      Chain = Hi->getChain();
+    else if (!Lo->isPredecessorOf(Hi) && !Hi->isPredecessorOf(Lo))
+      Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Lo->getChain(),
+                          Hi->getChain());
+    if (Chain && Lo->getAlign() >= 8) {
+      SDValue Pair = DAG.getStore(
+          Chain, DL, Dword, Lo->getBasePtr(), Lo->getPointerInfo(),
+          Lo->getAlign(), Lo->getMemOperand()->getFlags(), Lo->getAAInfo());
+      DAG.ReplaceAllUsesOfValueWith(SDValue(Other, 0), Pair);
+      return Pair;
+    }
+  }
+
+  if (High)
+    Dword = DAG.getNode(ISD::SRL, DL, MVT::i64, Dword,
+                        DAG.getConstant(32, DL, MVT::i32));
+  return DAG.getTruncStore(St->getChain(), DL, Dword, St->getBasePtr(),
+                           MVT::i32, St->getMemOperand());
+}
+
 /// Broadcast field \p Field of \p V to all four fields.
 static SDValue getVU0Broadcast(SelectionDAG &DAG, const SDLoc &DL, SDValue V,
                                unsigned Field) {
@@ -1836,8 +1964,24 @@ static SDValue performVU0FixedPointCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+/// VU0: (v4f32 (sint_to_fp or uint_to_fp v4i8 or v4i16)) converts the
+/// elements extended to v4i32 (extendR5900Narrow) with VITOF0.
+static SDValue performVU0IntToFPCombine(SDNode *N, SelectionDAG &DAG,
+                                        const MipsSubtarget &Subtarget) {
+  SDValue Src = N->getOperand(0);
+  EVT SrcVT = Src.getValueType();
+  if (!Subtarget.hasVU0() || N->getValueType(0) != MVT::v4f32 ||
+      (SrcVT != MVT::v4i8 && SrcVT != MVT::v4i16))
+    return SDValue();
+  SDLoc DL(N);
+  return DAG.getNode(
+      ISD::SINT_TO_FP, DL, MVT::v4f32,
+      extendR5900Narrow(Src, N->getOpcode() == ISD::SINT_TO_FP, DL, DAG));
+}
+
 // VU0 Broadcast Combine
-// Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> fop(A, VU0_BCAST(B, N)) for fadd,
+// Recognize: fop(A, shuffle(B, <N,N,N,N>)) -> fop(A, VU0_BCAST(B, N)), and
+// fop(A, splat(s)) -> fop(A, VU0_BCAST(scalar_to_vector(s), 0)), for fadd,
 // fsub, fmul, fmaxnum and fminnum, which is selected as the broadcast form
 // (VMULx ...). This enables efficient matrix-vector operations using VMULbc
 // instructions, and horizontal sums using VADDbc instructions.
@@ -1854,6 +1998,18 @@ static SDValue performVU0BroadcastCombine(SDNode *N, SelectionDAG &DAG,
   for (int i = 0; i < (Commutative ? 2 : 1); i++) {
     SDValue Vec = N->getOperand(i);
     SDValue Shuf = N->getOperand(1 - i);
+
+    // A splat of a scalar that is not constant: only field x is read, which
+    // SCALAR_TO_VECTOR sets with a single QMTC2.
+    if (auto *BV = dyn_cast<BuildVectorSDNode>(Shuf)) {
+      SDValue S = BV->getSplatValue();
+      if (!S || BV->isConstant())
+        continue;
+      SDValue BC = getVU0Broadcast(
+          DAG, DL, DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, MVT::v4f32, S), 0);
+      return DAG.getNode(N->getOpcode(), DL, MVT::v4f32, i ? BC : Vec,
+                         i ? Vec : BC, N->getFlags());
+    }
 
     if (Shuf.getOpcode() != ISD::VECTOR_SHUFFLE)
       continue;
@@ -2611,6 +2767,10 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
   case ISD::FP_TO_SINT:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
     break;
+  case ISD::SINT_TO_FP:
+  case ISD::UINT_TO_FP:
+    Val = performVU0IntToFPCombine(N, DAG, Subtarget);
+    break;
   case ISD::ADD:
     Val = performR5900ADDCombine(N, DAG, Subtarget);
     if (!Val)
@@ -2659,6 +2819,9 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     Val = performR5900BITCASTCombine(N, DAG, Subtarget);
     if (!Val)
       Val = performBITCASTCombine(N, DAG, Subtarget);
+    break;
+  case ISD::STORE:
+    Val = performVU0STORECombine(N, DAG, Subtarget);
     break;
   case ISD::EXTRACT_VECTOR_ELT:
     Val = performR5900EXTRACT_VECTOR_ELTCombine(N, DAG, Subtarget);
@@ -4623,13 +4786,46 @@ static bool isConstantOrUndefBUILD_VECTOR(const BuildVectorSDNode *Op) {
 // - Non-constant splats are legal as-is.
 // - Non-constant non-splats are lowered to sequences of INSERT_VECTOR_ELT.
 // - All others are illegal and must be expanded.
+/// R5900: a v4i32 of four words in GPRs (i32 or i64, or undef; zero is
+/// $zero): a PEXTLW of each pair of elements and a PCPYLD of the pairs.
+static SDValue buildR5900Words(ArrayRef<SDValue> Elts, const SDLoc &DL,
+                               SelectionDAG &DAG) {
+  auto Undef = [&]() {
+    return SDValue(
+        DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32), 0);
+  };
+  auto ToGPR128 = [&](SDValue Elt) {
+    if (Elt.isUndef())
+      return Undef();
+    if (isNullConstant(Elt))
+      return DAG.getRegister(Mips::R0_128, MVT::v4i32);
+    return DAG.getTargetInsertSubreg(Mips::sub_64, DL, MVT::v4i32, Undef(),
+                                     DAG.getAnyExtOrTrunc(Elt, DL, MVT::i64));
+  };
+  // The low doubleword of the result has Lo in its low word.
+  auto Pair = [&](SDValue Lo, SDValue Hi) {
+    if (Hi.isUndef())
+      return ToGPR128(Lo);
+    return SDValue(DAG.getMachineNode(Mips::PEXTLW, DL, MVT::v4i32,
+                                      ToGPR128(Hi), ToGPR128(Lo)),
+                   0);
+  };
+  SDValue Result = Pair(Elts[0], Elts[1]);
+  if (!Elts[2].isUndef() || !Elts[3].isUndef())
+    Result = SDValue(DAG.getMachineNode(Mips::PCPYLD, DL, MVT::v4i32,
+                                        Pair(Elts[2], Elts[3]), Result),
+                     0);
+  return Result;
+}
+
 /// R5900: a splat of a register to v4i32, v8i16 or v16i8. The scalar is in
 /// the low doubleword of a 128-bit register; PEXTLW/PEXTLB doubles a word or
 /// byte to the element below it, PCPYLD copies the low doubleword to the
 /// high one and PCPYH the low halfword of each doubleword to its others.
 /// All zeros are $zero and all ones PNOR of $zero, and a splat of a mask of
-/// the low or high bits of a word or halfword shifts all ones. Other vectors
-/// are expanded, constants to a load from the constant pool.
+/// the low or high bits of a word or halfword shifts all ones. Another v4i32
+/// that is not constant is built with buildR5900Words. Other vectors are
+/// expanded, constants to a load from the constant pool.
 static SDValue lowerR5900BUILD_VECTOR(BuildVectorSDNode *Node,
                                       SelectionDAG &DAG) {
   MVT VT = Node->getSimpleValueType(0);
@@ -4637,8 +4833,15 @@ static SDValue lowerR5900BUILD_VECTOR(BuildVectorSDNode *Node,
   if (ISD::isBuildVectorAllZeros(Node) || ISD::isBuildVectorAllOnes(Node))
     return SDValue(Node, 0);
   SDValue Scalar = Node->getSplatValue();
-  if (!Scalar)
-    return SDValue();
+  // With undefined elements, building the words is not longer than a splat.
+  bool HasUndef =
+      any_of(Node->op_values(), [](SDValue V) { return V.isUndef(); });
+  if (!Scalar || (VT == MVT::v4i32 && HasUndef && !Node->isConstant())) {
+    if (VT != MVT::v4i32 || Node->isConstant())
+      return SDValue();
+    SmallVector<SDValue, 4> Elts(Node->op_values());
+    return buildR5900Words(Elts, DL, DAG);
+  }
   if (auto *C = dyn_cast<ConstantSDNode>(Scalar)) {
     if (VT == MVT::v16i8)
       return SDValue();
@@ -4695,13 +4898,13 @@ static SDValue bitcastToI32(SDValue Elt, SDNode *User, SelectionDAG &DAG) {
 }
 
 /// VU0: a v4f32 is built in a 128-bit GPR from its elements as i32, then
-/// moved to VU0 with QMTC2. A splat is built as in lowerR5900BUILD_VECTOR,
-/// other vectors with a PEXTLW of each pair of elements and a PCPYLD of the
-/// pairs. Constants are loaded from the constant pool.
+/// moved to VU0 with QMTC2. A splat without undefined elements is built as in
+/// lowerR5900BUILD_VECTOR, other vectors with buildR5900Words. Constants are
+/// loaded from the constant pool.
 static SDValue lowerVU0BUILD_VECTOR(BuildVectorSDNode *Node,
                                     SelectionDAG &DAG) {
   SDLoc DL(Node);
-  if (isConstantOrUndefBUILD_VECTOR(Node))
+  if (Node->isConstant())
     return SDValue();
   SmallVector<SDValue, 4> Elts;
   SmallDenseMap<SDValue, SDValue, 4> AsI32;
@@ -4713,35 +4916,27 @@ static SDValue lowerVU0BUILD_VECTOR(BuildVectorSDNode *Node,
     Elts.push_back(I32);
   }
   SDValue Result;
-  if (Node->getSplatValue()) {
+  if (Node->getSplatValue() &&
+      none_of(Elts, [](SDValue V) { return V.isUndef(); })) {
     SDValue BV = DAG.getBuildVector(MVT::v4i32, DL, Elts);
     Result = lowerR5900BUILD_VECTOR(cast<BuildVectorSDNode>(BV), DAG);
   } else {
-    auto Undef = [&]() {
-      return SDValue(
-          DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32), 0);
-    };
-    auto ToGPR128 = [&](SDValue Elt) {
-      if (Elt.isUndef())
-        return Undef();
-      return DAG.getTargetInsertSubreg(Mips::sub_64, DL, MVT::v4i32, Undef(),
-                                       DAG.getAnyExtOrTrunc(Elt, DL, MVT::i64));
-    };
-    // The low doubleword of the result has Lo in its low word.
-    auto Pair = [&](SDValue Lo, SDValue Hi) {
-      if (Hi.isUndef())
-        return ToGPR128(Lo);
-      return SDValue(DAG.getMachineNode(Mips::PEXTLW, DL, MVT::v4i32,
-                                        ToGPR128(Hi), ToGPR128(Lo)),
-                     0);
-    };
-    Result = Pair(Elts[0], Elts[1]);
-    if (!Elts[2].isUndef() || !Elts[3].isUndef())
-      Result = SDValue(DAG.getMachineNode(Mips::PCPYLD, DL, MVT::v4i32,
-                                          Pair(Elts[2], Elts[3]), Result),
-                       0);
+    Result = buildR5900Words(Elts, DL, DAG);
   }
   return DAG.getBitcast(MVT::v4f32, Result);
+}
+
+/// VU0: a scalar in field x (the other fields are undefined) is moved there
+/// from a GPR with QMTC2: MFC1 for a value in an FPR, LW for a load.
+static SDValue lowerVU0SCALAR_TO_VECTOR(SDValue Op, SelectionDAG &DAG) {
+  SDLoc DL(Op);
+  SDValue Word = bitcastToI32(Op.getOperand(0), Op.getNode(), DAG);
+  SDValue Undef(DAG.getMachineNode(TargetOpcode::IMPLICIT_DEF, DL, MVT::v4i32),
+                0);
+  SDValue V =
+      DAG.getTargetInsertSubreg(Mips::sub_64, DL, MVT::v4i32, Undef,
+                                DAG.getAnyExtOrTrunc(Word, DL, MVT::i64));
+  return DAG.getBitcast(MVT::v4f32, V);
 }
 
 /// VU0: an unsigned conversion is the signed one of X, or for X >= 2^31,

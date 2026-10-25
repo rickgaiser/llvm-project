@@ -2,8 +2,9 @@
 ; RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi n32 -verify-machineinstrs < %s | FileCheck %s
 
 ; R5900 MMI extensions of v8i16 and v16i8 (PEXTL/PEXTU, then an arithmetic
-; shift for a sign extension), 16x16->32 multiplies (PMULTH) and splats of a
-; register (PCPYLD, PCPYH).
+; shift for a sign extension), and of v4i8 and v4i16 to v4i32, 16x16->32
+; multiplies (PMULTH), splats of a register (PCPYLD, PCPYH) and v4i32 of four
+; registers (PEXTLW, PCPYLD).
 
 define void @sext_h_w(ptr %p, ptr %q) {
 ; CHECK-LABEL: sext_h_w:
@@ -301,4 +302,109 @@ define void @madd_multi_use(ptr %p, ptr %q, ptr %r) {
   %r1 = getelementptr i8, ptr %r, i32 32
   store <8 x i32> %m0, ptr %r1, align 32
   ret void
+}
+
+; v4i8 and v4i16 from a word or a doubleword: interleaved with $zero, in the
+; high bytes and shifted back for a sign extension.
+define <4 x i32> @zext_v4i8_w(ptr %p) {
+; CHECK-LABEL: zext_v4i8_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    pextlb $1, $zero, $1
+; CHECK-NEXT:    pextlh $2, $zero, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %v = load <4 x i8>, ptr %p
+  %e = zext <4 x i8> %v to <4 x i32>
+  ret <4 x i32> %e
+}
+
+define <4 x i32> @sext_v4i8_w(ptr %p) {
+; CHECK-LABEL: sext_v4i8_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    pextlb $1, $1, $zero
+; CHECK-NEXT:    pextlh $1, $1, $zero
+; CHECK-NEXT:    psraw $2, $1, 24
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %v = load <4 x i8>, ptr %p
+  %e = sext <4 x i8> %v to <4 x i32>
+  ret <4 x i32> %e
+}
+
+define <4 x i32> @zext_v4i16_w(ptr %p) {
+; CHECK-LABEL: zext_v4i16_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    ld $1, 0($1)
+; CHECK-NEXT:    pextlh $2, $zero, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %v = load <4 x i16>, ptr %p
+  %e = zext <4 x i16> %v to <4 x i32>
+  ret <4 x i32> %e
+}
+
+define <4 x i32> @sext_v4i16_w(ptr %p) {
+; CHECK-LABEL: sext_v4i16_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    ld $1, 0($1)
+; CHECK-NEXT:    pextlh $1, $1, $zero
+; CHECK-NEXT:    psraw $2, $1, 16
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %v = load <4 x i16>, ptr %p
+  %e = sext <4 x i16> %v to <4 x i32>
+  ret <4 x i32> %e
+}
+
+; A v4i32 of four GPRs: PEXTLW of the pairs, PCPYLD.
+define <4 x i32> @build_w(i32 %a, i32 %b, i32 %c, i32 %d) {
+; CHECK-LABEL: build_w:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pextlw $1, $5, $4
+; CHECK-NEXT:    # kill: def $r7_64 killed $r7_64 def $r7_128
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    pextlw $2, $7, $6
+; CHECK-NEXT:    pcpyld $2, $2, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %1 = insertelement <4 x i32> poison, i32 %a, i32 0
+  %2 = insertelement <4 x i32> %1, i32 %b, i32 1
+  %3 = insertelement <4 x i32> %2, i32 %c, i32 2
+  %4 = insertelement <4 x i32> %3, i32 %d, i32 3
+  ret <4 x i32> %4
+}
+
+define <4 x i32> @build_w_zero(i32 %a, i32 %b) {
+; CHECK-LABEL: build_w_zero:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pextlw $1, $zero, $4
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    pextlw $2, $zero, $5
+; CHECK-NEXT:    pcpyld $2, $2, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %1 = insertelement <4 x i32> zeroinitializer, i32 %a, i32 0
+  %2 = insertelement <4 x i32> %1, i32 %b, i32 2
+  ret <4 x i32> %2
 }

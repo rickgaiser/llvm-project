@@ -2,7 +2,7 @@
 ; RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi n32 < %s | FileCheck %s
 
 ; Vector truncations to v8i16 and v16i8 pack the low halfwords or bytes of
-; two registers with PPACH and PPACB.
+; two registers with PPACH and PPACB, and to v4i16 and v4i8 of one.
 
 define void @trunc_v8i32_v8i16(ptr %p, ptr %q) {
 ; CHECK-LABEL: trunc_v8i32_v8i16:
@@ -53,5 +53,37 @@ define void @trunc_v16i32_v16i8(ptr %p, ptr %q) {
   %v = load <16 x i32>, ptr %p, align 64
   %t = trunc <16 x i32> %v to <16 x i8>
   store <16 x i8> %t, ptr %q, align 16
+  ret void
+}
+
+; v4i32 to v4i16 or v4i8: the low doubleword or word of PPACH (and PPACB).
+define void @trunc_v4i32_v4i16(<4 x i32> %a, ptr %p) {
+; CHECK-LABEL: trunc_v4i32_v4i16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pcpyld $1, $5, $4
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    ppach $1, $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sd $1, 0($2)
+  %t = trunc <4 x i32> %a to <4 x i16>
+  store <4 x i16> %t, ptr %p
+  ret void
+}
+
+define void @trunc_v4i32_v4i8(<4 x i32> %a, ptr %p) {
+; CHECK-LABEL: trunc_v4i32_v4i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pcpyld $1, $5, $4
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    ppach $1, $1, $1
+; CHECK-NEXT:    ppacb $1, $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $1, 0($2)
+  %t = trunc <4 x i32> %a to <4 x i8>
+  store <4 x i8> %t, ptr %p
   ret void
 }

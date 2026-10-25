@@ -54,13 +54,11 @@ define <4 x float> @build_loads(ptr %p) {
 define <4 x float> @build_low(float %a, float %b) {
 ; CHECK-LABEL: build_low:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
-; CHECK-NEXT:    swc1 $f13, 4($sp)
-; CHECK-NEXT:    swc1 $f12, 0($sp)
-; CHECK-NEXT:    lqc2 $vf1, 0($sp)
+; CHECK-NEXT:    mfc1 $1, $f13
+; CHECK-NEXT:    mfc1 $2, $f12
+; CHECK-NEXT:    pextlw $1, $1, $2
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    qmtc2 $1, $vf1
   %1 = insertelement <4 x float> poison, float %a, i32 0
   %2 = insertelement <4 x float> %1, float %b, i32 1
   ret <4 x float> %2
@@ -97,14 +95,12 @@ define <4 x float> @splat_load(ptr %p) {
 define <4 x float> @insert1(<4 x float> %v, float %a) {
 ; CHECK-LABEL: insert1:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-NEXT:    mfc1 $1, $f12
 ; CHECK-NEXT:    vmove.xyzw $vf1, $vf12
-; CHECK-NEXT:    swc1 $f12, 4($sp)
-; CHECK-NEXT:    lqc2 $vf2, 0($sp)
-; CHECK-NEXT:    vmove.y $vf1, $vf2
+; CHECK-NEXT:    pextlw $1, $1, $1
+; CHECK-NEXT:    qmtc2 $1, $vf2
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    vmove.y $vf1, $vf2
   %r = insertelement <4 x float> %v, float %a, i32 1
   ret <4 x float> %r
 }
@@ -112,14 +108,13 @@ define <4 x float> @insert1(<4 x float> %v, float %a) {
 define <4 x float> @insert3(<4 x float> %v, float %a) {
 ; CHECK-LABEL: insert3:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
+; CHECK-NEXT:    mfc1 $1, $f12
 ; CHECK-NEXT:    vmove.xyzw $vf1, $vf12
-; CHECK-NEXT:    swc1 $f12, 12($sp)
-; CHECK-NEXT:    lqc2 $vf2, 0($sp)
-; CHECK-NEXT:    vmove.w $vf1, $vf2
+; CHECK-NEXT:    pextlw $1, $1, $1
+; CHECK-NEXT:    pcpyld $1, $1, $1
+; CHECK-NEXT:    qmtc2 $1, $vf2
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    vmove.w $vf1, $vf2
   %r = insertelement <4 x float> %v, float %a, i32 3
   ret <4 x float> %r
 }
@@ -138,4 +133,119 @@ define <4 x float> @reverse(<4 x float> %v) {
 ; CHECK-NEXT:    qmtc2 $1, $vf1
   %r = shufflevector <4 x float> %v, <4 x float> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
   ret <4 x float> %r
+}
+
+; A splat of a scalar read as a broadcast operand only needs field x: MFC1 or
+; LW, then QMTC2.
+define <4 x float> @splat_operand(<4 x float> %m, float %w) {
+; CHECK-LABEL: splat_operand:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    mfc1 $1, $f12
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+  %i = insertelement <4 x float> poison, float %w, i32 0
+  %s = shufflevector <4 x float> %i, <4 x float> poison, <4 x i32> zeroinitializer
+  %r = fmul <4 x float> %m, %s
+  ret <4 x float> %r
+}
+
+define <4 x float> @splat_operand_load(<4 x float> %m, ptr %p) {
+; CHECK-LABEL: splat_operand_load:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+  %w = load float, ptr %p
+  %i = insertelement <4 x float> poison, float %w, i32 0
+  %s = shufflevector <4 x float> %i, <4 x float> poison, <4 x i32> zeroinitializer
+  %r = fmul <4 x float> %m, %s
+  ret <4 x float> %r
+}
+
+; Fields stored as floats are stored from the GPR of QMFC2.
+define void @store_fields(<4 x float> %v, ptr %p) {
+; CHECK-LABEL: store_fields:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    qmfc2 $1, $vf12
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    sw $1, 0($2)
+; CHECK-NEXT:    dsrl $3, $1, 32
+; CHECK-NEXT:    pcpyud $1, $1, $1
+; CHECK-NEXT:    sw $3, 4($2)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $1, 8($2)
+  %x = extractelement <4 x float> %v, i32 0
+  %y = extractelement <4 x float> %v, i32 1
+  %z = extractelement <4 x float> %v, i32 2
+  %py = getelementptr inbounds float, ptr %p, i32 1
+  %pz = getelementptr inbounds float, ptr %p, i32 2
+  store float %x, ptr %p
+  store float %y, ptr %py
+  store float %z, ptr %pz
+  ret void
+}
+
+; Fields x and y, or z and w, next to each other at an 8-aligned address: SD.
+define void @store_fields_pairs(<4 x float> %v, ptr align 16 %p) {
+; CHECK-LABEL: store_fields_pairs:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    qmfc2 $1, $vf12
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    sd $1, 0($2)
+; CHECK-NEXT:    pcpyud $1, $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sd $1, 8($2)
+  %x = extractelement <4 x float> %v, i32 0
+  %y = extractelement <4 x float> %v, i32 1
+  %z = extractelement <4 x float> %v, i32 2
+  %w = extractelement <4 x float> %v, i32 3
+  %py = getelementptr inbounds float, ptr %p, i32 1
+  %pz = getelementptr inbounds float, ptr %p, i32 2
+  %pw = getelementptr inbounds float, ptr %p, i32 3
+  store float %y, ptr %py, align 4
+  store float %x, ptr %p, align 16
+  store float %w, ptr %pw, align 4
+  store float %z, ptr %pz, align 8
+  ret void
+}
+
+; A load of y's address between the stores still reads the old value.
+define i32 @store_fields_pair_load(<4 x float> %v, ptr align 8 %p) {
+; CHECK-LABEL: store_fields_pair_load:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    qmfc2 $3, $vf12
+; CHECK-NEXT:    lw $2, 4($1)
+; CHECK-NEXT:    sw $3, 0($1)
+; CHECK-NEXT:    dsrl $3, $3, 32
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $3, 4($1)
+  %x = extractelement <4 x float> %v, i32 0
+  %y = extractelement <4 x float> %v, i32 1
+  %py = getelementptr inbounds float, ptr %p, i32 1
+  store float %x, ptr %p, align 8
+  %old = load i32, ptr %py, align 4
+  store float %y, ptr %py, align 4
+  ret i32 %old
+}
+
+; Only 4-aligned: two SW.
+define void @store_fields_pair_align4(<4 x float> %v, ptr align 4 %p) {
+; CHECK-LABEL: store_fields_pair_align4:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    qmfc2 $1, $vf12
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    sw $1, 0($2)
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $1, 4($2)
+  %x = extractelement <4 x float> %v, i32 0
+  %y = extractelement <4 x float> %v, i32 1
+  %py = getelementptr inbounds float, ptr %p, i32 1
+  store float %x, ptr %p, align 4
+  store float %y, ptr %py, align 4
+  ret void
 }

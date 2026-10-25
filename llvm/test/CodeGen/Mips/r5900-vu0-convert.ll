@@ -234,3 +234,67 @@ define void @sitofp_mul16(ptr %p, ptr %q) {
   store <4 x float> %m, ptr %p, align 16
   ret void
 }
+
+; v4i8 and v4i16 extended in a GPR (r5900-mmi-widen.ll), then VITOF0.
+define <4 x float> @sitofp_v4i8(ptr %p) {
+; CHECK-LABEL: sitofp_v4i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    pextlb $1, $1, $zero
+; CHECK-NEXT:    pextlh $1, $1, $zero
+; CHECK-NEXT:    psraw $1, $1, 24
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vitof0.xyzw $vf1, $vf1
+  %v = load <4 x i8>, ptr %p
+  %f = sitofp <4 x i8> %v to <4 x float>
+  ret <4 x float> %f
+}
+
+define <4 x float> @uitofp_v4i8(ptr %p) {
+; CHECK-LABEL: uitofp_v4i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    pextlb $1, $zero, $1
+; CHECK-NEXT:    pextlh $1, $zero, $1
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vitof0.xyzw $vf1, $vf1
+  %v = load <4 x i8>, ptr %p
+  %f = uitofp <4 x i8> %v to <4 x float>
+  ret <4 x float> %f
+}
+
+define <4 x float> @sitofp_v4i16(ptr %p) {
+; CHECK-LABEL: sitofp_v4i16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    ld $1, 0($1)
+; CHECK-NEXT:    pextlh $1, $1, $zero
+; CHECK-NEXT:    psraw $1, $1, 16
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    vitof0.xyzw $vf1, $vf1
+  %v = load <4 x i16>, ptr %p
+  %f = sitofp <4 x i16> %v to <4 x float>
+  ret <4 x float> %f
+}
+
+; VFTOI0, PPACH, PPACB, SW.
+define void @fptosi_v4i8(<4 x float> %v, ptr %p) {
+; CHECK-LABEL: fptosi_v4i8:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vftoi0.xyzw $vf1, $vf12
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    qmfc2 $1, $vf1
+; CHECK-NEXT:    ppach $1, $1, $1
+; CHECK-NEXT:    ppacb $1, $1, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $1, 0($2)
+  %i = fptosi <4 x float> %v to <4 x i32>
+  %t = trunc <4 x i32> %i to <4 x i8>
+  store <4 x i8> %t, ptr %p
+  ret void
+}

@@ -175,28 +175,19 @@ define void @even_h_single(ptr %pa, ptr %pb, ptr %pr) {
 define <4 x i32> @reverse_v4i32(<4 x i32> %a) {
 ; CHECK-LABEL: reverse_v4i32:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
 ; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
 ; CHECK-NEXT:    pcpyld $1, $5, $4
-; CHECK-NEXT:    sll $2, $1, 0
-; CHECK-NEXT:    dsrl $3, $1, 32
-; CHECK-NEXT:    sw $2, 12($sp)
-; CHECK-NEXT:    sll $2, $3, 0
+; CHECK-NEXT:    dsra $2, $1, 32
+; CHECK-NEXT:    pextlw $2, $1, $2
 ; CHECK-NEXT:    pcpyud $1, $1, $1
-; CHECK-NEXT:    sw $2, 8($sp)
-; CHECK-NEXT:    sll $2, $1, 0
-; CHECK-NEXT:    dsrl $1, $1, 32
-; CHECK-NEXT:    sw $2, 4($sp)
-; CHECK-NEXT:    sll $1, $1, 0
-; CHECK-NEXT:    sw $1, 0($sp)
-; CHECK-NEXT:    lq $2, 0($sp)
-; CHECK-NEXT:    pcpyud $3, $2, $2
+; CHECK-NEXT:    dsra $3, $1, 32
+; CHECK-NEXT:    pextlw $1, $1, $3
+; CHECK-NEXT:    pcpyld $2, $2, $1
 ; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
 ; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    pcpyud $3, $2, $2
   %s = shufflevector <4 x i32> %a, <4 x i32> poison, <4 x i32> <i32 3, i32 2, i32 1, i32 0>
   ret <4 x i32> %s
 }

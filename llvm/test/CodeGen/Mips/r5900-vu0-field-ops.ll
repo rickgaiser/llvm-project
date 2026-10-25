@@ -47,8 +47,6 @@ define <4 x float> @lane_max(<4 x float> %n, <4 x float> %l, <4 x float> %c) {
 ;
 ; OFF-LABEL: lane_max:
 ; OFF:       # %bb.0:
-; OFF-NEXT:    addiu $sp, $sp, -16
-; OFF-NEXT:    .cfi_def_cfa_offset 16
 ; OFF-NEXT:    vmul.xyzw $vf1, $vf12, $vf13
 ; OFF-NEXT:    mtc1 $zero, $f1
 ; OFF-NEXT:    vaddy.xyzw $vf2, $vf1, $vf1
@@ -59,11 +57,10 @@ define <4 x float> @lane_max(<4 x float> %n, <4 x float> %l, <4 x float> %c) {
 ; OFF-NEXT:    max.s $f0, $f0, $f1
 ; OFF-NEXT:    lwc1 $f1, %lo(.LCPI1_0)($1)
 ; OFF-NEXT:    mul.s $f0, $f0, $f1
-; OFF-NEXT:    swc1 $f0, 0($sp)
-; OFF-NEXT:    lqc2 $vf1, 0($sp)
-; OFF-NEXT:    vmulx.xyzw $vf1, $vf14, $vf1
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    addiu $sp, $sp, 16
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf14, $vf1
   %p = fmul fast <4 x float> %n, %l
   %x = extractelement <4 x float> %p, i32 0
   %y = extractelement <4 x float> %p, i32 1
@@ -93,19 +90,16 @@ define <4 x float> @lane_load(ptr %v, <4 x float> %n) {
 ;
 ; OFF-LABEL: lane_load:
 ; OFF:       # %bb.0:
-; OFF-NEXT:    addiu $sp, $sp, -16
-; OFF-NEXT:    .cfi_def_cfa_offset 16
 ; OFF-NEXT:    qmfc2 $2, $vf12
 ; OFF-NEXT:    sll $1, $4, 0
 ; OFF-NEXT:    lwc1 $f0, 4($1)
 ; OFF-NEXT:    pcpyud $1, $2, $2
 ; OFF-NEXT:    mtc1 $1, $f1
 ; OFF-NEXT:    mul.s $f0, $f0, $f1
-; OFF-NEXT:    swc1 $f0, 0($sp)
-; OFF-NEXT:    lqc2 $vf1, 0($sp)
-; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    addiu $sp, $sp, 16
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
   %pv = getelementptr inbounds i8, ptr %v, i32 4
   %y = load float, ptr %pv, align 4
   %z = extractelement <4 x float> %n, i32 2
@@ -128,8 +122,6 @@ define <4 x float> @q_mul(<4 x float> %v) {
 ;
 ; OFF-LABEL: q_mul:
 ; OFF:       # %bb.0:
-; OFF-NEXT:    addiu $sp, $sp, -16
-; OFF-NEXT:    .cfi_def_cfa_offset 16
 ; OFF-NEXT:    qmfc2 $1, $vf12
 ; OFF-NEXT:    pcpyud $1, $1, $1
 ; OFF-NEXT:    dsrl32 $1, $1, 0
@@ -137,11 +129,10 @@ define <4 x float> @q_mul(<4 x float> %v) {
 ; OFF-NEXT:    lui $1, %hi(.LCPI3_0)
 ; OFF-NEXT:    lwc1 $f1, %lo(.LCPI3_0)($1)
 ; OFF-NEXT:    div.s $f0, $f1, $f0
-; OFF-NEXT:    swc1 $f0, 0($sp)
-; OFF-NEXT:    lqc2 $vf1, 0($sp)
-; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    addiu $sp, $sp, 16
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
   %w = extractelement <4 x float> %v, i32 3
   %k = fdiv fast float 1.0, %w
   %i = insertelement <4 x float> poison, float %k, i32 0
@@ -161,19 +152,16 @@ define <4 x float> @q_sub(<4 x float> %a, <4 x float> %b) {
 ;
 ; OFF-LABEL: q_sub:
 ; OFF:       # %bb.0:
-; OFF-NEXT:    addiu $sp, $sp, -16
-; OFF-NEXT:    .cfi_def_cfa_offset 16
 ; OFF-NEXT:    qmfc2 $1, $vf13
 ; OFF-NEXT:    qmfc2 $2, $vf12
 ; OFF-NEXT:    mtc1 $1, $f0
 ; OFF-NEXT:    pcpyud $1, $2, $2
 ; OFF-NEXT:    mtc1 $1, $f1
 ; OFF-NEXT:    div.s $f0, $f0, $f1
-; OFF-NEXT:    swc1 $f0, 0($sp)
-; OFF-NEXT:    lqc2 $vf1, 0($sp)
-; OFF-NEXT:    vsubx.xyzw $vf1, $vf12, $vf1
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    addiu $sp, $sp, 16
+; OFF-NEXT:    vsubx.xyzw $vf1, $vf12, $vf1
   %x = extractelement <4 x float> %b, i32 0
   %z = extractelement <4 x float> %a, i32 2
   %k = fdiv fast float %x, %z
@@ -187,41 +175,35 @@ define <4 x float> @q_sub(<4 x float> %a, <4 x float> %b) {
 define <4 x float> @q_two_uses(<4 x float> %v, ptr %p) {
 ; CHECK-LABEL: q_two_uses:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -16
-; CHECK-NEXT:    .cfi_def_cfa_offset 16
 ; CHECK-NEXT:    qmfc2 $1, $vf12
 ; CHECK-NEXT:    pcpyud $1, $1, $1
 ; CHECK-NEXT:    dsrl32 $1, $1, 0
 ; CHECK-NEXT:    mtc1 $1, $f0
 ; CHECK-NEXT:    lui $1, %hi(.LCPI5_0)
 ; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI5_0)($1)
-; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    div.s $f0, $f1, $f0
+; CHECK-NEXT:    mfc1 $1, $f0
+; CHECK-NEXT:    qmtc2 $1, $vf1
+; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    swc1 $f0, 0($1)
-; CHECK-NEXT:    swc1 $f0, 0($sp)
-; CHECK-NEXT:    lqc2 $vf1, 0($sp)
-; CHECK-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 16
+; CHECK-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
 ;
 ; OFF-LABEL: q_two_uses:
 ; OFF:       # %bb.0:
-; OFF-NEXT:    addiu $sp, $sp, -16
-; OFF-NEXT:    .cfi_def_cfa_offset 16
 ; OFF-NEXT:    qmfc2 $1, $vf12
 ; OFF-NEXT:    pcpyud $1, $1, $1
 ; OFF-NEXT:    dsrl32 $1, $1, 0
 ; OFF-NEXT:    mtc1 $1, $f0
 ; OFF-NEXT:    lui $1, %hi(.LCPI5_0)
 ; OFF-NEXT:    lwc1 $f1, %lo(.LCPI5_0)($1)
-; OFF-NEXT:    sll $1, $5, 0
 ; OFF-NEXT:    div.s $f0, $f1, $f0
+; OFF-NEXT:    mfc1 $1, $f0
+; OFF-NEXT:    qmtc2 $1, $vf1
+; OFF-NEXT:    sll $1, $5, 0
 ; OFF-NEXT:    swc1 $f0, 0($1)
-; OFF-NEXT:    swc1 $f0, 0($sp)
-; OFF-NEXT:    lqc2 $vf1, 0($sp)
-; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    addiu $sp, $sp, 16
+; OFF-NEXT:    vmulx.xyzw $vf1, $vf12, $vf1
   %w = extractelement <4 x float> %v, i32 3
   %k = fdiv fast float 1.0, %w
   store float %k, ptr %p
