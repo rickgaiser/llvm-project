@@ -47,7 +47,8 @@ using namespace llvm;
 
 STATISTIC(NumFolded, "Number of merges with fields set before the loop");
 
-static cl::opt<bool> Enable("vu-invariant-fields", cl::Hidden, cl::init(true),
+static cl::opt<bool> Enable("vu-enable-invariant-fields", cl::Hidden,
+                            cl::init(true),
                             cl::desc("Fields set once before a loop"));
 
 namespace {
