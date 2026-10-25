@@ -51,6 +51,10 @@ SmallVector<Metadata *, 4> clang::CodeGen::LoopInfo::createPipeliningMetadata(
           MDNode::get(Ctx, {MDString::get(Ctx, "llvm.loop.pipeline.disable"),
                             ConstantAsMetadata::get(ConstantInt::get(
                                 llvm::Type::getInt1Ty(Ctx), 1))}));
+      // A transformation of the user too: the loops that an earlier
+      // transformation makes (such as partial unrolling) keep it in their
+      // follow-up.
+      HasUserTransforms = true;
     }
     return Args;
   }

@@ -36,6 +36,15 @@ void pipeline_disabled_on_nested_loop(int *List, int Length, int Value) {
   }
 }
 
+void pipeline_disabled_unrolled(int *List, int Length, int Value) {
+// CHECK-LABEL: define {{.*}} @_Z26pipeline_disabled_unrolled
+#pragma clang loop unroll_count(2) pipeline(disable)
+  for (int i = 0; i < Length; i++) {
+    // CHECK: br label {{.*}}, !llvm.loop ![[LOOP_5:.*]]
+    List[i] = Value;
+  }
+}
+
 // CHECK: ![[LOOP_1]] = distinct !{![[LOOP_1]], [[MP:![0-9]+]], ![[PIPELINE_DISABLE:.*]]}
 // CHECK: ![[PIPELINE_DISABLE]] = !{!"llvm.loop.pipeline.disable", i1 true}
 
@@ -45,3 +54,9 @@ void pipeline_disabled_on_nested_loop(int *List, int Length, int Value) {
 // CHECK: ![[PIPELINE_II_10]] = !{!"llvm.loop.pipeline.initiationinterval", i32 10}
 
 // CHECK: ![[LOOP_4]] = distinct !{![[LOOP_4]], [[MP]], ![[PIPELINE_DISABLE]]}
+
+// The unrolled loop is not pipelined either.
+// CHECK: ![[LOOP_5]] = distinct !{![[LOOP_5]], [[MP]], ![[UNROLL_2:.*]], ![[FOLLOWUP:.*]]}
+// CHECK: ![[UNROLL_2]] = !{!"llvm.loop.unroll.count", i32 2}
+// CHECK: ![[FOLLOWUP]] = !{!"llvm.loop.unroll.followup_all", [[MP]], ![[UNROLL_DISABLE:.*]], ![[PIPELINE_DISABLE]]}
+// CHECK: ![[UNROLL_DISABLE]] = !{!"llvm.loop.unroll.disable"}
