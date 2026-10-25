@@ -12,11 +12,11 @@
 ; registers over the limit first, before the words of the kernel, when the
 ; values are shortened finds a schedule that fits.
 
-; CHECK: Minimal Initiation Interval: 80 (ResMII 80, RecMII 2)
+; CHECK: Minimal Initiation Interval: 79 (ResMII 79, RecMII 2)
 ; CHECK-NEXT: Schedule found with Initiation Interval: 103, MaxStageCount: 1
 ; CHECK-NEXT: Pipelined succesfully!
 
-; NOREDUCE: Minimal Initiation Interval: 80 (ResMII 80, RecMII 2)
+; NOREDUCE: Minimal Initiation Interval: 79 (ResMII 79, RecMII 2)
 ; NOREDUCE-NEXT: Unable to find schedule
 
 target datalayout = "e-m:e-p:16:16-i32:32-i64:64-f32:32-v128:128-n16"

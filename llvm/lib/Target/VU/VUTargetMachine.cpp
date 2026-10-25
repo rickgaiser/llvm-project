@@ -37,6 +37,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUPacketizerPass(PR);
   initializeVUFoldQPass(PR);
   initializeVUInvariantFieldsPass(PR);
+  initializeVUBalancePipesPass(PR);
   initializeVUPackConstantsPass(PR);
   initializeVUFoldQCopiesPass(PR);
   initializeVUFoldInsertFieldPass(PR);
@@ -195,6 +196,7 @@ public:
       addPass(createVUPackConstantsPass());
       addPass(createVUFoldQPass());
       addPass(createVUInvariantFieldsPass());
+      addPass(createVUBalancePipesPass());
       addPass(&MachinePipelinerID);
       addPass(createVULoopCopiesPass());
     }

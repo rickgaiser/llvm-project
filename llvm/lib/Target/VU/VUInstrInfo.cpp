@@ -238,6 +238,18 @@ bool VUInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
     Build(VU::FCAND).add(MI.getOperand(3));
     break;
 
+  case VU::INSERT_ROT: {
+    // MR32.<f> d, s; the tied source is kept in the other fields.
+    RegState SrcState =
+        RegState::Implicit | getUndefRegState(MI.getOperand(1).isUndef());
+    Register D = MI.getOperand(0).getReg();
+    BuildDef(VU::MR32, D)
+        .addImm(8 >> MI.getOperand(3).getImm())
+        .add(MI.getOperand(2))
+        .addReg(D, SrcState);
+    break;
+  }
+
   case VU::MERGE_FIELDS: {
     // MOVE<m> d, s; the tied source is kept in the other fields.
     RegState SrcState =

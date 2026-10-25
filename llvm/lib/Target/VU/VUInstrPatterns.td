@@ -156,6 +156,14 @@ def : Pat<(vector_insert (v4f32 VF:$src),
           (INSERT_FIELD VF:$src, VF:$v, 3, imm:$sf)>;
 }
 
+// Field f + 1 of s into field f of src (x from y, y from z, z from w):
+// MR32.<f> d, s, a lower instruction that rotates the fields, exact for every
+// value. VUBalancePipes makes it from an INSERT_FIELD in a loop whose upper
+// pipe is busier. w from x stays an INSERT_FIELD, which is MR32.w as well.
+let Constraints = "$d = $src" in
+def INSERT_ROT : VUPseudo<(outs VF:$d), (ins VF:$src, VF:$s, i16imm:$f), [],
+                          IIC_VULower>;
+
 // Insert Q into field f of src: ADDq.<f> d, vf0, q, MULq.w d, vf0, q for w.
 // Fields of s into the same fields of src: MOVE<m> d, s, a lower
 // instruction, exact for every value. VUFoldInsertField writes them in place

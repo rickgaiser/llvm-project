@@ -22,6 +22,7 @@ add_llvm_target(VUCodeGen
   VUFoldInsertField.cpp
   VUFoldQ.cpp
   VUInvariantFields.cpp
+  VUBalancePipes.cpp
   VUFrameLowering.cpp
   VUHazards.cpp
   VUHLSLAdapter.cpp

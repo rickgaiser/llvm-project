@@ -18,6 +18,11 @@
 // It is a modulo schedule with a single stage, found by iterative modulo
 // scheduling. The words are only replaced if they take fewer cycles.
 //
+// An exact move of fields has a form in each pipe: MR32.<f> d, s (f = x, y
+// or z) and ADD<f+1>.<f> d, vf0, s, MOVE.<m> d, s and ADD.<m> d, vf0, s (m
+// without w; vf0.xyz is 0). The search places it in either, in a loop that
+// tests no MAC or status flag, which only the upper form writes.
+//
 // The registers are allocated already, so no instruction moves to another
 // iteration. A register that holds several values orders them, which can
 // rule out every schedule in L words, so the search is repeated with the
@@ -31,6 +36,7 @@
 #include "VUSubtarget.h"
 #include "VUWords.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/LivePhysRegs.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -70,8 +76,11 @@ class LoopGraph {
 
 public:
   SmallVector<MachineInstr *, 32> Instrs;
-  /// The processor resources and cycles of each instruction.
-  SmallVector<SmallVector<std::pair<unsigned, unsigned>, 2>, 32> Resources;
+  /// The processor resources and cycles of each instruction, and of its form
+  /// in the other pipe (none if AltOpc is 0).
+  SmallVector<SmallVector<std::pair<unsigned, unsigned>, 2>, 32> Resources,
+      AltResources;
+  SmallVector<unsigned, 32> AltOpc;
   SmallVector<Edge, 64> Edges;
   unsigned Branch = 0;
   /// A memory instruction whose base the loop only changes by an increment.
@@ -89,7 +98,9 @@ public:
         SM(STI.getSchedModel()), STI(STI) {}
 
   bool build(MachineBasicBlock &MBB);
-  bool schedule(int L, SmallVectorImpl<int> &Cycles, unsigned &Steps) const;
+  /// Sets the cycle of each instruction, and whether it takes its other form.
+  bool schedule(int L, SmallVectorImpl<int> &Cycles,
+                SmallVectorImpl<bool> &UseAlt, unsigned &Steps) const;
 
 private:
   int getLatency(unsigned Def, Register Reg, unsigned Use,
@@ -123,6 +134,69 @@ static std::optional<int64_t> getIncrement(const MachineInstr &MI) {
   if (MI.getOperand(0).getReg() != MI.getOperand(1).getReg())
     return std::nullopt;
   return Sign * MI.getOperand(2).getImm();
+}
+
+/// The opcode of the form of the exact field move \p MI in the other pipe,
+/// or 0. The operands are D, the mask and S (MR32, MOVE), or D, the mask,
+/// vf0 and S (ADD).
+static unsigned getAltOpcode(const MachineInstr &MI) {
+  static constexpr unsigned Add[] = {VU::ADDx, VU::ADDy, VU::ADDz, VU::ADDw};
+  unsigned Opc = MI.getOpcode();
+  if (MI.getNumExplicitOperands() < 3 || !MI.getOperand(1).isImm())
+    return 0;
+  unsigned Mask = MI.getOperand(1).getImm();
+  if (Mask & 1) // w: vf0.w is 1
+    return 0;
+  auto Field = [&]() -> int {
+    switch (Mask) {
+    case 8:
+      return 0;
+    case 4:
+      return 1;
+    case 2:
+      return 2;
+    }
+    return -1;
+  };
+  if (Opc == VU::MOVE || Opc == VU::MR32) {
+    if (!MI.getOperand(2).isReg() || MI.getOperand(2).getReg() == VU::VF0)
+      return 0;
+    if (Opc == VU::MOVE)
+      return VU::ADD;
+    return Field() >= 0 ? Add[Field() + 1] : 0;
+  }
+  if (MI.getNumExplicitOperands() != 4 || !MI.getOperand(2).isReg() ||
+      MI.getOperand(2).getReg() != VU::VF0)
+    return 0;
+  if (Opc == VU::ADD)
+    return VU::MOVE;
+  for (int F = 1; F != 4; ++F)
+    if (Opc == Add[F] && Field() == F - 1)
+      return VU::MR32;
+  return 0;
+}
+
+/// Changes the exact field move \p MI to its form in the other pipe.
+static void switchForm(MachineInstr &MI, const TargetInstrInfo &TII) {
+  unsigned Alt = getAltOpcode(MI);
+  assert(Alt && "not a field move");
+  bool ToUpper = MI.getOpcode() == VU::MOVE || MI.getOpcode() == VU::MR32;
+  MachineFunction &MF = *MI.getMF();
+  if (ToUpper) {
+    // Insert vf0 before s: rebuild the operand list.
+    SmallVector<MachineOperand, 6> Ops(MI.operands());
+    while (MI.getNumOperands())
+      MI.removeOperand(MI.getNumOperands() - 1);
+    MI.setDesc(TII.get(Alt));
+    for (unsigned I = 0, E = Ops.size(); I != E; ++I) {
+      if (I == 2)
+        MI.addOperand(MF, MachineOperand::CreateReg(VU::VF0, false));
+      MI.addOperand(MF, Ops[I]);
+    }
+  } else {
+    MI.removeOperand(2);
+    MI.setDesc(TII.get(Alt));
+  }
 }
 
 int LoopGraph::getLatency(unsigned Def, Register Reg, unsigned Use,
@@ -275,15 +349,36 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
               {It->second, U, getLatency(It->second, Reg, U, MO), 1});
   }
 
-  for (MachineInstr *MI : Instrs) {
-    auto &R = Resources.emplace_back();
+  auto GetResources = [&](unsigned Opc, auto &R) {
     const MCSchedClassDesc *SC =
-        SM.getSchedClassDesc(MI->getDesc().getSchedClass());
+        SM.getSchedClassDesc(TII.get(Opc).getSchedClass());
     if (!SC || !SC->isValid())
       return false;
     for (const MCWriteProcResEntry &PRE :
          make_range(STI.getWriteProcResBegin(SC), STI.getWriteProcResEnd(SC)))
       R.push_back({PRE.ProcResourceIdx, PRE.ReleaseAtCycle});
+    return true;
+  };
+  bool TestsFlags = any_of(Instrs, [](const MachineInstr *MI) {
+    switch (MI->getOpcode()) {
+    case VU::FMAND:
+    case VU::FMEQ:
+    case VU::FMOR:
+    case VU::FSAND:
+    case VU::FSEQ:
+    case VU::FSOR:
+      return true;
+    }
+    return false;
+  });
+  for (MachineInstr *MI : Instrs) {
+    if (!GetResources(MI->getOpcode(), Resources.emplace_back()))
+      return false;
+    unsigned Alt = TestsFlags ? 0 : getAltOpcode(*MI);
+    AltOpc.push_back(Alt);
+    auto &AR = AltResources.emplace_back();
+    if (Alt && !GetResources(Alt, AR))
+      return false;
   }
   return true;
 }
@@ -319,7 +414,7 @@ static bool propagate(ArrayRef<Edge> Edges, int L, std::vector<int> &Release,
 /// first. Returns false if there is no such schedule, or if the search takes
 /// more than \p Steps steps, which are taken off.
 bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
-                         unsigned &Steps) const {
+                         SmallVectorImpl<bool> &UseAlt, unsigned &Steps) const {
   unsigned N = Instrs.size();
   std::vector<int> Release(N, 0), Deadline(N, L - 1);
   Release[Branch] = Deadline[Branch] = L - 2;
@@ -332,15 +427,24 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
   // The units in use in each cycle, modulo L.
   std::vector<std::vector<unsigned>> Use(SM.getNumProcResourceKinds(),
                                          std::vector<unsigned>(L, 0));
-  auto Fits = [&](unsigned I, int C) {
-    for (auto [Idx, Busy] : Resources[I])
+  std::vector<bool> Alt(N, false);
+  auto ResourcesOf = [&](unsigned I,
+                         bool A) -> ArrayRef<std::pair<unsigned, unsigned>> {
+    return A ? AltResources[I] : Resources[I];
+  };
+  auto FitsForm = [&](unsigned I, int C, bool A) {
+    for (auto [Idx, Busy] : ResourcesOf(I, A))
       for (unsigned K = 0; K != Busy; ++K)
         if (Use[Idx][(C + K) % L] >= SM.getProcResource(Idx)->NumUnits)
           return false;
     return true;
   };
+  // In either form.
+  auto Fits = [&](unsigned I, int C) {
+    return FitsForm(I, C, false) || (AltOpc[I] && FitsForm(I, C, true));
+  };
   auto Reserve = [&](unsigned I, int C, int Delta) {
-    for (auto [Idx, Busy] : Resources[I])
+    for (auto [Idx, Busy] : ResourcesOf(I, Alt[I]))
       for (unsigned K = 0; K != Busy; ++K)
         Use[Idx][(C + K) % L] += Delta;
   };
@@ -387,25 +491,29 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
             Release[I] < Release[Op])))
         Op = I;
     for (int C = Release[Op], E = Deadline[Op]; C <= E; ++C) {
-      if (!Fits(Op, C))
-        continue;
-      std::vector<int> SavedRelease = Release, SavedDeadline = Deadline;
-      Release[Op] = Deadline[Op] = C;
-      Placed[Op] = true;
-      Reserve(Op, C, 1);
-      if (Narrow() && Search(NumPlaced + 1))
-        return true;
-      Reserve(Op, C, -1);
-      Placed[Op] = false;
-      Release = std::move(SavedRelease);
-      Deadline = std::move(SavedDeadline);
-      if (Taken > Steps)
-        break;
+      for (bool A : {false, true}) {
+        if ((A && !AltOpc[Op]) || !FitsForm(Op, C, A))
+          continue;
+        std::vector<int> SavedRelease = Release, SavedDeadline = Deadline;
+        Release[Op] = Deadline[Op] = C;
+        Placed[Op] = true;
+        Alt[Op] = A;
+        Reserve(Op, C, 1);
+        if (Narrow() && Search(NumPlaced + 1))
+          return true;
+        Reserve(Op, C, -1);
+        Placed[Op] = false;
+        Alt[Op] = false;
+        Release = std::move(SavedRelease);
+        Deadline = std::move(SavedDeadline);
+        if (Taken > Steps)
+          return false;
+      }
     }
     return false;
   };
 
-  if (!Fits(Branch, L - 2))
+  if (!FitsForm(Branch, L - 2, false))
     return false;
   Placed[Branch] = true;
   Reserve(Branch, L - 2, 1);
@@ -418,6 +526,7 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
   LLVM_DEBUG(dbgs() << "  schedule in " << L << " words found in " << Taken
                     << " steps\n");
   Cycles.assign(Release.begin(), Release.end());
+  UseAlt.assign(Alt.begin(), Alt.end());
   return true;
 }
 
@@ -569,6 +678,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       DebugLoc DL;
       /// The offset operands that change, for the other side of an increment.
       SmallVector<std::pair<MachineOperand *, int64_t>, 4> Offsets;
+      /// The field moves that change to the other pipe.
+      SmallVector<MachineInstr *, 4> Switched;
     };
     auto FindLayout = [&](int MaxCycles) -> std::optional<Layout> {
       LoopGraph G(STI);
@@ -579,14 +690,33 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
 
       // The resources of an iteration bound the number of words.
       const MCSchedModel &SM = STI.getSchedModel();
+      // A field move that has a form in the other pipe counts for the pair
+      // of resources of its two forms.
       std::vector<unsigned> Busy(SM.getNumProcResourceKinds(), 0);
-      for (const auto &R : G.Resources)
-        for (auto [Idx, Cycles] : R)
+      unsigned Movable = 0;
+      SmallDenseSet<unsigned, 2> MovableRes;
+      for (unsigned I = 0, E = G.Resources.size(); I != E; ++I) {
+        if (G.AltOpc[I]) {
+          ++Movable;
+          for (auto [Idx, Cycles] : G.Resources[I])
+            MovableRes.insert(Idx);
+          for (auto [Idx, Cycles] : G.AltResources[I])
+            MovableRes.insert(Idx);
+          continue;
+        }
+        for (auto [Idx, Cycles] : G.Resources[I])
           Busy[Idx] += Cycles;
+      }
       int MinL = 2;
-      for (unsigned Idx = 1, E = Busy.size(); Idx != E; ++Idx)
+      unsigned PairBusy = Movable;
+      for (unsigned Idx = 1, E = Busy.size(); Idx != E; ++Idx) {
         MinL = std::max<int>(
             MinL, divideCeil(Busy[Idx], SM.getProcResource(Idx)->NumUnits));
+        if (MovableRes.contains(Idx))
+          PairBusy += Busy[Idx];
+      }
+      if (Movable)
+        MinL = std::max<int>(MinL, divideCeil(PairBusy, MovableRes.size()));
 
       LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << MaxCycles
                         << " cycles, at least " << MinL << " words\n");
@@ -595,13 +725,14 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       uint64_t N = G.Instrs.size();
       unsigned Steps = std::clamp<uint64_t>(200000000 / (N * N), 1000, 1000000);
       SmallVector<int, 32> Cycles;
+      SmallVector<bool, 32> UseAlt;
       for (int L = MinL; L < MaxCycles && Steps; ++L) {
         // A search for one length takes at most half of the steps that are
         // left, so a length that is hard to prove impossible, just below the
         // shortest schedule, leaves steps for the longer lengths.
         unsigned Budget = std::max(Steps / 2, std::min(Steps, 1000u));
         unsigned Left = Budget;
-        bool Found = G.schedule(L, Cycles, Left);
+        bool Found = G.schedule(L, Cycles, UseAlt, Left);
         Steps -= Budget - Left;
         if (!Found) {
           LLVM_DEBUG(dbgs() << "  no schedule in " << L << " words\n");
@@ -610,8 +741,14 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
         Layout New{SmallVector<VU::Word, 32>(L), 0,
                    G.Instrs[G.Branch]->getDebugLoc()};
         New.Words[L - 1].DelaySlot = true;
+        // The words are counted with the field moves in their new form,
+        // which changes back until the layout is taken.
         for (unsigned I = 0, E = G.Instrs.size(); I != E; ++I) {
           MachineInstr *MI = G.Instrs[I];
+          if (UseAlt[I]) {
+            switchForm(*MI, TII);
+            New.Switched.push_back(MI);
+          }
           (VU::isLowerInstr(MI->getDesc()) ? New.Words[Cycles[I]].Lower
                                            : New.Words[Cycles[I]].Upper) = MI;
         }
@@ -627,6 +764,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
               {&Offset, Offset.getImm() + (After ? -R.Step : R.Step)});
         }
         New.Cycles = VU::getLoopCycles(New.Words, TII, Itin, TRI);
+        for (MachineInstr *MI : New.Switched)
+          switchForm(*MI, TII);
         LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << MaxCycles
                           << " cycles, " << L << " words take " << New.Cycles
                           << "\n");
@@ -660,6 +799,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
         Old.push_back(&MI);
     for (auto [MO, Offset] : Best->Offsets)
       MO->setImm(Offset);
+    for (MachineInstr *MI : Best->Switched)
+      switchForm(*MI, TII);
     VU::rebuildWords(MBB, Best->Words, TII, Best->DL);
     for (MachineInstr *MI : Old)
       MI->eraseFromParent();
