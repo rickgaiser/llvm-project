@@ -65,6 +65,10 @@ static cl::opt<unsigned>
     Indexed("vu-indexed",
             cl::desc("indexed HLSL vertex programs: vertices per batch"),
             cl::init(0));
+static cl::opt<unsigned>
+    Contexts("vu-contexts",
+             cl::desc("contexts of HLSL vertex programs: 1 or 2 (default)"),
+             cl::init(0));
 static cl::opt<std::string>
     HeaderPrefix("vu-header-prefix",
                  cl::desc("prefix of the layout header's macros"),
@@ -732,6 +736,8 @@ bool Adapter::run() {
     Entry->addFnAttr("vu-buffer-qw", utostr(BufferQW));
   if (Indexed && Vertex)
     Entry->addFnAttr("vu-indexed", utostr(Indexed));
+  if (Contexts && Vertex)
+    Entry->addFnAttr("vu-contexts", utostr(Contexts));
   if (SpillQW)
     for (Function &F : M)
       if (!F.isDeclaration())

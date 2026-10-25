@@ -29,7 +29,8 @@ Other attributes:
 | Attribute | Meaning | Default |
 |---|---|---|
 | `"target-cpu"` | `vu0` or `vu1` (vertex programs: `vu1`) | `vu1` |
-| `"vu-buffer-qw"` | size of each of the two VU1 buffers of a vertex program | (1024 − spill) / 2 |
+| `"vu-buffer-qw"` | size of each of the two VU1 buffers of a vertex program | what the contexts and spills leave, / 2 |
+| `"vu-contexts"` | contexts of a vertex program: 1 or 2 | 2 |
 | `"vu-spill-qw"` | quadwords at the top of data memory for spilled registers | 0 |
 | `"vu-header-prefix"` | prefix of the header's macro names | `VU_` |
 | `"vu-indexed"` | an indexed vertex program of this many vertices per batch | 0 (not indexed) |
@@ -47,7 +48,7 @@ constant offset selects the fields: `float`, `<2 x float>`, `<3 x float>`,
 
 | AS | Kind | Metadata | Becomes |
 |---|---|---|---|
-| 1 | uniform | `!vu.uniform !{i32 <byte offset>}` | a fixed place in the uniform block; read only |
+| 1 | uniform | `!vu.uniform !{i32 <byte offset>}` | a fixed place in the uniforms (of the context, for a vertex program); read only |
 | 2 | vertex input | `!vu.input !{i32 <order>, !"<format>"}` | quadword `order` of the vertex's inputs |
 | 3 | vertex output | `!vu.output !{i32 <order>, !"<GIF register>"}` | quadword `order` of the vertex's GIF registers |
 | 4 | items | `[0 x T]`, `sizeof(T)` a multiple of 16 | the items of a compute batch |
@@ -71,14 +72,28 @@ GIF registers (PACKED): `rgbaq st uv xyzf2 xyz2 fog xyzf3 xyz3`.
 
 ## Layouts
 
+**Contexts** (vertex programs): what a draw sets once. `NCTX` of them, `CTX_QW`
+quadwords each, from `CTX_AT`:
+
+```
+0                GIF tag (PRIM, FLG, NREG, REGS, EOP; NLOOP 0)
+1 ...            uniforms (UNI_QW quadwords)
+```
+
+The EE writes a context once per draw, and the counts of each batch name it.
+With two (the default) the EE uses them by turns, one per draw that has
+batches: VIF1 gets to the context of draw d + 2 after the MSCALs of draw
+d + 1, which wait until the batches of draw d have ended, so a context is not
+written while a batch reads it. With one, the EE puts a FLUSHE in front of
+it: the batches of the draw before end first.
+
 **Vertex program** (VU1, double buffered: VIF1 BASE 0, OFFSET `BUF_QW`), at
 XTOP:
 
 ```
-0                GIF tag (from the EE; NLOOP = the vertex count)
-1 ...            uniforms (UNI_QW quadwords)
+0                counts (from the EE): x the vertex count, y the context
 IN_AT ...        inputs, ITEM_QW quadwords per vertex
-OUT_AT           GIF tag (copied by the program)
+OUT_AT           GIF tag (the context's, with NLOOP = the vertex count)
 OUT_AT + 1 ...   outputs, OUT_QW quadwords per vertex
 ```
 
@@ -94,9 +109,8 @@ Each of the two buffers (VIF1 BASE 0, OFFSET `BUF_QW`, which the layout sets)
 has, at XTOP:
 
 ```
-0                GIF tag (from the EE; NLOOP = the index count)
-1                counts (from the EE): x vertices, y index quadwords, z the
-                 uniform block (CONST_AT or CONST_AT + UNI_QW)
+0                counts (from the EE): x vertices, y the context, z index
+                 quadwords, w indices (the packet's NLOOP)
 IN_AT ...        inputs, ITEM_QW quadwords per vertex
 IDX_AT ...       indices: UNPACK V4-8U, four to a quadword (sent as whole
                  quadwords of 16 bytes); each is the vertex times OUT_QW
@@ -108,7 +122,7 @@ and above both buffers, shared by the batches:
 OUT_AT           GIF tag (copied by the program)
 OUT_AT + 1 ...   outputs, OUT_QW quadwords per index (MAX_I of them)
 EMPTY_AT         an empty GIF tag (NLOOP 0, EOP), written by the program
-CONST_AT ...     two blocks of uniforms, UNI_QW quadwords each
+CTX_AT ...       the contexts
 TAB_AT ...       the table: OUT_QW quadwords per vertex
                  (then the spills)
 ```
@@ -116,11 +130,7 @@ TAB_AT ...       the table: OUT_QW quadwords per vertex
 After the vertex loop the program sends the empty tag: XGKICK waits until
 the GIF has read the packet of the batch before, so the gather can write the
 one packet. The GIF reads a packet while the next batch's vertex loop runs.
-The uniforms are not in the buffers: the EE writes them into the blocks by
-turns, once per draw, and names the block in counts.z of each batch. A block
-is not written while a batch reads it, because VIF1 gets to the block of draw
-d + 2 after the MSCALs of draw d + 1, which wait until the batches of draw d
-have ended (a draw with no batch must not take a block). The table is one for
+The table is one for
 both buffers: a batch writes and reads it before its XGKICK. Indices are
 bytes: (N − 1) × OUT_QW ≤ 255. The index list may end with up to 3 more
 indices than NLOOP (their outputs land after the packet), and strips restart
@@ -141,13 +151,13 @@ SIZE ...   the items, ITEM_QW quadwords each (sent and read back in place)
 
 The macros (prefix `VU_` and the entry's name in upper case, `VU_LVL2_...`)
 are the ones maxsdk's `MX_VU_SHADER` and `MX_VU_KERNEL` read: for a vertex
-program `ENTRY BUF_QW UNI_QW ITEM_QW OUT_QW MAX_N ALIGN IN_AT OUT_AT NREG REGS
-NIN IN_<input> INPUTS`, for an indexed one also `INDEXED MAX_I EMPTY_AT
-CONST_AT TAB_AT IDX_AT` (OUT_AT is then an address of data memory, not of the
-buffer) (the uniforms' quadwords are then in their block, from 0), for a
-compute program `N <items> SIZE ENTRY ITEM_QW
-FORMAT DBUF`, and for both the quadword of each uniform (`<uniform>`, with its
-field in a comment if it does not start a quadword) and `SPILL_QW`.
+program `ENTRY BUF_QW UNI_QW CTX_AT CTX_QW NCTX ITEM_QW OUT_QW MAX_N ALIGN
+COUNTS IN_AT OUT_AT NREG REGS NIN IN_<input> INPUTS`, for an indexed one also
+`INDEXED MAX_I EMPTY_AT TAB_AT IDX_AT` (OUT_AT is then an address of data
+memory, not of the buffer), for a compute program `N <items> SIZE ENTRY
+ITEM_QW FORMAT DBUF`, and for both the quadword of each uniform (`<uniform>`:
+from 0 in the uniforms of a vertex program, in data memory for a compute
+program; with its field in a comment if it does not start a quadword) and `SPILL_QW`.
 
 ## Spills
 
@@ -163,7 +173,7 @@ module:
 
 ```
 clang -cc1 -triple spirv-unknown-vulkan1.3-library -x hlsl -emit-llvm -O2 -finclude-default-header x.hlsl
-opt -mtriple=vu -O2 -vu-cpu=vu0|vu1 [-vu-buffer-qw=N] [-vu-spill-qw=N] [-vu-header-prefix=P] [-vu-indexed=N]
+opt -mtriple=vu -O2 -vu-cpu=vu0|vu1 [-vu-buffer-qw=N] [-vu-spill-qw=N] [-vu-header-prefix=P] [-vu-indexed=N] [-vu-contexts=1|2]
 llc -mtriple=vu -mcpu=vu0|vu1 -O3 -filetype=obj
 ```
 

@@ -15,22 +15,24 @@
 // with the code for one item (vertex), or for the whole program (compute
 // without llvm.vu.item.index). The globals it uses, by address space:
 //
-//   1 uniform  !vu.uniform !{i32 byte offset}     after the count or GIF tag
+//   1 uniform  !vu.uniform !{i32 byte offset}     in the context, or after the
+//                                                 count
 //   2 input    !vu.input !{i32 order, !"v4_8u"}   one quadword per input
 //   3 output   !vu.output !{i32 order, !"xyz2"}   one GIF register per output
 //   4 items    [0 x T]                            the batch of a kernel
 //   5 private  per item; !vu.carry keeps the value from item to item
 //
 // A vertex program (VU1) gets the layout of a double buffer at XTOP:
-//   [GIF tag][uniforms][inputs of each vertex][GIF tag][outputs of each vertex]
-// The EE writes the GIF tag with NLOOP = the vertex count, and the program
-// copies it in front of the outputs and sends them with XGKICK. An indexed
-// vertex program ("vu-indexed"="<vertices>") transforms each vertex once into
-// a table and then gathers the packet by an index list, NLOOP = the index
-// count. Each buffer has [GIF tag][counts][inputs][indices]; above both:
-//   [GIF tag][outputs][empty GIF tag][uniforms][uniforms][table][spills]
-// A compute
-// program gets, from quadword 0:
+//   [counts][inputs of each vertex][GIF tag][outputs of each vertex]
+// and above both buffers one or two contexts ("vu-contexts"), which the EE
+// writes once per draw: [GIF tag with NLOOP 0][uniforms]. The counts name the
+// context; the program copies its GIF tag in front of the outputs with NLOOP
+// = the vertex count and sends them with XGKICK. An indexed vertex program
+// ("vu-indexed"="<vertices>") transforms each vertex once into a table and
+// then gathers the packet by an index list, NLOOP = the index count. Each
+// buffer has [counts][inputs][indices]; above both:
+//   [GIF tag][outputs][empty GIF tag][contexts][table][spills]
+// A compute program gets, from quadword 0:
 //   [count][uniforms][items]
 //
 //===----------------------------------------------------------------------===//
@@ -526,16 +528,23 @@ bool EntryLowering::run(std::string &Header) {
     }
   }
 
-  Value *Top = nullptr, *Count, *Out = nullptr, *Tag = nullptr, *NQ = nullptr,
-        *UniBase = nullptr;
+  Value *Top = nullptr, *Count, *Out = nullptr, *Tag = nullptr, *TagX = nullptr,
+        *NQ = nullptr, *UniBase = nullptr;
   uint64_t BufQW = 0, MaxN = 0, Align = 1, InAt = 0, OutAt = 0;
   // An indexed vertex program: MaxN vertices, MaxI indices (see buildGather).
   uint64_t Indexed =
       Vertex ? F.getFnAttributeAsParsedInteger("vu-indexed", 0) : 0;
-  uint64_t MaxI = 0, TabAt = 0, IdxAt = 0, ConstAt = 0, EmptyAt = 0;
-  // Quadwords in front of the uniforms (strip programs) or the inputs
-  // (indexed): the GIF tag, and the counts of an indexed program.
-  uint64_t Head = Indexed ? 2 : 1;
+  uint64_t MaxI = 0, TabAt = 0, IdxAt = 0, EmptyAt = 0;
+  // The contexts of a vertex program: CtxQW each, from CtxAt. Two let the EE
+  // write the context of the next draw while the batches of this one run; one
+  // needs a FLUSHE in front of it.
+  uint64_t NCtx =
+      Vertex ? F.getFnAttributeAsParsedInteger("vu-contexts", 2) : 0;
+  uint64_t CtxQW = 1 + UniQW, CtxAt = 0;
+  if (Vertex && NCtx != 1 && NCtx != 2)
+    error("a vertex program has one or two contexts");
+  // The quadword in front of the inputs: the counts.
+  uint64_t Head = 1;
   // A value carried from vertex to vertex needs the order in which the
   // vertices are drawn; an indexed program transforms each vertex once, in
   // the order of its table.
@@ -552,11 +561,12 @@ bool EntryLowering::run(std::string &Header) {
     F.addFnAttr("target-cpu", "vu1");
     uint64_t NIn = Inputs.size(), NOut = Outputs.size();
     if (!Indexed) {
-      BufQW =
-          F.getFnAttributeAsParsedInteger("vu-buffer-qw", (1024 - Spill) / 2);
-      if (2 * BufQW + Spill > 1024)
-        error("two buffers of " + Twine(BufQW) + " quadwords and " +
-              Twine(Spill) + " for spills do not fit VU1 data memory");
+      CtxAt = 1024 - Spill - NCtx * CtxQW;
+      BufQW = F.getFnAttributeAsParsedInteger("vu-buffer-qw", CtxAt / 2);
+      if (2 * BufQW > CtxAt)
+        error("two buffers of " + Twine(BufQW) + " quadwords, " + Twine(NCtx) +
+              " contexts of " + Twine(CtxQW) + " and " + Twine(Spill) +
+              " for spills do not fit VU1 data memory");
     } else if (F.hasFnAttribute("vu-buffer-qw")) {
       error("an indexed vertex program sizes its buffers itself");
     }
@@ -564,9 +574,9 @@ bool EntryLowering::run(std::string &Header) {
       Align = std::max<uint64_t>(Align, 16 / std::gcd(16u, S.Bytes));
     // Batches start on a quadword of every input stream, and an UNPACK ends
     // on one, so up to Align - 1 more vertices are unpacked.
-    InAt = Indexed ? Head : Head + UniQW;
+    InAt = Head;
     if (!Indexed) {
-      int64_t Room = int64_t(BufQW) - 2 - UniQW - (Align - 1) * NIn;
+      int64_t Room = int64_t(BufQW) - 2 - (Align - 1) * NIn;
       MaxN = Room > 0 ? Room / (NIn + NOut) : 0;
       OutAt = InAt + (MaxN + Align - 1) * NIn;
       if (MaxN < Align || OutAt + 1 + MaxN * NOut > BufQW || OutAt > 1023)
@@ -580,10 +590,11 @@ bool EntryLowering::run(std::string &Header) {
       //    GIF tag until the GIF has read the packet of the batch before
       //    (while its vertex loop ran), before the gather writes it;
       //  - the empty GIF tag;
-      //  - two blocks of uniforms, which the EE fills by turns, one per draw
-      //    (counts.z: the block). A block is not written while a batch reads
-      //    it: VIF1 gets to the block of draw d + 2 after the MSCALs of draw
-      //    d + 1, which wait until the batches of draw d have ended;
+      //  - the contexts (see CtxAt; the counts name one). With two, the EE
+      //    fills them by turns, one per draw: a context is not written while
+      //    a batch reads it, as VIF1 gets to the context of draw d + 2 after
+      //    the MSCALs of draw d + 1, which wait until the batches of draw d
+      //    have ended;
       //  - the table: a batch writes and reads it before its XGKICK.
       // What the inputs leave is for the indices: four quadwords in each
       // buffer and 16 * NOut of packet for every 16 (the EE sends them in
@@ -592,8 +603,8 @@ bool EntryLowering::run(std::string &Header) {
       uint64_t TabQW = MaxN * NOut;
       IdxAt = InAt + (MaxN + Align - 1) * NIn;
       TabAt = 1024 - Spill - TabQW;
-      ConstAt = TabAt - 2 * UniQW;
-      EmptyAt = ConstAt - 1;
+      CtxAt = TabAt - NCtx * CtxQW;
+      EmptyAt = CtxAt - 1;
       int64_t Room = int64_t(EmptyAt) - 1 - 2 * int64_t(IdxAt);
       MaxI = Room > 0 ? Room / (8 + 16 * NOut) * 16 : 0;
       BufQW = IdxAt + MaxI / 4;
@@ -608,22 +619,27 @@ bool EntryLowering::run(std::string &Header) {
     }
     if (Failed)
       return true;
+    // The counts at XTOP: x the vertices, y the context, z the index
+    // quadwords and w the indices (indexed).
     Top = B.CreateIntrinsic(Intrinsic::vu_xtop, {}, {}, nullptr, "top");
+    auto Field = [&](unsigned K, const Twine &Name) {
+      return B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Top, B.getInt32(K)},
+                               nullptr, Name);
+    };
+    Count = Field(0, "n");
+    Value *Ctx = Field(1, "ctx");
+    Value *NLoop = Count;
     if (Indexed) {
-      Value *Counts = B.CreateAdd(Top, B.getInt16(1), "counts");
-      Count = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Counts, B.getInt32(0)},
-                                nullptr, "n");
-      NQ = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Counts, B.getInt32(1)},
-                             nullptr, "nq");
-      if (UniQW)
-        UniBase = B.CreateIntrinsic(Intrinsic::vu_ilw, {},
-                                    {Counts, B.getInt32(2)}, nullptr, "uni");
-    } else {
-      Value *NLoop = B.CreateIntrinsic(Intrinsic::vu_ilw, {},
-                                       {Top, B.getInt32(0)}, nullptr, "nloop");
-      Count = B.CreateAnd(NLoop, 0x7fff, "n");
+      NQ = Field(2, "nq");
+      NLoop = Field(3, "ni");
     }
-    Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {Top}, nullptr, "tag");
+    // The context's GIF tag has NLOOP 0: its low half of x is the EOP bit.
+    Tag = B.CreateIntrinsic(Intrinsic::vu_lq, {}, {Ctx}, nullptr, "tag");
+    Value *EOP = B.CreateIntrinsic(Intrinsic::vu_ilw, {}, {Ctx, B.getInt32(0)},
+                                   nullptr, "eop");
+    TagX = B.CreateOr(EOP, NLoop, "tag.x");
+    if (UniQW)
+      UniBase = B.CreateAdd(Ctx, B.getInt16(1), "uni");
     Out = Indexed ? static_cast<Value *>(B.getInt16(OutAt))
                   : B.CreateAdd(Top, B.getInt16(OutAt), "out");
   } else {
@@ -631,11 +647,9 @@ bool EntryLowering::run(std::string &Header) {
                               {B.getInt16(0), B.getInt32(0)}, nullptr, "n");
   }
 
-  // Uniforms after the GIF tag in the buffer at XTOP, in the block of an
-  // indexed program, or from quadword 1 of memory.
+  // Uniforms after the GIF tag of the context, or from quadword 1 of memory.
   if (!UniBase)
-    UniBase = Top ? B.CreateAdd(Top, B.getInt16(1), "uni")
-                  : static_cast<Value *>(B.getInt16(1));
+    UniBase = B.getInt16(1);
   SmallVector<Value *, 8> InPtrs, OutPtrs;
   for (const Slot &S : Uniforms) {
     Value *Ptr = qwPointer(B, S.GV, UniBase, S.Offset);
@@ -729,6 +743,7 @@ bool EntryLowering::run(std::string &Header) {
                         {B.getInt16(0), Empty, B.getInt32(1)});
       B.CreateIntrinsic(Intrinsic::vu_xgkick, {}, {Empty});
       B.CreateIntrinsic(Intrinsic::vu_sq, {}, {Tag, Out});
+      B.CreateIntrinsic(Intrinsic::vu_isw, {}, {TagX, Out, B.getInt32(0)});
       buildGather(B, Top, Out, NQ, TabAt, IdxAt, Outputs.size());
     }
     if (Vertex)
@@ -749,9 +764,11 @@ bool EntryLowering::run(std::string &Header) {
   hoistToEntry(Entry);
   // The GIF tag in front of the outputs, after the loads of the uniforms:
   // they stay in the entry block, before the loop.
-  if (Tag && !Indexed)
-    IRBuilder<>(Entry->getTerminator())
-        .CreateIntrinsic(Intrinsic::vu_sq, {}, {Tag, Out});
+  if (Tag && !Indexed) {
+    IRBuilder<> EB(Entry->getTerminator());
+    EB.CreateIntrinsic(Intrinsic::vu_sq, {}, {Tag, Out});
+    EB.CreateIntrinsic(Intrinsic::vu_isw, {}, {TagX, Out, EB.getInt32(0)});
+  }
   if (!Allocas.empty()) {
     DominatorTree DT(F);
     PromoteMemToReg(Allocas, DT);
@@ -765,7 +782,7 @@ bool EntryLowering::run(std::string &Header) {
     << ": VU data memory layout, in quadwords */\n";
   for (const Slot &S : Uniforms) {
     H << "#define " << P << upper(S.GV->getName()) << " "
-      << (Indexed ? 0 : 1) + S.Offset / 16;
+      << (Vertex ? 0 : 1) + S.Offset / 16;
     if (S.Offset % 16)
       H << "  /* field " << "xyzw"[S.Offset % 16 / 4] << " */";
     H << "\n";
@@ -778,8 +795,12 @@ bool EntryLowering::run(std::string &Header) {
     H << "#define " << P << "BUF_QW " << BufQW
       << "  /* double buffer size */\n";
     H << "#define " << P << "UNI_QW " << UniQW
-      << (Indexed ? "  /* uniforms, per block */\n"
-                  : "  /* uniforms, from quadword 1 */\n");
+      << "  /* uniforms, after the context's GIF tag */\n";
+    H << "#define " << P << "CTX_AT " << CtxAt
+      << "  /* the contexts: GIF tag (NLOOP 0), uniforms */\n";
+    H << "#define " << P << "CTX_QW " << CtxQW << "  /* per context */\n";
+    H << "#define " << P << "NCTX " << NCtx
+      << "  /* contexts (1: a FLUSHE before writing it) */\n";
     H << "#define " << P << "ITEM_QW " << Inputs.size()
       << "  /* quadwords per vertex in */\n";
     H << "#define " << P << "OUT_QW " << Outputs.size()
@@ -787,18 +808,17 @@ bool EntryLowering::run(std::string &Header) {
     H << "#define " << P << "MAX_N " << MaxN << "  /* vertices per batch */\n";
     H << "#define " << P << "ALIGN " << Align
       << "  /* batches start at multiples of it */\n";
+    H << "#define " << P
+      << "COUNTS 0  /* x vertices, y context, z index quadwords, w indices "
+         "*/\n";
     H << "#define " << P << "IN_AT " << InAt << "  /* first item */\n";
     H << "#define " << P << "OUT_AT " << OutAt
       << (Indexed ? "  /* the output GIF tag, one for both buffers */\n"
                   : "  /* the output GIF tag */\n");
     if (Indexed) {
-      H << "#define " << P
-        << "INDEXED 1  /* counts at quadword 1: vertices, index quadwords, "
-           "uniform block */\n";
+      H << "#define " << P << "INDEXED 1\n";
       H << "#define " << P << "EMPTY_AT " << EmptyAt
         << "  /* the empty GIF tag */\n";
-      H << "#define " << P << "CONST_AT " << ConstAt
-        << "  /* the two uniform blocks, UNI_QW apart */\n";
       H << "#define " << P << "MAX_I " << MaxI
         << "  /* indices per batch, a multiple of 16 */\n";
       H << "#define " << P << "TAB_AT " << TabAt

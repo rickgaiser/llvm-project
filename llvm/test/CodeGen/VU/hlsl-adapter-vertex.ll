@@ -4,6 +4,9 @@
 
 ; -vu-indexed: an indexed program of 24 vertices per batch.
 ; IDX: attributes #{{[0-9]+}} = { {{.*}}"vu-entry"="vertex" {{.*}}"vu-indexed"="24"
+; RUN: opt -mtriple=vu -passes=vu-hlsl-adapter -vu-contexts=1 -S < %s | FileCheck %s --check-prefix=CTX
+; -vu-contexts: one context.
+; CTX: attributes #{{[0-9]+}} = { {{.*}}"vu-contexts"="1" {{.*}}"vu-entry"="vertex"
 
 ; clang's HLSL output for SPIR-V (VUHLSLAdapter):
 ;   clang -cc1 -triple spirv-unknown-vulkan1.3-vertex -x hlsl -emit-llvm -O2

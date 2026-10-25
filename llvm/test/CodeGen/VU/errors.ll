@@ -11,6 +11,8 @@
 ; RUN: not llc -mtriple=vu %t/indexed-carry.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ICARRY
 ; RUN: not llc -mtriple=vu %t/indexed-bytes.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=IBYTES
 ; RUN: not llc -mtriple=vu %t/indexed-buffer.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=IBUF
+; RUN: not llc -mtriple=vu %t/contexts.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CTX
+; RUN: not llc -mtriple=vu %t/contexts-room.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CTXROOM
 
 ; ARGS: error: {{.*}} VU: micro programs take no arguments
 ; RET:  error: {{.*}} VU: micro programs do not return a value
@@ -23,6 +25,8 @@
 ; ROOM: error: {{.*}} VU: the buffer of 3 quadwords has no room for a batch
 ; ICARRY: error: {{.*}} VU: an indexed vertex program cannot carry prev from vertex to vertex
 ; IBUF: error: {{.*}} VU: an indexed vertex program sizes its buffers itself
+; CTX: error: {{.*}} VU: a vertex program has one or two contexts
+; CTXROOM: error: {{.*}} VU: two buffers of 400 quadwords, 2 contexts of 201 and 0 for spills do not fit VU1 data memory
 ; IBYTES: error: {{.*}} VU: 130 vertices of 2 outputs are too many for byte indices
 
 ;--- args.ll
@@ -156,3 +160,31 @@ define void @f() "vu-entry"="vertex" "vu-indexed"="16" "vu-buffer-qw"="256" {
 }
 !0 = !{i32 0, !"v4_32"}
 !1 = !{i32 0, !"xyz2"}
+
+;--- contexts.ll
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+define void @f() "vu-entry"="vertex" "vu-contexts"="3" {
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  store <4 x float> %p, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"xyz2"}
+
+;--- contexts-room.ll
+; The contexts take their room from the buffers.
+@m = external addrspace(1) global [200 x <4 x float>], !vu.uniform !2
+@pos = external addrspace(2) global <4 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+define void @f() "vu-entry"="vertex" "vu-buffer-qw"="400" {
+  %q = getelementptr <4 x float>, ptr addrspace(1) @m, i16 199
+  %m = load <4 x float>, ptr addrspace(1) %q
+  %p = load <4 x float>, ptr addrspace(2) @pos
+  %r = fadd <4 x float> %p, %m
+  store <4 x float> %r, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v4_32"}
+!1 = !{i32 0, !"xyz2"}
+!2 = !{i32 0}

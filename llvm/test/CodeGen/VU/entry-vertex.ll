@@ -3,18 +3,29 @@
 ; RUN: llc -mtriple=vu -verify-machineinstrs < %s | FileCheck %s --check-prefix=ASM
 ; RUN: llc -mtriple=vu -filetype=obj < %s | llvm-objcopy --dump-section .vu.header=%t.h - /dev/null
 ; RUN: FileCheck %s --check-prefix=HDR < %t.h
+; RUN: sed 's/"vu-buffer-qw"="256"/"vu-contexts"="1"/' %s | llc -mtriple=vu -filetype=obj \
+; RUN:   | llvm-objcopy --dump-section .vu.header=%t1.h - /dev/null
+; RUN: FileCheck %s --check-prefix=HDR1 < %t1.h
 
 ; ASM-LABEL: shade:
 ; ASM:         xtop vi{{[0-9]+}}
-; ASM:         sq.xyzw vf{{[0-9]+}}, 132(vi{{[0-9]+}})
+; ASM:         sq.xyzw vf{{[0-9]+}}, 131(vi{{[0-9]+}})
+; ASM:         isw.x vi{{[0-9]+}}, 131(vi{{[0-9]+}})
 ; ASM:         xgkick vi{{[0-9]+}}
 
-; HDR:      #define VU_SHADE_MVP 1
-; HDR-NEXT: #define VU_SHADE_SCALE 5  /* field y */
-; HDR:      #define VU_SHADE_MAX_N 60
-; HDR:      #define VU_SHADE_OUT_AT 132
+; HDR:      #define VU_SHADE_MVP 0
+; HDR-NEXT: #define VU_SHADE_SCALE 4  /* field y */
+; HDR:      #define VU_SHADE_MAX_N 62
+; HDR:      #define VU_SHADE_OUT_AT 131
 ; HDR:      #define VU_SHADE_REGS 0x51ull
 ; HDR:      #define VU_SHADE_INPUTS {{[{][{]}}0x8, 0, 12}, {0xe, 1, 4}}
+
+; Two contexts by default; one leaves the buffers more room.
+; HDR1:     #define VU_SHADE_BUF_QW 509
+; HDR1:     #define VU_SHADE_CTX_AT 1018
+; HDR1-NEXT: #define VU_SHADE_CTX_QW 6
+; HDR1-NEXT: #define VU_SHADE_NCTX 1
+; HDR1:     #define VU_SHADE_MAX_N 125
 
 ; A vertex program (VUEntryLowering, VUEntryABI.md): the code for one vertex,
 ; uniforms, inputs and outputs as globals. The pass builds the loop over the
@@ -29,7 +40,7 @@
 @prev = internal addrspace(5) global <4 x float> zeroinitializer, !vu.carry !6
 
 ;.
-; CHECK: @vu.header = private constant [920 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 1\0A#define VU_SHADE_SCALE 5  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units */\0A#define VU_SHADE_BUF_QW 256  /* double buffer size */\0A#define VU_SHADE_UNI_QW 5  /* uniforms, from quadword 1 */\0A#define VU_SHADE_ITEM_QW 2  /* quadwords per vertex in */\0A#define VU_SHADE_OUT_QW 2  /* GIF registers per vertex */\0A#define VU_SHADE_MAX_N 60  /* vertices per batch */\0A#define VU_SHADE_ALIGN 4  /* batches start at multiples of it */\0A#define VU_SHADE_IN_AT 6  /* first item */\0A#define VU_SHADE_OUT_AT 132  /* the output GIF tag */\0A#define VU_SHADE_NREG 2\0A#define VU_SHADE_REGS 0x51ull  /* GIF register list */\0A#define VU_SHADE_NIN 2\0A#define VU_SHADE_IN_POS 0  /* v3_32, 12 bytes */\0A#define VU_SHADE_IN_COL 1  /* v4_8u, 4 bytes */\0A#define VU_SHADE_INPUTS {{\{\{}}0x8, 0, 12}, {0xe, 1, 4}}  /* UNPACK format, unsigned, bytes */\0A\0A", section ".vu.header", align 1
+; CHECK: @vu.header = private constant [1212 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 0\0A#define VU_SHADE_SCALE 4  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units */\0A#define VU_SHADE_BUF_QW 256  /* double buffer size */\0A#define VU_SHADE_UNI_QW 5  /* uniforms, after the context's GIF tag */\0A#define VU_SHADE_CTX_AT 1012  /* the contexts: GIF tag (NLOOP 0), uniforms */\0A#define VU_SHADE_CTX_QW 6  /* per context */\0A#define VU_SHADE_NCTX 2  /* contexts (1: a FLUSHE before writing it) */\0A#define VU_SHADE_ITEM_QW 2  /* quadwords per vertex in */\0A#define VU_SHADE_OUT_QW 2  /* GIF registers per vertex */\0A#define VU_SHADE_MAX_N 62  /* vertices per batch */\0A#define VU_SHADE_ALIGN 4  /* batches start at multiples of it */\0A#define VU_SHADE_COUNTS 0  /* x vertices, y context, z index quadwords, w indices */\0A#define VU_SHADE_IN_AT 1  /* first item */\0A#define VU_SHADE_OUT_AT 131  /* the output GIF tag */\0A#define VU_SHADE_NREG 2\0A#define VU_SHADE_REGS 0x51ull  /* GIF register list */\0A#define VU_SHADE_NIN 2\0A#define VU_SHADE_IN_POS 0  /* v3_32, 12 bytes */\0A#define VU_SHADE_IN_COL 1  /* v4_8u, 4 bytes */\0A#define VU_SHADE_INPUTS {{\{\{}}0x8, 0, 12}, {0xe, 1, 4}}  /* UNPACK format, unsigned, bytes */\0A\0A", section ".vu.header", align 1
 ; CHECK: @llvm.used = appending global [1 x ptr] [ptr @vu.header], section "llvm.metadata"
 ;.
 define void @shade() #0 {
@@ -38,23 +49,26 @@ define void @shade() #0 {
 ; CHECK-NEXT:  [[VU_ENTRY:.*]]:
 ; CHECK-NEXT:    [[TOP:%.*]] = call i16 @llvm.vu.xtop()
 ; CHECK-NEXT:    [[NLOOP:%.*]] = call i16 @llvm.vu.ilw(i16 [[TOP]], i32 0)
-; CHECK-NEXT:    [[N:%.*]] = and i16 [[NLOOP]], 32767
-; CHECK-NEXT:    [[TAG:%.*]] = call <4 x float> @llvm.vu.lq(i16 [[TOP]])
-; CHECK-NEXT:    [[OUT:%.*]] = add i16 [[TOP]], 132
-; CHECK-NEXT:    [[UNI:%.*]] = add i16 [[TOP]], 1
+; CHECK-NEXT:    [[CTX:%.*]] = call i16 @llvm.vu.ilw(i16 [[TOP]], i32 1)
+; CHECK-NEXT:    [[TAG:%.*]] = call <4 x float> @llvm.vu.lq(i16 [[CTX]])
+; CHECK-NEXT:    [[EOP:%.*]] = call i16 @llvm.vu.ilw(i16 [[CTX]], i32 0)
+; CHECK-NEXT:    [[TAG_X:%.*]] = or i16 [[EOP]], [[NLOOP]]
+; CHECK-NEXT:    [[UNI:%.*]] = add i16 [[CTX]], 1
+; CHECK-NEXT:    [[OUT:%.*]] = add i16 [[TOP]], 131
 ; CHECK-NEXT:    [[TMP0:%.*]] = shl i16 [[UNI]], 4
 ; CHECK-NEXT:    [[TMP1:%.*]] = inttoptr i16 [[TMP0]] to ptr addrspace(1)
 ; CHECK-NEXT:    [[TMP2:%.*]] = shl i16 [[UNI]], 4
 ; CHECK-NEXT:    [[TMP3:%.*]] = add i16 [[TMP2]], 68
 ; CHECK-NEXT:    [[TMP4:%.*]] = inttoptr i16 [[TMP3]] to ptr addrspace(1)
-; CHECK-NEXT:    [[EMPTY:%.*]] = icmp eq i16 [[N]], 0
-; CHECK-NEXT:    [[IN:%.*]] = add i16 [[TOP]], 6
+; CHECK-NEXT:    [[EMPTY:%.*]] = icmp eq i16 [[NLOOP]], 0
+; CHECK-NEXT:    [[IN:%.*]] = add i16 [[TOP]], 1
 ; CHECK-NEXT:    [[O1:%.*]] = add i16 [[OUT]], 1
 ; CHECK-NEXT:    [[M0:%.*]] = load <4 x float>, ptr addrspace(1) [[TMP1]], align 16, !alias.scope [[META0:![0-9]+]], !noalias [[META3:![0-9]+]]
 ; CHECK-NEXT:    [[M3P:%.*]] = getelementptr [4 x <4 x float>], ptr addrspace(1) [[TMP1]], i16 0, i16 3
 ; CHECK-NEXT:    [[M3:%.*]] = load <4 x float>, ptr addrspace(1) [[M3P]], align 16, !alias.scope [[META0]], !noalias [[META3]]
 ; CHECK-NEXT:    [[S:%.*]] = load float, ptr addrspace(1) [[TMP4]], align 4, !alias.scope [[META0]], !noalias [[META3]]
 ; CHECK-NEXT:    call void @llvm.vu.sq(<4 x float> [[TAG]], i16 [[OUT]])
+; CHECK-NEXT:    call void @llvm.vu.isw(i16 [[TAG_X]], i16 [[OUT]], i32 0)
 ; CHECK-NEXT:    br i1 [[EMPTY]], label %[[VU_DONE:.*]], label %[[VU_ITEM:.*]]
 ; CHECK:       [[VU_ITEM]]:
 ; CHECK-NEXT:    [[I1:%.*]] = phi i16 [ 0, %[[VU_ENTRY]] ], [ [[I_NEXT:%.*]], %[[VU_ITEM]] ]
@@ -88,7 +102,7 @@ define void @shade() #0 {
 ; CHECK-NEXT:    [[I_NEXT]] = add i16 [[I1]], 1
 ; CHECK-NEXT:    [[TMP17]] = add i16 [[PI]], 2
 ; CHECK-NEXT:    [[TMP18]] = add i16 [[PO]], 2
-; CHECK-NEXT:    [[LAST:%.*]] = icmp eq i16 [[I_NEXT]], [[N]]
+; CHECK-NEXT:    [[LAST:%.*]] = icmp eq i16 [[I_NEXT]], [[NLOOP]]
 ; CHECK-NEXT:    br i1 [[LAST]], label %[[VU_DONE]], label %[[VU_ITEM]]
 ; CHECK:       [[VU_DONE]]:
 ; CHECK-NEXT:    call void @llvm.vu.xgkick(i16 [[OUT]])
