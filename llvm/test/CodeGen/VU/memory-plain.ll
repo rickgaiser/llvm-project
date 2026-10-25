@@ -50,33 +50,43 @@ define void @fields() {
   ret void
 }
 
-; a loop over an array with a base from xtop
+; a loop over an array with a base from xtop: the loads (i < 64) and the stores
+; (i + 100) are disjoint over all iterations (VULoopAliasScopes), the loop is
+; pipelined
 declare i16 @llvm.vu.xtop()
 define void @loop() {
 ; CHECK-LABEL: loop:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    nop iaddiu vi4, vi0, 0
+; CHECK-NEXT:    nop iaddiu vi1, vi0, 0
 ; CHECK-NEXT:    nop xtop vi2
-; CHECK-NEXT:    nop iadd vi1, vi2, vi4
-; CHECK-NEXT:    nop iaddiu vi3, vi0, 64
+; CHECK-NEXT:    nop iaddi vi4, vi1, 1
+; CHECK-NEXT:    nop iadd vi1, vi2, vi1
 ; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi1)
-; CHECK-NEXT:    nop iaddi vi4, vi4, 1
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 64
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    add.xyzw vf1, vf1, vf1 ibeq vi4, vi3, .LBB2_2
+; CHECK-NEXT:    nop ibeq vi4, vi3, .LBB2_4
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB2_1: ; %loop
+; CHECK-NEXT:    add.xyzw vf2, vf1, vf1 iaddi vi5, vi4, 1
+; CHECK-NEXT:    nop iadd vi4, vi2, vi4
+; CHECK-NEXT:    nop ibeq vi5, vi3, .LBB2_3
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi4)
+; CHECK-NEXT:  .LBB2_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop sq.xyzw vf1, 100(vi1)
-; CHECK-NEXT:    nop iadd vi1, vi2, vi4
-; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi1)
-; CHECK-NEXT:    nop iaddi vi4, vi4, 1
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    add.xyzw vf1, vf1, vf1 ibne vi4, vi3, .LBB2_1
-; CHECK-NEXT:    nop nop
-; CHECK-NEXT:  .LBB2_2:
+; CHECK-NEXT:    nop iaddiu vi6, vi1, 0
+; CHECK-NEXT:    nop iaddiu vi1, vi4, 0
+; CHECK-NEXT:    nop iadd vi4, vi2, vi5
+; CHECK-NEXT:    nop iaddi vi5, vi5, 1
+; CHECK-NEXT:    add.xyzw vf2, vf1, vf1 sq.xyzw vf2, 100(vi6)
+; CHECK-NEXT:    nop ibne vi5, vi3, .LBB2_2
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi4)
+; CHECK-NEXT:  .LBB2_3:
+; CHECK-NEXT:    nop sq.xyzw vf2, 100(vi1)
+; CHECK-NEXT:    nop iaddiu vi1, vi4, 0
+; CHECK-NEXT:  .LBB2_4:
+; CHECK-NEXT:    add.xyzw vf1, vf1, vf1 nop
 ; CHECK-NEXT:    nop sq.xyzw vf1, 100(vi1)
 ; CHECK-NEXT:    nop[e] nop
-; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 entry:
   %top = call i16 @llvm.vu.xtop()

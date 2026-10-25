@@ -38,6 +38,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeVUTarget() {
   initializeVUFoldQPass(PR);
   initializeVUInvariantFieldsPass(PR);
   initializeVUBalancePipesPass(PR);
+  initializeVULoopAliasScopesPass(PR);
   initializeVUPackConstantsPass(PR);
   initializeVUFoldQCopiesPass(PR);
   initializeVUFoldInsertFieldPass(PR);
@@ -178,6 +179,9 @@ public:
     addPass(createVUHLSLAdapterPass());
     addPass(createVUEntryLoweringPass());
     addPass(createVUNarrowIntPass());
+    // On the plain loads and stores, whose pointers ScalarEvolution sees.
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createVULoopAliasScopesPass());
     addPass(createVULowerMemoryPass());
     // Reductions are expanded by VUSinkFields, before ExpandReductions.
     addPass(createVUSinkFieldsPass());
