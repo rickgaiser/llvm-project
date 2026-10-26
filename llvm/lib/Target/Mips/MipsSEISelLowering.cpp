@@ -5572,15 +5572,20 @@ enum class R5900Shuffle {
 
 /// Classify a shuffle mask of \p NumElts elements. With \p SingleSrc both
 /// operands are the same vector, so an index into the second one is the same
-/// element of the first.
+/// element of the first. With \p SplatA or \p SplatB all elements of that
+/// operand are the same, so an index into it is any of its elements.
 static R5900Shuffle classifyR5900Shuffle(ArrayRef<int> Mask, unsigned NumElts,
-                                         bool SingleSrc) {
+                                         bool SingleSrc, bool SplatA = false,
+                                         bool SplatB = false) {
   auto Matches = [&](function_ref<unsigned(unsigned)> Expected) {
     for (unsigned I = 0; I < NumElts; ++I) {
       int M = Mask[I];
       unsigned E = Expected(I);
+      bool SameSrc = ((unsigned)M < NumElts) == (E < NumElts);
+      bool Splat = (unsigned)M < NumElts ? SplatA : SplatB;
       if (M >= 0 && (unsigned)M != E &&
-          !(SingleSrc && (unsigned)M % NumElts == E % NumElts))
+          !(SingleSrc && (unsigned)M % NumElts == E % NumElts) &&
+          !(SameSrc && Splat))
         return false;
     }
     return true;
@@ -5641,6 +5646,22 @@ static SDValue lowerR5900VECTOR_SHUFFLE(ShuffleVectorSDNode *Node,
   bool SingleSrc = B.isUndef() || A == B;
   if (SingleSrc)
     B = A;
+  // The DAG combiner takes the elements of a constant splat, such as the
+  // zeros of an extension, from anywhere in it, and may put it first.
+  auto IsSplat = [](SDValue V) {
+    auto *BV = dyn_cast<BuildVectorSDNode>(V);
+    return BV && BV->getSplatValue();
+  };
+  bool SplatA = IsSplat(A), SplatB = IsSplat(B);
+  SmallVector<int, 16> Mask(Node->getMask());
+  R5900Shuffle Kind =
+      classifyR5900Shuffle(Mask, NumElts, SingleSrc, SplatA, SplatB);
+  if (Kind == R5900Shuffle::None && !SingleSrc) {
+    ShuffleVectorSDNode::commuteMask(Mask);
+    Kind = classifyR5900Shuffle(Mask, NumElts, SingleSrc, SplatB, SplatA);
+    if (Kind != R5900Shuffle::None)
+      std::swap(A, B);
+  }
 
   auto Op = [&](unsigned W, unsigned H, unsigned Bt) {
     return VT == MVT::v4i32 ? W : VT == MVT::v8i16 ? H : Bt;
@@ -5648,7 +5669,7 @@ static SDValue lowerR5900VECTOR_SHUFFLE(ShuffleVectorSDNode *Node,
   auto MMI = [&](unsigned Opc, SDValue Rs, SDValue Rt) {
     return SDValue(DAG.getMachineNode(Opc, DL, VT, Rs, Rt), 0);
   };
-  switch (classifyR5900Shuffle(Node->getMask(), NumElts, SingleSrc)) {
+  switch (Kind) {
   case R5900Shuffle::None:
     return SDValue();
   case R5900Shuffle::UnzipEven:

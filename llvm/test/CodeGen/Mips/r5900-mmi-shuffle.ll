@@ -252,3 +252,62 @@ define void @swap_halves_w(ptr %pa, ptr %pr) {
   store <4 x i32> %r, ptr %pr, align 16
   ret void
 }
+
+; The zip with its operands commuted: PEXTLH of the same registers.
+define void @ziplo_h_commuted(ptr %pa, ptr %pb, ptr %pr) {
+; CHECK-LABEL: ziplo_h_commuted:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    sll $3, $6, 0
+; CHECK-NEXT:    lq $2, 0($2)
+; CHECK-NEXT:    pextlh $1, $1, $2
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($3)
+  %a = load <8 x i16>, ptr %pa, align 16
+  %b = load <8 x i16>, ptr %pb, align 16
+  %r = shufflevector <8 x i16> %a, <8 x i16> %b, <8 x i32> <i32 8, i32 0, i32 9, i32 1, i32 10, i32 2, i32 11, i32 3>
+  store <8 x i16> %r, ptr %pr, align 16
+  ret void
+}
+
+; A zip with zeros, which the DAG combiner takes from any element of the zero
+; vector: PEXTLH with $zero.
+define void @ziplo_h_zero_any(ptr %pa, ptr %pr) {
+; CHECK-LABEL: ziplo_h_zero_any:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    lq $1, 0($1)
+; CHECK-NEXT:    pextlh $1, $zero, $1
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sq $1, 0($2)
+  %a = load <8 x i16>, ptr %pa, align 16
+  %r = shufflevector <8 x i16> zeroinitializer, <8 x i16> %a, <8 x i32> <i32 8, i32 1, i32 9, i32 3, i32 10, i32 5, i32 11, i32 7>
+  store <8 x i16> %r, ptr %pr, align 16
+  ret void
+}
+
+; Four bytes zero-extended to words, as interleaves with zeros: the halfword
+; step is PEXTLH with $zero too.
+define <4 x i32> @zext_bytes_to_words(ptr %p) {
+; CHECK-LABEL: zext_bytes_to_words:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    lw $1, 0($1)
+; CHECK-NEXT:    pextlb $1, $zero, $1
+; CHECK-NEXT:    pextlh $2, $zero, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %v = load i32, ptr %p, align 4
+  %w = insertelement <4 x i32> poison, i32 %v, i64 0
+  %b = bitcast <4 x i32> %w to <16 x i8>
+  %h0 = shufflevector <16 x i8> %b, <16 x i8> <i8 0, i8 0, i8 0, i8 0, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison, i8 poison>, <16 x i32> <i32 0, i32 16, i32 1, i32 17, i32 2, i32 18, i32 3, i32 19, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+  %h = bitcast <16 x i8> %h0 to <8 x i16>
+  %r0 = shufflevector <8 x i16> %h, <8 x i16> <i16 0, i16 0, i16 0, i16 0, i16 poison, i16 poison, i16 poison, i16 poison>, <8 x i32> <i32 0, i32 8, i32 1, i32 9, i32 2, i32 10, i32 3, i32 11>
+  %r = bitcast <8 x i16> %r0 to <4 x i32>
+  ret <4 x i32> %r
+}
