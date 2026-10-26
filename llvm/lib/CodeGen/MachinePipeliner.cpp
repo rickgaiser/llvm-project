@@ -174,6 +174,12 @@ static cl::opt<uint64_t> SwpLifetimeBudget(
              "schedule: the evaluations of the register pressure times the "
              "square of the number of instructions"));
 
+static cl::opt<unsigned> SwpLifetimeBudgetIIs(
+    "pipeliner-lifetime-budget-iis", cl::Hidden, cl::init(8),
+    cl::desc("The number of consecutive IIs whose schedules still need "
+             "registers beyond the limit when the lifetime budget runs out, "
+             "after which no larger II is tried"));
+
 static cl::opt<bool> SwpReduceLifetimes(
     "pipeliner-reduce-lifetimes", cl::Hidden, cl::init(true),
     cl::desc("Move instructions of an iterative modulo schedule within their "
@@ -2967,14 +2973,24 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
         std::make_unique<HighRegisterPressureDetector>(Loop.getHeader(), MF);
     HRPDetector->init(RegClassInfo);
   }
+  // IIs in a row whose schedule ran out of the lifetime budget with
+  // registers beyond the limit: a larger II lowers the pressure only slowly,
+  // and each costs the whole budget again.
+  unsigned NumOutOfBudget = 0;
   // Keep increasing II until a valid schedule is found.
   for (unsigned II = MII; II <= MAX_II && !scheduleFound; ++II) {
+    if (SwpLifetimeBudgetIIs && NumOutOfBudget >= SwpLifetimeBudgetIIs) {
+      LLVM_DEBUG(dbgs() << "No larger II: the register pressure stays beyond "
+                           "the limit\n");
+      break;
+    }
     Schedule.reset();
     Schedule.setInitiationInterval(II);
     LLVM_DEBUG(dbgs() << "Try to schedule with " << II << "\n");
 
     SetVector<SUnit *>::iterator NI = NodeOrder.begin();
     SetVector<SUnit *>::iterator NE = NodeOrder.end();
+    bool OutOfBudget = false;
     if (Policy.UseIterativeScheduler) {
       // Without and with the values of single register classes in order;
       // each finds schedules that the other does not.
@@ -2988,7 +3004,8 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
         scheduleFound =
             scheduleIteratively(Schedule, II, KeepSingleRegOrder,
                                 HRPDetector ? function_ref<unsigned()>(Excess)
-                                            : nullptr) &&
+                                            : nullptr,
+                                &OutOfBudget) &&
             (Policy.MaxStages < 0 ||
              Schedule.getMaxStageCount() <= (unsigned)Policy.MaxStages);
         if (scheduleFound)
@@ -3080,6 +3097,7 @@ bool SwingSchedulerDAG::schedulePipeline(SMSchedule &Schedule) {
       LLVM_DEBUG(dbgs() << "Target rejected the schedule for this II\n");
       scheduleFound = false;
     }
+    NumOutOfBudget = OutOfBudget ? NumOutOfBudget + 1 : 0;
   }
 
   LLVM_DEBUG(dbgs() << "Schedule Found? " << scheduleFound
@@ -3686,7 +3704,7 @@ static SUnit *multipleIterations(SUnit *SU, SwingSchedulerDAG *DAG) {
 /// values, and the successors and predecessors whose dependences it breaks.
 bool SwingSchedulerDAG::scheduleIteratively(
     SMSchedule &Schedule, unsigned II, bool KeepSingleRegOrder,
-    function_ref<unsigned()> ExcessPressure) {
+    function_ref<unsigned()> ExcessPressure, bool *OutOfBudget) {
   // Cycle(Dst) >= Cycle(Src) + Latency.
   struct Constraint {
     SUnit *Src, *Dst;
@@ -3997,6 +4015,8 @@ bool SwingSchedulerDAG::scheduleIteratively(
     for (SUnit &SU : SUnits) {
       if (NumPressureEvals > MaxPressureEvals) {
         LLVM_DEBUG(dbgs() << "\tthe lifetimes are not shortened further\n");
+        if (OutOfBudget && (Best >> 32))
+          *OutOfBudget = true;
         Changed = false;
         break;
       }

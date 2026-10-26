@@ -470,7 +470,8 @@ private:
   bool schedulePipeline(SMSchedule &Schedule);
   bool scheduleIteratively(SMSchedule &Schedule, unsigned II,
                            bool KeepSingleRegOrder,
-                           function_ref<unsigned()> ExcessPressure = nullptr);
+                           function_ref<unsigned()> ExcessPressure = nullptr,
+                           bool *OutOfBudget = nullptr);
   bool computeDelta(const MachineInstr &MI, int &Delta) const;
   MachineInstr *findDefInLoop(Register Reg);
   bool canUseLastOffsetValue(MachineInstr *MI, unsigned &BasePos,
