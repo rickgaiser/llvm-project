@@ -4,6 +4,8 @@
 ; f + 1 into field f (x from y, y from z) is an MR32 in the lower pipe
 ; (INSERT_ROT) instead of an ADD in the upper one (INSERT_FIELD), until the
 ; pipes are balanced: here the first one moves, the second stays.
+;
+; An insertion of field x into field w is MR32.w in every block.
 
 declare <4 x float> @llvm.vu.lq(i16)
 declare void @llvm.vu.sq(<4 x float>, i16)
@@ -35,5 +37,17 @@ loop:
   %done = icmp eq i16 %i.next, %n
   br i1 %done, label %exit, label %loop
 exit:
+  ret void
+}
+
+; CHECK-LABEL: name: x_into_w
+; CHECK:         %{{[0-9]+}}:vf = INSERT_ROT %{{[0-9]+}}, %{{[0-9]+}}, 3
+define void @x_into_w() {
+  %a = call <4 x float> @llvm.vu.lq(i16 0)
+  %b = call <4 x float> @llvm.vu.lq(i16 1)
+  %s = fadd <4 x float> %a, %b
+  %x = extractelement <4 x float> %b, i32 0
+  %r = insertelement <4 x float> %s, float %x, i32 3
+  call void @llvm.vu.sq(<4 x float> %r, i16 2)
   ret void
 }

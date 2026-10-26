@@ -17,7 +17,9 @@
 //    offsets of clang's cbuffer layout, the cbuffers one after the other;
 //  * inputs (7) become vertex inputs in the order of their locations, their
 //    UNPACK format from a suffix of the semantic (COLOR_V4_8U) or else from
-//    the type (float3: V3_32); SV_VertexID is the vertex index;
+//    the type (float3: V3_32), and for an integer input with more fields than
+//    the format the value of the others (TEXCOORD_V2_16_F4096: int3 (s, t,
+//    4096)); SV_VertexID is the vertex index;
 //  * outputs (8) with a GIF_<register> semantic (GIF_XYZ2, or GIF_XYZF2_A
 //    and GIF_XYZF2_B for two of one register) become the GIF registers, in
 //    the order of their locations;
@@ -248,15 +250,23 @@ void Adapter::lowerCBuffers(const DataLayout &SrcDL) {
   CBs->eraseFromParent();
 }
 
-/// The UNPACK format of an input: a suffix of the semantic (_V4_8U), or the
-/// 32-bit format of its type.
+/// The format suffix of a semantic: _V4_8U, and for an integer input with more
+/// fields than the format, the value of the others (_V2_16_F4096).
+static constexpr const char *FormatSuffix =
+    "_(S|V2|V3|V4)_(32|16|8|5)(U?)(_F([0-9]+))?$";
+
+/// The UNPACK format of an input: a suffix of the semantic (_V4_8U, then
+/// _f<n> for _F<n>), or the 32-bit format of its type.
 static std::string getFormat(StringRef Semantic, Type *T) {
-  Regex Suffix("_(S|V2|V3|V4)_(32|16|8|5)(U?)$", Regex::IgnoreCase);
-  SmallVector<StringRef, 4> Matches;
+  Regex Suffix(FormatSuffix, Regex::IgnoreCase);
+  SmallVector<StringRef, 6> Matches;
   if (Suffix.match(Semantic, &Matches)) {
     std::string F = Matches[1].lower();
     F += F == "s" ? Matches[2].str() : "_" + Matches[2].str();
-    return F + Matches[3].lower();
+    F += Matches[3].lower();
+    if (!Matches[5].empty())
+      F += "_f" + Matches[5].str();
+    return F;
   }
   unsigned N = 1;
   if (auto *VT = dyn_cast<FixedVectorType>(T))
@@ -289,7 +299,7 @@ static void makeSignedConversions(GlobalVariable *GV) {
 }
 
 static bool hasFormatSuffix(StringRef Name) {
-  return Regex("_(S|V2|V3|V4)_(32|16|8|5)(U?)$", Regex::IgnoreCase).match(Name);
+  return Regex(FormatSuffix, Regex::IgnoreCase).match(Name);
 }
 
 static bool isGifRegister(StringRef Name) {
@@ -371,12 +381,15 @@ void Adapter::lowerInputsOutputs() {
     replaceGlobalBy(&GV, New);
     // The header names the inputs by their semantic, without the format.
     StringRef Base = AS == SPVInput ? Semantic : Full;
-    if (hasFormatSuffix(Base))
+    if (hasFormatSuffix(Base)) {
+      if (Regex("_F[0-9]+$", Regex::IgnoreCase).match(Base))
+        Base = Base.substr(0, Base.rfind('_'));
       Base = Base.substr(0, Base.rfind('_', Base.rfind('_') - 1));
+    }
     New->setName(Base.lower());
     // UNPACK makes 32-bit integers of 8- and 16-bit fields: an unsigned one
     // is never negative, and converts like a signed one (ITOF0).
-    if (AS == SPVInput && !StringRef(Kind).contains("32"))
+    if (AS == SPVInput && !StringRef(Kind).split("_f").first.contains("32"))
       makeSignedConversions(New);
   }
 }

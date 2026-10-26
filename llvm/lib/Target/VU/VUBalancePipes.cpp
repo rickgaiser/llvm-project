@@ -14,6 +14,10 @@
 // pipeliner, insertions move to the lower pipe while that has fewer
 // instructions than the upper one.
 //
+// An insertion of field x into field w is always MR32.w (see INSERT_FIELD in
+// VUInstrInfo.cpp), so it becomes an INSERT_ROT in every block: the
+// schedulers then count it in the lower pipe, where it ends up.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/VUMCTargetDesc.h"
@@ -73,8 +77,18 @@ bool VUBalancePipes::runOnMachineFunction(MachineFunction &MF) {
   if (!UpperRes || !LowerRes)
     return false;
 
+  auto MakeRot = [&](MachineInstr &MI) {
+    MI.setDesc(TII.get(VU::INSERT_ROT));
+    MI.removeOperand(4);
+  };
   bool Changed = false;
   for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : MBB)
+      if (MI.getOpcode() == VU::INSERT_FIELD &&
+          MI.getOperand(3).getImm() == 3 && MI.getOperand(4).getImm() == 0) {
+        MakeRot(MI);
+        Changed = true;
+      }
     if (!MBB.isSuccessor(&MBB))
       continue;
     unsigned Upper = 0, Lower = 0;
@@ -99,8 +113,7 @@ bool VUBalancePipes::runOnMachineFunction(MachineFunction &MF) {
     for (MachineInstr *MI : Candidates) {
       if (Upper <= Lower + 1)
         break;
-      MI->setDesc(TII.get(VU::INSERT_ROT));
-      MI->removeOperand(4);
+      MakeRot(*MI);
       --Upper;
       ++Lower;
       ++NumMoved;

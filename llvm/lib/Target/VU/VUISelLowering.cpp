@@ -117,7 +117,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
                        ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT,
                        ISD::EXTRACT_VECTOR_ELT, ISD::SINT_TO_FP,
                        ISD::UINT_TO_FP, ISD::SELECT, ISD::VSELECT,
-                       ISD::BUILD_VECTOR, ISD::FDIV, ISD::INTRINSIC_W_CHAIN});
+                       ISD::BUILD_VECTOR, ISD::FDIV, ISD::INTRINSIC_W_CHAIN,
+                       ISD::VECTOR_SHUFFLE, ISD::EXTRACT_SUBVECTOR});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -1867,6 +1868,49 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
         V = DAG.getNode(VUISD::INSERT_VI, DL, MVT::v4i32, V, E.getOperand(0),
                         DAG.getTargetConstant(I, DL, MVT::i32));
     return V;
+  }
+  case ISD::EXTRACT_SUBVECTOR: {
+    // A three-field vector widened back to the four fields it came from
+    // (int3 to int4): the extracted vector, whose other fields are undefined
+    // here. The concatenation (v6i32) is not a legal type.
+    SDValue Cat = N->getOperand(0);
+    if (N->getConstantOperandVal(1) != 0 ||
+        Cat.getOpcode() != ISD::CONCAT_VECTORS ||
+        !all_of(drop_begin(Cat->ops()),
+                [](const SDUse &U) { return U.get().isUndef(); }))
+      break;
+    SDValue Part = Cat.getOperand(0);
+    if (Part.getOpcode() != ISD::EXTRACT_SUBVECTOR ||
+        Part.getConstantOperandVal(1) != 0 ||
+        Part.getOperand(0).getValueType() != N->getValueType(0))
+      break;
+    return Part.getOperand(0);
+  }
+  case ISD::VECTOR_SHUFFLE: {
+    // An integer vector whose fields stay in place, each from one of the two
+    // vectors: MOVE of the fields of the second, exact for every value. The
+    // expansion would extract i32 elements, which are not legal. This is done
+    // before the types are legalized.
+    if (N->getValueType(0) != MVT::v4i32 || DCI.isAfterLegalizeDAG())
+      break;
+    ArrayRef<int> Mask = cast<ShuffleVectorSDNode>(N)->getMask();
+    unsigned FromB = 0;
+    for (unsigned I = 0; I != 4; ++I) {
+      if (Mask[I] < 0 || Mask[I] == (int)I)
+        continue;
+      if (Mask[I] != (int)I + 4)
+        return SDValue();
+      FromB |= 8 >> I;
+    }
+    if (!FromB)
+      return N->getOperand(0);
+    if (FromB == 15)
+      return N->getOperand(1);
+    SDValue A = DAG.getNode(ISD::BITCAST, DL, MVT::v4f32, N->getOperand(0));
+    SDValue B = DAG.getNode(ISD::BITCAST, DL, MVT::v4f32, N->getOperand(1));
+    return DAG.getNode(ISD::BITCAST, DL, MVT::v4i32,
+                       DAG.getNode(VUISD::MERGE, DL, MVT::v4f32, A, B,
+                                   DAG.getTargetConstant(FromB, DL, MVT::i32)));
   }
   case ISD::INSERT_VECTOR_ELT: {
     // A 16-bit integer inserted into an integer vector: MFIR sign-extends.

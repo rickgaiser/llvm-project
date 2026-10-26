@@ -51,7 +51,7 @@
 @prev = internal addrspace(5) global <4 x float> zeroinitializer, !vu.carry !6
 
 ;.
-; CHECK: @vu.header = private constant [1321 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 0\0A#define VU_SHADE_SCALE 4  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units
+; CHECK: @vu.header = private constant [1405 x i8] c"/* vertex program shade: VU data memory layout, in quadwords */\0A#define VU_SHADE_MVP 0\0A#define VU_SHADE_SCALE 4  /* field y */\0A#define VU_SHADE_ENTRY 0  /* micro address, 64-bit units
 ; CHECK: @llvm.used = appending global [1 x ptr] [ptr @vu.header], section "llvm.metadata"
 ;.
 define void @shade() #0 {

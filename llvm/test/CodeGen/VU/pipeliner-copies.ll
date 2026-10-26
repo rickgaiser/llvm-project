@@ -21,8 +21,8 @@
 ; CHECK: Schedule found with Initiation Interval: 4
 ; NOREDUCE: Schedule found with Initiation Interval: 4
 ; STAGES3: Schedule found with Initiation Interval: 4
-; COPIES: VU: II 3 needs 1 upper and 4 lower words, unrolled for 2 copies
-; COPIES: VU: II 4 needs 1 upper and 4 lower words, unrolled for 1 copies
+; COPIES: VU: II 3 needs 1 upper and 4 lower words, unrolled 4 times for 2 copies
+; COPIES: VU: II 4 needs 1 upper and 4 lower words, unrolled 4 times for 1 copies
 
 declare <4 x float> @llvm.vu.lq(i16)
 declare void @llvm.vu.sq(<4 x float>, i16)
@@ -53,7 +53,7 @@ exit:
 ; CHECK: Schedule found with Initiation Interval: 5, MaxStageCount: 3
 ; NOREDUCE: Schedule found with Initiation Interval: 5
 ; STAGES3: Schedule found with Initiation Interval: 5, MaxStageCount: 3
-; COPIES: VU: II 4 needs 4 upper and 5 lower words, unrolled for 2 copies
+; COPIES: VU: II 4 needs 4 upper and 5 lower words, unrolled 6 times for 2 copies
 ; COPIES: VU: II 5 needs 4 upper and 5 lower words{{$}}
 define void @late_load() {
 entry:

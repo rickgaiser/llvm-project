@@ -47,3 +47,26 @@ define void @merge_xz_yw() {
   call void @llvm.vu.sq(<4 x float> %b, i16 3)
   ret void
 }
+
+; int4(ftoi(a).xyz, asint(b).w): an integer vector whose fields stay in place
+; is merged by MOVE as well (the expansion would extract i32 elements).
+define void @merge_int_xyz_w() {
+; CHECK-LABEL: merge_int_xyz_w:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop lq.xyzw vf2, 1(vi0)
+; CHECK-NEXT:    ftoi0.xyzw vf1, vf1 nop
+; CHECK-NEXT:    nop move.w vf1, vf2
+; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %a = call <4 x float> @llvm.vu.lq(i16 0)
+  %b = call <4 x float> @llvm.vu.lq(i16 1)
+  %ai = fptosi <4 x float> %a to <4 x i32>
+  %bi = bitcast <4 x float> %b to <4 x i32>
+  %m = shufflevector <4 x i32> %ai, <4 x i32> %bi, <4 x i32> <i32 0, i32 1, i32 2, i32 7>
+  %f = bitcast <4 x i32> %m to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f, i16 2)
+  ret void
+}

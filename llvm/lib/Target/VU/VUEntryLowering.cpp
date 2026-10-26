@@ -94,6 +94,7 @@ struct Slot {
   bool Unsigned = false;
   unsigned Bytes = 0;
   unsigned Fill = 0;   // inputs: fields (bit 0 = x) that the VIF sets to 1.0
+  unsigned RowFill = 0; // inputs: fields that the VIF sets from ROW
   uint64_t Offset = 0; // uniforms: bytes from the start of the block
 };
 
@@ -104,6 +105,8 @@ class EntryLowering {
   const DataLayout &DL;
   bool Vertex;
   SmallVector<Slot, 8> Uniforms, Inputs, Outputs;
+  uint32_t Row[4] = {0, 0, 0, 0}; // the ROW values of RowSet's fields
+  unsigned RowSet = 0;
   GlobalVariable *Items = nullptr;
   SmallVector<GlobalVariable *, 4> Privates;
   std::string Up, Prefix;
@@ -218,6 +221,17 @@ void EntryLowering::collectGlobals() {
       S.Kind = Kind;
       if (AS == VUAS::Input) {
         StringRef K = Kind;
+        // _f<n>: the fields that the format does not give are n.
+        std::optional<uint32_t> FillValue;
+        if (size_t F = K.find("_f"); F != StringRef::npos) {
+          uint32_t V;
+          if (K.substr(F + 2).getAsInteger(10, V)) {
+            error("input " + Name + ": bad field value in " + Kind);
+            continue;
+          }
+          FillValue = V;
+          K = K.substr(0, F);
+        }
         if (K.size() > 2 && K.back() == 'u' && K != "v4_5")
           S.Unsigned = true, K = K.drop_back();
         auto It =
@@ -237,6 +251,30 @@ void EntryLowering::collectGlobals() {
             K != "s32" && VT->getNumElements() > VN)
           for (unsigned L = VN; L != VT->getNumElements(); ++L)
             S.Fill |= 1 << L;
+        // An integer vector input with more fields than the format and a
+        // value for them: the VIF sets them from ROW, which the EE sets to
+        // the values of the header's ROW. A field has one value for all
+        // inputs.
+        if (FillValue) {
+          if (!VT || !VT->getElementType()->isIntegerTy() ||
+              VT->getNumElements() <= VN || K.starts_with("s")) {
+            error("input " + Name +
+                  ": a field value needs an integer vector with more "
+                  "fields than its format " +
+                  K);
+            continue;
+          }
+          for (unsigned L = VN; L != VT->getNumElements(); ++L) {
+            if ((RowSet & (1 << L)) && Row[L] != *FillValue) {
+              error("input " + Name + ": field " + Twine("xyzw"[L]) +
+                    " has another value in another input");
+              break;
+            }
+            Row[L] = *FillValue;
+            RowSet |= 1 << L;
+            S.RowFill |= 1 << L;
+          }
+        }
         Inputs.push_back(S);
       } else {
         auto It =
@@ -486,13 +524,17 @@ void EntryLowering::buildGather(IRBuilder<> &B, Value *Top, Value *Out,
 }
 
 /// The STMASK word that fills fields \p Fill from COL (binary 10 in each
-/// write cycle) and writes the others from the data (00).
-static uint32_t fillMask(unsigned Fill) {
-  uint32_t Row = 0;
-  for (unsigned L = 0; L != 4; ++L)
+/// write cycle), fields \p RowFill from ROW (01), and writes the others from
+/// the data (00).
+static uint32_t fillMask(unsigned Fill, unsigned RowFill) {
+  uint32_t Cycle = 0;
+  for (unsigned L = 0; L != 4; ++L) {
     if (Fill & (1 << L))
-      Row |= 2u << (2 * L);
-  return Row * 0x01010101u;
+      Cycle |= 2u << (2 * L);
+    if (RowFill & (1 << L))
+      Cycle |= 1u << (2 * L);
+  }
+  return Cycle * 0x01010101u;
 }
 
 static std::string upper(StringRef S) {
@@ -928,9 +970,11 @@ bool EntryLowering::run(std::string &Header) {
     for (auto [K, S] : enumerate(Inputs))
       H << (K ? ", " : "") << "{0x" << utohexstr(S.Code, true) << ", "
         << S.Unsigned << ", " << S.Bytes << ", 0x"
-        << utohexstr(fillMask(S.Fill), true) << "}";
-    H << "}  /* UNPACK format, unsigned, bytes, STMASK (fields 1.0 from COL) "
-         "*/\n";
+        << utohexstr(fillMask(S.Fill, S.RowFill), true) << "}";
+    H << "}  /* UNPACK format, unsigned, bytes, STMASK (fields 1.0 from COL, "
+         "values from ROW) */\n";
+    H << "#define " << P << "ROW {" << Row[0] << ", " << Row[1] << ", "
+      << Row[2] << ", " << Row[3] << "}  /* ROW of the masked UNPACKs */\n";
   } else {
     H << "#define " << P << "N 0  /* the item count, field x */\n";
     if (Items)

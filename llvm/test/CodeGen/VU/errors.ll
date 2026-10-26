@@ -15,6 +15,8 @@
 ; RUN: not llc -mtriple=vu %t/indexed-buffer.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=IBUF
 ; RUN: not llc -mtriple=vu %t/contexts.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CTX
 ; RUN: not llc -mtriple=vu %t/contexts-room.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=CTXROOM
+; RUN: not llc -mtriple=vu %t/row-float.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROWFLOAT
+; RUN: not llc -mtriple=vu %t/row-two.ll -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROWTWO
 
 ; ARGS: error: {{.*}} VU: micro programs take no arguments
 ; RET:  error: {{.*}} VU: micro programs do not return a value
@@ -32,6 +34,8 @@
 ; CTX: error: {{.*}} VU: a vertex program has one or two contexts
 ; CTXROOM: error: {{.*}} VU: two buffers of 400 quadwords, 2 contexts of 201 and 0 for spills do not fit VU1 data memory
 ; IBYTES: error: {{.*}} VU: 130 vertices of 2 outputs are too many for byte indices
+; ROWFLOAT: error: {{.*}} VU: input st: a field value needs an integer vector with more fields than its format v2_32
+; ROWTWO: error: {{.*}} VU: input b: field z has another value in another input
 
 ;--- args.ll
 define void @f(i16 %a) {
@@ -214,3 +218,31 @@ define void @f() "vu-entry"="vertex" "vu-buffer-qw"="400" {
 !0 = !{i32 0, !"v4_32"}
 !1 = !{i32 0, !"xyz2"}
 !2 = !{i32 0}
+
+;--- row-float.ll
+@st = external addrspace(2) global <3 x float>, !vu.input !0
+@xyz2 = external addrspace(3) global <4 x float>, !vu.output !1
+define void @f() "vu-entry"="vertex" {
+  %p = load <3 x float>, ptr addrspace(2) @st
+  %p4 = shufflevector <3 x float> %p, <3 x float> poison, <4 x i32> <i32 0, i32 1, i32 2, i32 poison>
+  store <4 x float> %p4, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v2_32_f1"}
+!1 = !{i32 0, !"xyz2"}
+
+;--- row-two.ll
+@a = external addrspace(2) global <3 x i32>, !vu.input !0
+@b = external addrspace(2) global <3 x i32>, !vu.input !1
+@xyz2 = external addrspace(3) global <4 x i32>, !vu.output !2
+define void @f() "vu-entry"="vertex" {
+  %a = load <3 x i32>, ptr addrspace(2) @a
+  %b = load <3 x i32>, ptr addrspace(2) @b
+  %s = add <3 x i32> %a, %b
+  %s4 = shufflevector <3 x i32> %s, <3 x i32> poison, <4 x i32> <i32 0, i32 1, i32 2, i32 poison>
+  store <4 x i32> %s4, ptr addrspace(3) @xyz2
+  ret void
+}
+!0 = !{i32 0, !"v2_16_f1"}
+!1 = !{i32 1, !"v2_16_f2"}
+!2 = !{i32 0, !"xyz2"}

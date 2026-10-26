@@ -647,6 +647,52 @@ static unsigned countWords(SwingSchedulerDAG &SSD, SMSchedule &SMS,
   return Copies;
 }
 
+/// The number of copies of the kernel that ModuloScheduleExpanderMVE makes
+/// (its calcNumUnroll): every register, the pointers included, is counted by
+/// the stages between its definition and its uses. Its order of the kernel is
+/// by cycle, the later stages first.
+static unsigned countExpanderUnroll(SwingSchedulerDAG &SSD, SMSchedule &SMS) {
+  const MachineRegisterInfo &MRI = SSD.MF.getRegInfo();
+  const MachineBasicBlock *Kernel = SSD.SUnits.front().getInstr()->getParent();
+  auto AtOrBefore = [&](SUnit *A, SUnit *B) {
+    unsigned CA = SMS.cycleScheduled(A), CB = SMS.cycleScheduled(B);
+    if (CA != CB)
+      return CA < CB;
+    int SA = SMS.stageScheduled(A), SB = SMS.stageScheduled(B);
+    if (SA != SB)
+      return SA > SB;
+    return A->NodeNum <= B->NodeNum;
+  };
+  unsigned NumUnroll = 1;
+  for (SUnit &SU : SSD.SUnits) {
+    MachineInstr &MI = *SU.getInstr();
+    if (MI.isPHI())
+      continue;
+    for (const MachineOperand &MO : MI.uses()) {
+      if (!MO.isReg() || !MO.getReg().isVirtual())
+        continue;
+      MachineInstr *DefMI = MRI.getVRegDef(MO.getReg());
+      if (DefMI->getParent() != Kernel)
+        continue;
+      int Local = 1;
+      if (DefMI->isPHI()) {
+        ++Local;
+        for (unsigned I = 1; I < DefMI->getNumOperands(); I += 2)
+          if (DefMI->getOperand(I + 1).getMBB() == Kernel)
+            DefMI = MRI.getVRegDef(DefMI->getOperand(I).getReg());
+      }
+      SUnit *DefSU = SSD.getSUnit(DefMI);
+      if (!DefSU)
+        continue;
+      Local += SMS.stageScheduled(&SU) - SMS.stageScheduled(DefSU);
+      if (AtOrBefore(&SU, DefSU))
+        --Local;
+      NumUnroll = std::max(NumUnroll, (unsigned)std::max(Local, 1));
+    }
+  }
+  return NumUnroll;
+}
+
 /// The schedule is only accepted if the instructions and the copies fit in
 /// II words, with the branch.
 bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
@@ -663,19 +709,32 @@ bool VUPipelinerLoopInfo::isScheduleAcceptable(SwingSchedulerDAG &SSD,
   // When the upper instructions fill the II words, the copies cost nothing
   // if they fit the lower slots and start no value of ACC, Q or P: the loop
   // can not be faster anyway.
+  //
+  // The expander unrolls for every register, also for a pointer that is used
+  // a few stages after its increment, which VULoopCopies turns into memory
+  // offsets without copies. When it unrolls more often than the copies need,
+  // the copies are kept if they leave a quarter of the lower slots free, so
+  // that the scheduler after register allocation has room to place them: the
+  // unrolled kernel would also leave up to that many iterations to the loop
+  // that is not pipelined.
   unsigned Stages = SMS.getMaxStageCount() + 1;
-  unsigned Words = (Unroll + 2 * Stages) * II + SSD.SUnits.size();
+  unsigned ExpanderUnroll =
+      Copies ? std::max(Unroll, countExpanderUnroll(SSD, SMS)) : 1;
+  unsigned Words = (ExpanderUnroll + 2 * Stages) * II + SSD.SUnits.size();
   unsigned Budget =
       SSD.MF.getSubtarget<VUSubtarget>().hasVU1() ? 2048 / 4 : 512 / 4;
   bool CopiesFree = Upper >= II && Lower + Copies <= II && !CopyStartsGroup;
-  UseMVE = Copies && !CopiesFree && Counter && Words <= Budget;
+  bool CopiesRoom = Upper <= II && 4 * (Lower + Copies) <= 3 * II;
+  UseMVE = Copies && !CopiesFree && Counter && Words <= Budget &&
+           !(CopiesRoom && ExpanderUnroll > Unroll);
   if (!UseMVE)
     Lower += Copies;
   LLVM_DEBUG({
     dbgs() << "VU: II " << II << " needs " << Upper << " upper and " << Lower
            << " lower words";
     if (UseMVE)
-      dbgs() << ", unrolled for " << Copies << " copies";
+      dbgs() << ", unrolled " << ExpanderUnroll << " times for " << Copies
+             << " copies";
     else if (Copies)
       dbgs() << " with " << Copies << " copies";
     dbgs() << "\n";
