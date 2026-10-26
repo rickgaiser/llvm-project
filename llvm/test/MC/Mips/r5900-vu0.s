@@ -230,3 +230,21 @@ qmtc2.i $8, $vf25
 cfc2.i $8, $29
 # CHECK: ctc2.i  $8, $27                 # encoding: [0x01,0xd8,0xc8,0x48]
 ctc2.i $8, $27
+
+# VU0 control registers by their VI names, and the micro program calls.
+# CHECK: cfc2    $8, $29                 # encoding: [0x00,0xe8,0x48,0x48]
+cfc2 $8, $vi29
+# CHECK: cfc2.i  $8, $29                 # encoding: [0x01,0xe8,0x48,0x48]
+cfc2.i $8, $vi29
+# CHECK: ctc2    $8, $27                 # encoding: [0x00,0xd8,0xc8,0x48]
+ctc2 $8, $vi27
+# CHECK: ctc2.i  $9, $28                 # encoding: [0x01,0xe0,0xc9,0x48]
+ctc2.i $9, $VI28
+# CHECK: vcallms 0                       # encoding: [0x38,0x00,0x00,0x4a]
+vcallms 0
+# CHECK: vcallms 832                     # encoding: [0x38,0x1a,0x00,0x4a]
+vcallms 0x340
+# CHECK: vcallms 262136                  # encoding: [0xf8,0xff,0x1f,0x4a]
+vcallms 0x3fff8
+# CHECK: vcallmsr        $27             # encoding: [0x39,0xd8,0x00,0x4a]
+vcallmsr $vi27

@@ -1002,6 +1002,20 @@ def uimm5_plus32_normalize_64 : Operand<i64> {
   let ParserMatchClass = ConstantUImm5Plus32NormalizeAsmOperandClass;
 }
 
+// A VU0 micro memory address (VCALLMS): bytes, a multiple of 8.
+def ConstantUImm15Lsl3AsmOperandClass : AsmOperandClass {
+  let Name = "UImm15Lsl3";
+  let RenderMethod = "addImmOperands";
+  let PredicateMethod = "isScaledUImm<15, 3>";
+  let DiagnosticType = "UImm15_Lsl3";
+}
+
+def uimm15_lsl3 : Operand<i32> {
+  let EncoderMethod = "getUImm15Lsl3Encoding";
+  let DecoderMethod = "DecodeUImmWithOffsetAndScale<15, 0, 8>";
+  let ParserMatchClass = ConstantUImm15Lsl3AsmOperandClass;
+}
+
 def uimm6_lsl2 : Operand<OtherVT> {
   let EncoderMethod = "getUImm6Lsl2Encoding";
   let DecoderMethod = "DecodeUImmWithOffsetAndScale<6, 0, 4>";

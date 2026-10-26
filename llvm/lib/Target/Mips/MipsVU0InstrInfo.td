@@ -913,6 +913,34 @@ let Predicates = [HasVU0] in {
     let Predicates = [HasVU0];
   }
 
+  // VCALLMS - Start the micro program at a byte address of VU0 micro memory
+  // (a multiple of 8). Encoding: COP2 + CO + 0000 + address / 8 (15) + 111000
+  def VCALLMS : InstSE<(outs), (ins uimm15_lsl3:$imm), "vcallms\t$imm", [],
+                       FrmOther, "vcallms"> {
+    bits<15> imm;
+    let Inst{31 -26} = 0b010010; // COP2
+    let Inst{25} = 1;            // CO bit
+    let Inst{24 -21} = 0b0000;
+    let Inst{20 -6} = imm;
+    let Inst{5 -0} = 0b111000;
+    let hasSideEffects = 1;
+    let Predicates = [HasVU0];
+  }
+
+  // VCALLMSR - Start the micro program at the address in CMSAR0 ($vi27).
+  // Encoding: COP2 + CO + 0000 + 00000 + fs + 00000111001
+  def VCALLMSR : InstSE<(outs), (ins COP2Opnd:$fs), "vcallmsr\t$fs", [],
+                        FrmOther, "vcallmsr"> {
+    bits<5> fs;
+    let Inst{31 -26} = 0b010010; // COP2
+    let Inst{25} = 1;            // CO bit
+    let Inst{24 -16} = 0b000000000;
+    let Inst{15 -11} = fs;
+    let Inst{10 -0} = 0b00000111001;
+    let hasSideEffects = 1;
+    let Predicates = [HasVU0];
+  }
+
   // VMULQ - Multiply by Q register: fd = fs * Q
   // This is a 2-register instruction where one source is implicitly Q
   // Encoding: COP2 + dest + ft=0 + fs + fd + special(011100)

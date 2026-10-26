@@ -572,6 +572,16 @@ getUImm6Lsl2Encoding(const MCInst &MI, unsigned OpNo,
   return 0;
 }
 
+unsigned
+MipsMCCodeEmitter::getUImm15Lsl3Encoding(const MCInst &MI, unsigned OpNo,
+                                         SmallVectorImpl<MCFixup> &Fixups,
+                                         const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (MO.isImm())
+    return MO.getImm() >> 3;
+  return 0;
+}
+
 unsigned MipsMCCodeEmitter::
 getSImm9AddiuspValue(const MCInst &MI, unsigned OpNo,
                      SmallVectorImpl<MCFixup> &Fixups,

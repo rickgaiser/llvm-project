@@ -443,6 +443,8 @@ class MipsAsmParser : public MCTargetAsmParser {
 
   int matchFPURegisterName(StringRef Name);
 
+  int matchVIRegisterName(StringRef Name);
+
   int matchFCCRegisterName(StringRef Name);
 
   int matchACRegisterName(StringRef Name);
@@ -1673,6 +1675,13 @@ public:
   createVU0AccReg(StringRef Str, const MCRegisterInfo *RegInfo, SMLoc S,
                   SMLoc E, MipsAsmParser &Parser) {
     return CreateReg(0, Str, RegKind_VU0ACC, RegInfo, S, E, Parser);
+  }
+
+  /// Create a register operand for a COP2 register only ($viN).
+  static std::unique_ptr<MipsOperand>
+  createCOP2Reg(unsigned Index, StringRef Str, const MCRegisterInfo *RegInfo,
+                SMLoc S, SMLoc E, MipsAsmParser &Parser) {
+    return CreateReg(Index, Str, RegKind_COP2, RegInfo, S, E, Parser);
   }
 
   static std::unique_ptr<MipsOperand>
@@ -6306,6 +6315,9 @@ bool MipsAsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   case Match_UImm6_Lsl2:
     return Error(RefineErrorLoc(IDLoc, Operands, ErrorInfo),
                  "expected both 8-bit unsigned immediate and multiple of 4");
+  case Match_UImm15_Lsl3:
+    return Error(RefineErrorLoc(IDLoc, Operands, ErrorInfo),
+                 "expected both 18-bit unsigned immediate and multiple of 8");
   case Match_SImm6_0:
     return Error(RefineErrorLoc(IDLoc, Operands, ErrorInfo),
                  "expected 6-bit signed immediate");
@@ -6460,6 +6472,16 @@ int MipsAsmParser::matchHWRegsRegisterName(StringRef Name) {
   MCRegister Reg = MIPS_MC::matchRegisterName(Name, MRI, Mips::HWRegsRegClassID,
                                               Mips::RegAliasName);
   return Reg ? MRI.getEncodingValue(Reg) : -1;
+}
+
+int MipsAsmParser::matchVIRegisterName(StringRef Name) {
+  if (!getSTI().hasFeature(Mips::FeatureVU0) ||
+      !Name.starts_with_insensitive("vi"))
+    return -1;
+  unsigned IntVal;
+  if (Name.substr(2).getAsInteger(10, IntVal) || IntVal > 31)
+    return -1;
+  return IntVal;
 }
 
 int MipsAsmParser::matchFPURegisterName(StringRef Name) {
@@ -6964,6 +6986,16 @@ ParseStatus MipsAsmParser::matchAnyRegisterNameWithoutDollar(
   Index = matchMSA128CtrlRegisterName(Identifier);
   if (Index != -1) {
     Operands.push_back(MipsOperand::createMSACtrlReg(
+        Index, Identifier, getContext().getRegisterInfo(), S,
+        getLexer().getLoc(), *this));
+    return ParseStatus::Success;
+  }
+
+  // VU0 integer and control registers ($vi0..$vi31) are COP2 control
+  // registers (CFC2, CTC2, VCALLMSR).
+  Index = matchVIRegisterName(Identifier);
+  if (Index != -1) {
+    Operands.push_back(MipsOperand::createCOP2Reg(
         Index, Identifier, getContext().getRegisterInfo(), S,
         getLexer().getLoc(), *this));
     return ParseStatus::Success;

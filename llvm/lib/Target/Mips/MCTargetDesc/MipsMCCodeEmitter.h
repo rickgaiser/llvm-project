@@ -78,6 +78,12 @@ public:
                              SmallVectorImpl<MCFixup> &Fixups,
                              const MCSubtargetInfo &STI) const;
 
+  // getUImm15Lsl3Encoding - Return binary encoding of a VU0 micro memory
+  // address (VCALLMS): the address / 8.
+  unsigned getUImm15Lsl3Encoding(const MCInst &MI, unsigned OpNo,
+                                 SmallVectorImpl<MCFixup> &Fixups,
+                                 const MCSubtargetInfo &STI) const;
+
   unsigned getUImm6Lsl2Encoding(const MCInst &MI, unsigned OpNo,
                                 SmallVectorImpl<MCFixup> &Fixups,
                                 const MCSubtargetInfo &STI) const;

@@ -220,6 +220,9 @@ def : InstRW<[R5900WriteVU0MoveIn], (instrs LQC2, CTC2, QMTC2, CTC2_I, QMTC2_I)>
 def : InstRW<[R5900WriteVU0MoveOut], (instrs CFC2, CFC2_I)>;
 def : InstRW<[R5900WriteVU0MoveOut, R5900ReadFPRLate], (instrs QMFC2, QMFC2_I)>;
 def : InstRW<[R5900WriteVU0Store, R5900ReadFPRLate], (instrs SQC2)>;
+// The start of a micro program takes the C2 slot (not measured). It waits
+// for a running micro program to end first.
+def : InstRW<[R5900WriteVU0Store], (instrs VCALLMS, VCALLMSR)>;
 
 // Branches and jumps
 // ==================
