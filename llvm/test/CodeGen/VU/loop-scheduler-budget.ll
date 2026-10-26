@@ -9,12 +9,12 @@
 ; so the longer lengths still get searched. (With the ACC sums in source
 ; order: the loop is one that is hard to prove.)
 
-; CHECK:      %bb.3: 54 cycles, at least 42 words
-; CHECK:        no schedule in 47 words
+; CHECK:      %bb.3: 49 cycles, at least 42 words
+; CHECK:        no schedule in 43 words
 ; CHECK-NEXT:   no schedule found in {{[0-9]+}} steps
-; CHECK-NEXT:   no schedule in 48 words
-; CHECK-NEXT:   schedule in 49 words found in {{[0-9]+}} steps
-; CHECK-NEXT: %bb.3: 54 cycles, 49 words take 49
+; CHECK-NEXT:   no schedule in 44 words
+; CHECK-NEXT:   schedule in 45 words found in {{[0-9]+}} steps
+; CHECK-NEXT: %bb.3: 49 cycles, 45 words take 45
 
 target datalayout = "e-m:e-p:16:16-i32:32-i64:64-f32:32-v128:128-n16"
 target triple = "vu"

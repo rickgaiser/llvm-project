@@ -726,17 +726,14 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       unsigned Steps = std::clamp<uint64_t>(200000000 / (N * N), 1000, 1000000);
       SmallVector<int, 32> Cycles;
       SmallVector<bool, 32> UseAlt;
-      for (int L = MinL; L < MaxCycles && Steps; ++L) {
-        // A search for one length takes at most half of the steps that are
-        // left, so a length that is hard to prove impossible, just below the
-        // shortest schedule, leaves steps for the longer lengths.
-        unsigned Budget = std::max(Steps / 2, std::min(Steps, 1000u));
-        unsigned Left = Budget;
-        bool Found = G.schedule(L, Cycles, UseAlt, Left);
-        Steps -= Budget - Left;
+      // The layout of a schedule in L words, if one is found in Budget steps.
+      // It is empty, too, if it takes MaxCycles or more.
+      auto TryLength = [&](int L, unsigned &Budget,
+                           bool &Found) -> std::optional<Layout> {
+        Found = G.schedule(L, Cycles, UseAlt, Budget);
         if (!Found) {
           LLVM_DEBUG(dbgs() << "  no schedule in " << L << " words\n");
-          continue;
+          return std::nullopt;
         }
         Layout New{SmallVector<VU::Word, 32>(L), 0,
                    G.Instrs[G.Branch]->getDebugLoc()};
@@ -772,8 +769,38 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
         if (New.Cycles >= MaxCycles)
           return std::nullopt;
         return New;
+      };
+      int L = MinL;
+      for (; L < MaxCycles && Steps; ++L) {
+        // A search for one length takes at most half of the steps that are
+        // left, so a length that is hard to prove impossible, just below the
+        // shortest schedule, leaves steps for the longer lengths.
+        unsigned Budget = std::max(Steps / 2, std::min(Steps, 1000u));
+        unsigned Left = Budget;
+        bool Found;
+        std::optional<Layout> New = TryLength(L, Left, Found);
+        Steps -= Budget - Left;
+        if (Found)
+          return New;
       }
-      return std::nullopt;
+      // The steps ran out below the lengths that have a schedule, which can
+      // be far below the current length: the lengths in between are bisected,
+      // with a few steps each.
+      std::optional<Layout> Best;
+      for (int Lo = L, Hi = MaxCycles - 1; Lo <= Hi;) {
+        int Mid = Lo + (Hi - Lo) / 2;
+        unsigned Left = 1000;
+        bool Found;
+        std::optional<Layout> New = TryLength(Mid, Left, Found);
+        if (New) {
+          if (!Best || New->Cycles < Best->Cycles)
+            Best = std::move(New);
+          Hi = Mid - 1;
+        } else {
+          Lo = Mid + 1;
+        }
+      }
+      return Best;
     };
 
     // With the registers as they are, and with the values renamed, which is
