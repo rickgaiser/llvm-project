@@ -66,6 +66,8 @@ public:
 
   bool hasCnMipsP() const { return STI.hasFeature(Mips::FeatureCnMipsP); }
 
+  bool isR5900() const { return STI.hasFeature(Mips::FeatureR5900); }
+
   bool hasCOP3() const {
     // Only present in MIPS-I and MIPS-II
     return !hasMips32() && !hasMips3();
@@ -1480,6 +1482,12 @@ static DecodeStatus DecodeVU0Q(MCInst &Inst, const MCDisassembler *Decoder) {
   return MCDisassembler::Success;
 }
 
+// The VU0 ACC register, which is not encoded.
+static DecodeStatus DecodeVU0Acc(MCInst &Inst, const MCDisassembler *Decoder) {
+  Inst.addOperand(MCOperand::createReg(Mips::VU0ACC));
+  return MCDisassembler::Success;
+}
+
 // A field of a VF register: the field in bits 6-5, the register in 4-0.
 static DecodeStatus DecodeVFWithField(MCInst &Inst, unsigned Insn,
                                       uint64_t Address,
@@ -2109,6 +2117,16 @@ DecodeStatus MipsDisassembler::getInstruction(MCInst &Instr, uint64_t &Size,
 
   // The only instruction size for standard encoded MIPS.
   Size = 4;
+
+  // The R5900 instructions first: LQC2 and SQC2 take the opcodes of LDC2 and
+  // SDC2, and MMI those of SPECIAL2.
+  if (isR5900()) {
+    LLVM_DEBUG(dbgs() << "Trying R5900 table (32-bit opcodes):\n");
+    Result =
+        decodeInstruction(DecoderTableR590032, Instr, Insn, Address, this, STI);
+    if (Result != MCDisassembler::Fail)
+      return Result;
+  }
 
   if (hasCOP3()) {
     LLVM_DEBUG(dbgs() << "Trying COP3_ table (32-bit opcodes):\n");

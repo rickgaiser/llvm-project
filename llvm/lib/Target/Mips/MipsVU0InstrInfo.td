@@ -80,6 +80,8 @@ def VU0AccAsmOperand : AsmOperandClass {
 
 def VU0AccOpnd : RegisterOperand<VU0ACCRC> {
   let ParserMatchClass = VU0AccAsmOperand;
+  // ACC is not encoded.
+  let DecoderMethod = "DecodeVU0Acc";
 }
 
 // VU0 Q register operand - for instructions that use the Q result register
@@ -262,6 +264,7 @@ class VU0_ACC<string opstr, bits<11> funct, list<Register> UseRegs = []>
   // The ACC operand of the first instruction of a chain is not read
   // (MipsTargetLowering::AdjustInstrPostInstrSelection).
   let hasPostISelHook = !empty(UseRegs);
+  bits<0> accd; // ACC is not encoded
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;
@@ -534,6 +537,7 @@ class VU0_ACC_BC<string opstr, string suffix, bits<9> opcode, bits<2> bc,
   // The ACC operand of the first instruction of a chain is not read
   // (MipsTargetLowering::AdjustInstrPostInstrSelection).
   let hasPostISelHook = !empty(UseRegs);
+  bits<0> accd; // ACC is not encoded
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;
@@ -585,6 +589,7 @@ class VU0_ACC_V<string opstr, bits<11> funct, bit readsAcc>
              opstr # "_v"> {
   let isCodeGenOnly = 1;
   let hasSideEffects = 0;
+  bits<0> accd; // ACC is not encoded
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;
@@ -606,6 +611,7 @@ class VU0_ACC_BC_V<string opstr, string suffix, bits<9> opcode, bits<2> bc,
              opstr # suffix # "_v"> {
   let isCodeGenOnly = 1;
   let hasSideEffects = 0;
+  bits<0> accd; // ACC is not encoded
   bits<5> fs;
   bits<5> ft;
   bits<4> dest;
@@ -949,7 +955,8 @@ let Predicates = [HasVU0] in {
                (ins vu0destmask:$dest, VU0AccOpnd:$accd, VFOpnd:$fs, VFOpnd:$ft),
                "vopmula$dest\t$accd, $fs, $ft", [], FrmR,
                "vopmula"> {
-    bits<5> fs;
+    bits<0> accd; // ACC is not encoded
+  bits<5> fs;
     bits<5> ft;
     bits<4> dest;
 
