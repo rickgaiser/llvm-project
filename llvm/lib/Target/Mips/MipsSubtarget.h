@@ -142,6 +142,9 @@ class MipsSubtarget : public MipsGenSubtargetInfo {
   // HasVU0 - Enable VU0 SIMD operations (R5900)
   bool HasVU0 = false;
 
+  // ReservedVF - VU0 registers that are not allocated (-ffixed-vfN).
+  std::bitset<32> ReservedVF;
+
   // FixR5900 - Enable R5900 short loop erratum fix.
   bool FixR5900;
 
@@ -322,6 +325,8 @@ public:
   bool isR5900() const { return IsR5900; }
   bool fixR5900() const { return FixR5900; }
   bool hasVU0() const { return HasVU0; }
+  bool isVFReserved(unsigned I) const { return ReservedVF[I]; }
+  unsigned getNumReservedVF() const { return ReservedVF.count(); }
   bool useTailCalls() const { return valueOr(CLOpts.tail_calls, IsR5900); }
 
   bool isLittle() const { return IsLittle; }

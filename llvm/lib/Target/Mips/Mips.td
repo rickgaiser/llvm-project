@@ -196,6 +196,11 @@ def FeatureR5900 : SubtargetFeature<"r5900", "IsR5900", "true",
 def FeatureVU0 : SubtargetFeature<"vu0", "HasVU0", "true",
                                   "Enable VU0 SIMD operations (R5900)", [FeatureR5900]>;
 
+// VU0 registers that are not allocated (-ffixed-vfN).
+foreach i = {1-31} in
+  def FeatureReserveVF#i : SubtargetFeature<"reserve-vf"#i, "ReservedVF["#i#"]",
+                                            "true", "Reserve VU0 register vf"#i>;
+
 def FeatureUseTCCInDIV : SubtargetFeature<
                                "use-tcc-in-div",
                                "UseTCCInDIV", "false",

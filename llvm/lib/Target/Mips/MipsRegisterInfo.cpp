@@ -89,7 +89,9 @@ unsigned MipsRegisterInfo::getRegPressureSetLimit(const MachineFunction &MF,
   for (const int *PSet = getRegClassPressureSets(&Mips::VFRegsRegClass);
        *PSet != -1; ++PSet)
     if (static_cast<unsigned>(*PSet) == Idx)
-      return Mips::VFRegsRegClass.getNumRegs() - 1; // VF0 is a constant
+      // VF0 is a constant.
+      return Mips::VFRegsRegClass.getNumRegs() - 1 -
+             MF.getSubtarget<MipsSubtarget>().getNumReservedVF();
   return MipsGenRegisterInfo::getRegPressureSetLimit(MF, Idx);
 }
 
@@ -287,6 +289,9 @@ getReservedRegs(const MachineFunction &MF) const {
   // Reserve VF0 - it's a constant register {0.0, 0.0, 0.0, 1.0} on R5900 VU0.
   if (Subtarget.hasVU0()) {
     Reserved.set(Mips::VF0);
+    for (unsigned I = 1; I < 32; ++I)
+      if (Subtarget.isVFReserved(I))
+        Reserved.set(Mips::VFRegsRegClass.getRegister(I));
   }
 
   // The R5900 GPR128 registers are super-registers of the GPRs. Reserve them

@@ -430,6 +430,15 @@ void mips::getMIPSTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   AddTargetFeature(Args, Features, options::OPT_mmt, options::OPT_mno_mt, "mt");
   AddTargetFeature(Args, Features, options::OPT_mvu0, options::OPT_mno_vu0,
                    "vu0");
+  // -ffixed-vfN: VU0 registers that the compiler does not allocate, such as
+  // the inputs and results of a micro program between asm statements.
+  for (const Arg *A : Args.filtered(options::OPT_m_mips_Features_Group)) {
+    StringRef Name = A->getOption().getName();
+    if (Name.consume_front("ffixed-vf")) {
+      A->claim();
+      Features.push_back(Args.MakeArgString("+reserve-vf" + Name));
+    }
+  }
   AddTargetFeature(Args, Features, options::OPT_mcrc, options::OPT_mno_crc,
                    "crc");
   AddTargetFeature(Args, Features, options::OPT_mvirt, options::OPT_mno_virt,
