@@ -67,6 +67,41 @@ define float @select_fpclass_fadd_nnan_ninf(i1 %cond, float nofpclass(nan) %A, f
   ret float %D
 }
 
+; The flags of the fadd hold where %A is never NaN or infinity: there the
+; fadd of the identity is %A.
+define float @select_fpclass_fadd_keep_nnan_ninf(i1 %cond, float nofpclass(nan inf) %A, float %B) {
+; CHECK-LABEL: @select_fpclass_fadd_keep_nnan_ninf(
+; CHECK-NEXT:    [[C:%.*]] = select ninf i1 [[COND:%.*]], float [[B:%.*]], float -0.000000e+00
+; CHECK-NEXT:    [[D:%.*]] = fadd nnan ninf float [[A:%.*]], [[C]]
+; CHECK-NEXT:    ret float [[D]]
+;
+  %C = fadd nnan ninf float %A, %B
+  %D = select i1 %cond, float %C, float %A
+  ret float %D
+}
+
+define float @select_fpclass_fadd_keep_nnan(i1 %cond, float nofpclass(nan) %A, float %B) {
+; CHECK-LABEL: @select_fpclass_fadd_keep_nnan(
+; CHECK-NEXT:    [[C:%.*]] = select ninf i1 [[COND:%.*]], float [[B:%.*]], float -0.000000e+00
+; CHECK-NEXT:    [[D:%.*]] = fadd nnan float [[A:%.*]], [[C]]
+; CHECK-NEXT:    ret float [[D]]
+;
+  %C = fadd nnan ninf float %A, %B
+  %D = select i1 %cond, float %C, float %A
+  ret float %D
+}
+
+define float @select_fpclass_fmul_keep_nnan_ninf(i1 %cond, float nofpclass(nan inf) %A, float %B) {
+; CHECK-LABEL: @select_fpclass_fmul_keep_nnan_ninf(
+; CHECK-NEXT:    [[C:%.*]] = select ninf i1 [[COND:%.*]], float 1.000000e+00, float [[B:%.*]]
+; CHECK-NEXT:    [[D:%.*]] = fmul nnan ninf float [[A:%.*]], [[C]]
+; CHECK-NEXT:    ret float [[D]]
+;
+  %C = fmul nnan ninf float %A, %B
+  %D = select i1 %cond, float %A, float %C
+  ret float %D
+}
+
 define float @select_nnan_fadd(i1 %cond, float %A, float %B) {
 ; CHECK-LABEL: @select_nnan_fadd(
 ; CHECK-NEXT:    [[C:%.*]] = select nnan i1 [[COND:%.*]], float [[B:%.*]], float -0.000000e+00

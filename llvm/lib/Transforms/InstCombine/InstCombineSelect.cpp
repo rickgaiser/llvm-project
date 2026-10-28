@@ -636,10 +636,13 @@ Instruction *InstCombinerImpl::foldSelectIntoOp(SelectInst &SI, Value *TrueVal,
     // This makes the transformation incorrect since the original program would
     // have preserved the exact NaN bit-pattern.
     // Avoid the folding if the false value might be a NaN.
-    if (isa<FPMathOperator>(&SI) &&
-        !computeKnownFPClass(FalseVal, FMF, fcNan, SQ.getWithInstruction(&SI))
-             .isKnownNeverNaN())
-      return nullptr;
+    KnownFPClass FalseClass;
+    if (isa<FPMathOperator>(&SI)) {
+      FalseClass = computeKnownFPClass(FalseVal, FMF, fcNan | fcInf,
+                                       SQ.getWithInstruction(&SI));
+      if (!FalseClass.isKnownNeverNaN())
+        return nullptr;
+    }
 
     Value *NewSel = Builder.CreateSelect(SI.getCondition(), Swapped ? C : OOp,
                                          Swapped ? OOp : C, "", &SI);
@@ -667,9 +670,12 @@ Instruction *InstCombinerImpl::foldSelectIntoOp(SelectInst &SI, Value *TrueVal,
         BinaryOperator::Create(TVI->getOpcode(), FalseVal, NewSel);
     BO->copyIRFlags(TVI);
     if (isa<FPMathOperator>(&SI)) {
-      // Merge poison generating flags from the select.
-      BO->setHasNoNaNs(BO->hasNoNaNs() && FMF.noNaNs());
-      BO->setHasNoInfs(BO->hasNoInfs() && FMF.noInfs());
+      // Merge poison generating flags from the select. Where the select
+      // chooses FalseVal, BO is FalseVal op identity, which is NaN or infinity
+      // only if FalseVal is; elsewhere BO is TVI. So TVI's flags hold if
+      // FalseVal is known never NaN (checked above) or infinity.
+      BO->setHasNoInfs(BO->hasNoInfs() &&
+                       (FMF.noInfs() || FalseClass.isKnownNeverInfinity()));
       // Merge no-signed-zeros flag from the select.
       // Otherwise we may produce zeros with different sign.
       BO->setHasNoSignedZeros(BO->hasNoSignedZeros() && FMF.noSignedZeros());
