@@ -67,6 +67,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeGlobalISel(*PR);
   initializeMipsAsmPrinterPass(*PR);
   initializeMipsDelaySlotFillerPass(*PR);
+  initializeMipsOptimizeZeroExtPass(*PR);
   initializeMipsBranchExpansionPass(*PR);
   initializeMicroMipsSizeReducePass(*PR);
   initializeMipsPreLegalizerCombinerPass(*PR);
@@ -275,6 +276,8 @@ bool MipsPassConfig::addILPOpts() {
 
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createMipsOptimizeZeroExtPass());
 
   // R5900: keep the sums of products that loops carry in an accumulator,
   // before the FPU ACC chains, which then leave those loops alone.
