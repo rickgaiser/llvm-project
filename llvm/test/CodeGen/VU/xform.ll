@@ -34,30 +34,29 @@ define void @xform() {
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop
 ; CHECK-NEXT:    nop lq.xyzw vf7, -198(vi3)
+; CHECK-NEXT:    nop iaddi vi2, vi2, -5
 ; CHECK-NEXT:    nop lq.xyzw vf8, -197(vi3)
 ; CHECK-NEXT:    nop lq.xyzw vf9, -196(vi3)
-; CHECK-NEXT:    nop iaddi vi2, vi2, -5
-; CHECK-NEXT:    mulax.xyzw acc, vf3, vf7x nop
-; CHECK-NEXT:    madday.xyzw acc, vf4, vf7y nop
+; CHECK-NEXT:    mulax.xyzw acc, vf3, vf7x iaddi vi3, vi3, 5
+; CHECK-NEXT:    madday.xyzw acc, vf4, vf7y lq.xyzw vf11, -199(vi3)
 ; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf7z nop
 ; CHECK-NEXT:    maddw.xyzw vf7, vf6, vf0w nop
 ; CHECK-NEXT:    mulax.xyzw acc, vf3, vf8x nop
 ; CHECK-NEXT:    madday.xyzw acc, vf4, vf8y nop
 ; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf8z nop
-; CHECK-NEXT:    maddw.xyzw vf8, vf6, vf0w nop
-; CHECK-NEXT:    mulax.xyzw acc, vf3, vf9x div q, vf0w, vf7w
+; CHECK-NEXT:    maddw.xyzw vf8, vf6, vf0w div q, vf0w, vf7w
+; CHECK-NEXT:    mulax.xyzw acc, vf3, vf9x nop
 ; CHECK-NEXT:    madday.xyzw acc, vf4, vf9y nop
-; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf9z lq.xyzw vf9, -195(vi3)
-; CHECK-NEXT:    maddw.xyzw vf10, vf6, vf0w lq.xyzw vf11, -194(vi3)
-; CHECK-NEXT:    nop iaddi vi3, vi3, 5
+; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf9z lq.xyzw vf9, -200(vi3)
+; CHECK-NEXT:    maddw.xyzw vf10, vf6, vf0w nop
 ; CHECK-NEXT:    nop waitq
 ; CHECK-NEXT:    mulq.xyzw vf7, vf7, q div q, vf0w, vf8w
 ; CHECK-NEXT:    mula.xyzw acc, vf7, vf1 nop
 ; CHECK-NEXT:    maddw.xyzw vf7, vf2, vf0w nop
 ; CHECK-NEXT:    mulax.xyzw acc, vf3, vf9x nop
-; CHECK-NEXT:    madday.xyzw acc, vf4, vf9y nop
 ; CHECK-NEXT:    nop waitq
 ; CHECK-NEXT:    mulq.xyzw vf8, vf8, q div q, vf0w, vf10w
+; CHECK-NEXT:    madday.xyzw acc, vf4, vf9y nop
 ; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf9z nop
 ; CHECK-NEXT:    maddw.xyzw vf9, vf6, vf0w nop
 ; CHECK-NEXT:    ftoi0.xyzw vf7, vf7 nop
@@ -121,20 +120,18 @@ define void @xform() {
 ; CHECK-NEXT:    maddaz.xyzw acc, vf5, vf13z nop
 ; CHECK-NEXT:  .LBB0_3: ; %loop
 ; CHECK-NEXT:    maddw.xyzw vf11, vf6, vf0w sq.xyzw vf7, -5(vi3)
-; CHECK-NEXT:    mulq.xyzw vf9, vf9, q waitq
 ; CHECK-NEXT:    mula.xyzw acc, vf10, vf1 nop
 ; CHECK-NEXT:    maddw.xyzw vf10, vf2, vf0w nop
+; CHECK-NEXT:    mulq.xyzw vf9, vf9, q nop
 ; CHECK-NEXT:    ftoi0.xyzw vf8, vf8 div q, vf0w, vf11w
-; CHECK-NEXT:    mula.xyzw acc, vf9, vf1 nop
-; CHECK-NEXT:    maddw.xyzw vf9, vf2, vf0w nop
 ; CHECK-NEXT:    ftoi0.xyzw vf10, vf10 nop
-; CHECK-NEXT:    nop sq.xyzw vf8, -4(vi3)
+; CHECK-NEXT:    mula.xyzw acc, vf9, vf1 nop
+; CHECK-NEXT:    maddw.xyzw vf9, vf2, vf0w sq.xyzw vf8, -4(vi3)
+; CHECK-NEXT:    nop sq.xyzw vf10, -3(vi3)
+; CHECK-NEXT:    mulq.xyzw vf11, vf11, q waitq
 ; CHECK-NEXT:    ftoi0.xyzw vf9, vf9 nop
-; CHECK-NEXT:    nop waitq
-; CHECK-NEXT:    mulq.xyzw vf11, vf11, q sq.xyzw vf10, -3(vi3)
-; CHECK-NEXT:    nop sq.xyzw vf9, -2(vi3)
 ; CHECK-NEXT:    mula.xyzw acc, vf11, vf1 nop
-; CHECK-NEXT:    maddw.xyzw vf11, vf2, vf0w nop
+; CHECK-NEXT:    maddw.xyzw vf11, vf2, vf0w sq.xyzw vf9, -2(vi3)
 ; CHECK-NEXT:    ftoi0.xyzw vf11, vf11 nop
 ; CHECK-NEXT:    nop iblez vi2, .LBB0_5
 ; CHECK-NEXT:    nop sq.xyzw vf11, -1(vi3)
@@ -176,7 +173,6 @@ define void @xform() {
 ; CHECK-NEXT:    nop iaddiu vi1, vi1, 199
 ; CHECK-NEXT:    nop xgkick vi1
 ; CHECK-NEXT:    nop[e] nop
-; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 entry:
   %r0 = call <4 x float> @llvm.vu.lq(i16 0)

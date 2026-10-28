@@ -9,7 +9,7 @@
 ; so the longer lengths still get searched. (With the ACC sums in source
 ; order: the loop is one that is hard to prove.)
 
-; CHECK:      %bb.3: 51 cycles, at least 42 words
+; CHECK:      %bb.3: 52 cycles, at least 42 words
 ; CHECK:      %bb.3: 46 cycles, at least 42 words
 ; CHECK:        no schedule in 43 words
 ; CHECK-NEXT:   no schedule found in {{[0-9]+}} steps

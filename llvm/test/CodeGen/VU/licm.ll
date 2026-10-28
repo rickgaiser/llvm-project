@@ -20,8 +20,8 @@ define void @scale_loop() {
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_1: ; %loop
 ; CHECK-NEXT:    nop lq.xyzw vf2, 0(vi1)
-; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, 1(vi1)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, 2
+; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf1x lq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:  .LBB0_2: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    nop lq.xyzw vf30, 0(vi1)
@@ -54,6 +54,7 @@ define void @scale_loop() {
 ; CHECK-NEXT:    nop sq.xyzw vf2, -1(vi1)
 ; CHECK-NEXT:  .LBB0_5: ; %exit
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 entry:
   br label %loop

@@ -52,7 +52,8 @@ define void @rowfill() #0 {
 ; CHECK-NEXT:    ftoi0.xyzw vf2, vf1 ibne vi3, vi0, .LBB0_3
 ; CHECK-NEXT:    nop sq.xyzw vf5, 127(vi2)
 ; CHECK-NEXT:  .LBB0_4: ; in Loop: Header=BB0_1 Depth=1
-; CHECK-NEXT:    mulz.xyzw vf1, vf3, vf1z sq.xyzw vf2, 130(vi2)
+; CHECK-NEXT:    mulz.xyzw vf1, vf3, vf1z nop
+; CHECK-NEXT:    nop sq.xyzw vf2, 130(vi2)
 ; CHECK-NEXT:    nop sq.xyzw vf1, 129(vi2)
 ; CHECK-NEXT:  .LBB0_5: ; %vu.done
 ; CHECK-NEXT:    ; in Loop: Header=BB0_1 Depth=1
@@ -61,6 +62,7 @@ define void @rowfill() #0 {
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop b .LBB0_1
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %p = load <3 x float>, ptr addrspace(2) @pos
   %p4 = shufflevector <3 x float> %p, <3 x float> poison, <4 x i32> <i32 0, i32 1, i32 2, i32 poison>

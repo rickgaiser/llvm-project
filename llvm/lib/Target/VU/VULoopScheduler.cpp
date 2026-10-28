@@ -1,4 +1,4 @@
-//===-- VULoopScheduler.cpp - Schedule the words of single block loops ----===//
+//===-- VULoopScheduler.cpp - Schedule the words of loops and blocks ------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -29,10 +29,20 @@
 // values that live within one iteration renamed to registers that the loop
 // does not use.
 //
+// The other blocks, such as the prologue and the epilogue of a pipelined loop,
+// are scheduled the same way, without the modulo: into the fewest words that
+// do not stall, with the branch, if any, in word L-2. Their instructions wait
+// for the results of the blocks before them, and a result that is read after
+// the block is ready no later than before, so that no block after it waits
+// longer. A VI register is ready no later after the last word, too: a branch
+// that reads it in the next word does not wait for it. A block that tests a
+// MAC or status flag is left as it is: the flags are not registers.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/VUMCTargetDesc.h"
 #include "VU.h"
+#include "VUInstrInfo.h"
 #include "VUSubtarget.h"
 #include "VUWords.h"
 #include "llvm/ADT/DenseMap.h"
@@ -42,13 +52,19 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/MC/MCSchedule.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
+#include <climits>
 #include <functional>
 #include <optional>
 
 using namespace llvm;
 
 #define DEBUG_TYPE "vu-loop-scheduler"
+
+static cl::opt<bool>
+    EnableBlocks("vu-schedule-blocks", cl::Hidden, cl::init(true),
+                 cl::desc("Schedule the words of blocks that are not loops"));
 
 namespace {
 class VULoopScheduler : public MachineFunctionPass {
@@ -82,7 +98,15 @@ public:
       AltResources;
   SmallVector<unsigned, 32> AltOpc;
   SmallVector<Edge, 64> Edges;
-  unsigned Branch = 0;
+  static constexpr unsigned NoBranch = ~0u;
+  unsigned Branch = NoBranch;
+  /// A single block loop, or a block that runs once from its first word to
+  /// its last.
+  bool IsLoop = true;
+  /// Of a block that is not a loop, for the results of the blocks before it
+  /// and those read after it: the first cycle of each instruction, its last
+  /// cycle, and its last cycle in L words, L + LastFromEnd.
+  SmallVector<int, 32> FirstCycle, LastCycle, LastFromEnd;
   /// A memory instruction whose base the loop only changes by an increment.
   /// It can be on either side of the increment, with the offset adjusted.
   struct Rebase {
@@ -97,7 +121,9 @@ public:
       : TII(*STI.getInstrInfo()), TRI(*STI.getRegisterInfo()),
         SM(STI.getSchedModel()), STI(STI) {}
 
-  bool build(MachineBasicBlock &MBB);
+  bool build(MachineBasicBlock &MBB, bool Loop);
+  /// The fewest words for the dependences of a block that is not a loop.
+  int getMinLength() const;
   /// Sets the cycle of each instruction, and whether it takes its other form.
   bool schedule(int L, SmallVectorImpl<int> &Cycles,
                 SmallVectorImpl<bool> &UseAlt, unsigned &Steps) const;
@@ -211,9 +237,12 @@ int LoopGraph::getLatency(unsigned Def, Register Reg, unsigned Use,
       .value_or(1);
 }
 
-/// Collects the instructions of the loop \p MBB, a sequence of words that ends
-/// in the word of its branch and the delay slot, and their dependences.
-bool LoopGraph::build(MachineBasicBlock &MBB) {
+/// Collects the instructions of \p MBB, a loop if \p Loop, and their
+/// dependences. A loop is a sequence of words that ends in the word of its
+/// conditional branch and the delay slot; another block may end in a branch
+/// and its delay slot too.
+bool LoopGraph::build(MachineBasicBlock &MBB, bool Loop) {
+  IsLoop = Loop;
   // The words, in order. Both halves of a word read before they write.
   SmallVector<SmallVector<unsigned, 2>, 32> Words;
   bool Seen = false;
@@ -229,7 +258,7 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
           MI->hasUnmodeledSideEffects())
         return false;
       if (MI->isBranch()) {
-        if (Seen || !MI->isConditionalBranch())
+        if (Seen || (IsLoop && !MI->isConditionalBranch()))
           return false;
         Seen = true;
         Branch = Instrs.size();
@@ -239,7 +268,7 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
     }
     Words.push_back(Word);
   }
-  if (!Seen)
+  if (IsLoop && !Seen)
     return false;
 
   // The increments of registers that the loop changes nowhere else.
@@ -339,6 +368,8 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
   }
   // From the last definition in one iteration to the uses in the next.
   for (auto &[Reg, Uses] : UpwardUses) {
+    if (!IsLoop)
+      break;
     auto It = LastDef.find(Reg);
     if (It == LastDef.end())
       continue;
@@ -367,10 +398,13 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
     case VU::FSAND:
     case VU::FSEQ:
     case VU::FSOR:
+    case VU::FSSET:
       return true;
     }
     return false;
   });
+  if (TestsFlags && !IsLoop)
+    return false;
   for (MachineInstr *MI : Instrs) {
     if (!GetResources(MI->getOpcode(), Resources.emplace_back()))
       return false;
@@ -380,6 +414,9 @@ bool LoopGraph::build(MachineBasicBlock &MBB) {
     if (Alt && !GetResources(Alt, AR))
       return false;
   }
+  FirstCycle.assign(Instrs.size(), 0);
+  LastCycle.assign(Instrs.size(), INT_MAX);
+  LastFromEnd.assign(Instrs.size(), INT_MAX);
   return true;
 }
 
@@ -409,24 +446,58 @@ static bool propagate(ArrayRef<Edge> Edges, int L, std::vector<int> &Release,
   return false;
 }
 
-/// Schedules the instructions into \p L words with the branch in word L-2,
-/// by a search over the cycles of the instructions with the fewest choices
-/// first. Returns false if there is no such schedule, or if the search takes
-/// more than \p Steps steps, which are taken off.
+int LoopGraph::getMinLength() const {
+  std::vector<int> Release(FirstCycle.begin(), FirstCycle.end()),
+      Deadline(Instrs.size(), INT_MAX / 2);
+  propagate(Edges, 0, Release, Deadline);
+  int L = 1;
+  for (unsigned I = 0, E = Instrs.size(); I != E; ++I) {
+    L = std::max(L, Release[I] + 1);
+    if (LastFromEnd[I] != INT_MAX)
+      L = std::max(L, Release[I] - LastFromEnd[I]);
+  }
+  if (Branch != NoBranch)
+    L = std::max(L, Release[Branch] + 2);
+  return L;
+}
+
+/// Schedules the instructions into \p L words with the branch, if any, in word
+/// L-2, by a search over the cycles of the instructions with the fewest
+/// choices first. The cycles of a loop are modulo L. Returns false if there is
+/// no such schedule, or if the search takes more than \p Steps steps, which are
+/// taken off.
 bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
                          SmallVectorImpl<bool> &UseAlt, unsigned &Steps) const {
   unsigned N = Instrs.size();
   std::vector<int> Release(N, 0), Deadline(N, L - 1);
-  Release[Branch] = Deadline[Branch] = L - 2;
+  if (!IsLoop)
+    for (unsigned I = 0; I != N; ++I) {
+      Release[I] = FirstCycle[I];
+      Deadline[I] = std::min(Deadline[I], LastCycle[I]);
+      if (LastFromEnd[I] != INT_MAX)
+        Deadline[I] = std::min(Deadline[I], L + LastFromEnd[I]);
+      if (Release[I] > Deadline[I])
+        return false;
+    }
+  if (Branch != NoBranch)
+    Release[Branch] = Deadline[Branch] = L - 2;
   if (!propagate(Edges, L, Release, Deadline)) {
     LLVM_DEBUG(dbgs() << "  the dependences need more than " << L
                       << " words\n");
     return false;
   }
 
-  // The units in use in each cycle, modulo L.
+  // The units in use in each cycle, modulo L in a loop. After the last word
+  // of another block they are busy until they are done.
+  unsigned Span = L;
+  if (!IsLoop)
+    for (unsigned I = 0; I != N; ++I)
+      for (auto *R : {&Resources[I], &AltResources[I]})
+        for (auto [Idx, Busy] : *R)
+          Span = std::max<unsigned>(Span, L + Busy);
+  auto Slot = [&](int C) { return IsLoop ? C % L : C; };
   std::vector<std::vector<unsigned>> Use(SM.getNumProcResourceKinds(),
-                                         std::vector<unsigned>(L, 0));
+                                         std::vector<unsigned>(Span, 0));
   std::vector<bool> Alt(N, false);
   auto ResourcesOf = [&](unsigned I,
                          bool A) -> ArrayRef<std::pair<unsigned, unsigned>> {
@@ -435,7 +506,7 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
   auto FitsForm = [&](unsigned I, int C, bool A) {
     for (auto [Idx, Busy] : ResourcesOf(I, A))
       for (unsigned K = 0; K != Busy; ++K)
-        if (Use[Idx][(C + K) % L] >= SM.getProcResource(Idx)->NumUnits)
+        if (Use[Idx][Slot(C + K)] >= SM.getProcResource(Idx)->NumUnits)
           return false;
     return true;
   };
@@ -446,7 +517,7 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
   auto Reserve = [&](unsigned I, int C, int Delta) {
     for (auto [Idx, Busy] : ResourcesOf(I, Alt[I]))
       for (unsigned K = 0; K != Busy; ++K)
-        Use[Idx][(C + K) % L] += Delta;
+        Use[Idx][Slot(C + K)] += Delta;
   };
 
   std::vector<bool> Placed(N, false);
@@ -513,11 +584,15 @@ bool LoopGraph::schedule(int L, SmallVectorImpl<int> &Cycles,
     return false;
   };
 
-  if (!FitsForm(Branch, L - 2, false))
-    return false;
-  Placed[Branch] = true;
-  Reserve(Branch, L - 2, 1);
-  bool Found = Narrow() && Search(1);
+  unsigned NumPlaced = 0;
+  if (Branch != NoBranch) {
+    if (!FitsForm(Branch, L - 2, false))
+      return false;
+    Placed[Branch] = true;
+    Reserve(Branch, L - 2, 1);
+    NumPlaced = 1;
+  }
+  bool Found = Narrow() && Search(NumPlaced);
   Steps -= std::min(Steps, Taken);
   if (!Found) {
     LLVM_DEBUG(dbgs() << "  no schedule found in " << Taken << " steps\n");
@@ -645,6 +720,175 @@ renameLocalValues(MachineBasicBlock &MBB, const TargetRegisterInfo &TRI) {
   return Renames;
 }
 
+/// The last definition of each register and its cycle.
+using DefMap = DenseMap<Register, std::pair<MachineInstr *, int>>;
+
+/// Returns the words of \p MBB.
+static SmallVector<VU::Word, 32> getWords(MachineBasicBlock &MBB) {
+  SmallVector<VU::Word, 32> Words;
+  for (MachineInstr &W : MBB) {
+    if (W.isMetaInstruction())
+      continue;
+    VU::Word Word;
+    for (MachineInstr *MI : VU::getWordInstrs(W))
+      if (MI->getOpcode() != VU::DELAY_SLOT)
+        (VU::isLowerInstr(MI->getDesc()) ? Word.Lower : Word.Upper) = MI;
+    Words.push_back(Word);
+  }
+  return Words;
+}
+
+/// Returns the cycles of \p Words run once from cycle 0, stalls included.
+/// \p Defs holds the definitions before the words, at cycles below 0, and is
+/// updated with those of the words.
+static int getBlockCycles(ArrayRef<VU::Word> Words, DefMap &Defs,
+                          const TargetInstrInfo &TII,
+                          const InstrItineraryData *Itin,
+                          const TargetRegisterInfo &TRI) {
+  int Cycle = -1;
+  for (const VU::Word &W : Words) {
+    int Issue = Cycle + 1;
+    for (MachineInstr *MI : {W.Upper, W.Lower}) {
+      if (!MI)
+        continue;
+      for (const MachineOperand &MO : MI->all_uses()) {
+        auto It = Defs.find(MO.getReg());
+        if (It == Defs.end())
+          continue;
+        auto [Def, DefCycle] = It->second;
+        int DefIdx = Def->findRegisterDefOperandIdx(MO.getReg(), &TRI);
+        if (DefIdx < 0)
+          continue;
+        Issue = std::max<int>(
+            Issue, DefCycle + TII.getOperandLatency(Itin, *Def, DefIdx, *MI,
+                                                    MO.getOperandNo())
+                                  .value_or(1));
+      }
+    }
+    Cycle = Issue;
+    for (MachineInstr *MI : {W.Upper, W.Lower})
+      if (MI)
+        for (const MachineOperand &MO : MI->all_defs())
+          Defs[MO.getReg()] = {MI, Cycle};
+  }
+  return Cycle + 1;
+}
+
+/// The cycles after the instruction \p MI until its result \p Reg can be read
+/// by any instruction without a stall, also by a branch.
+static int getReadyLatency(const MachineInstr &MI, Register Reg,
+                           const TargetRegisterInfo &TRI) {
+  int DefIdx = MI.findRegisterDefOperandIdx(Reg, &TRI);
+  if (DefIdx < 0)
+    return 1;
+  int Latency = VUInstrInfo::getResultLatency(MI, DefIdx);
+  return VU::VIRegClass.contains(Reg) ? std::max(Latency, 2) : Latency;
+}
+
+/// Adds to \p Defs the definitions of the blocks before \p MBB that it may
+/// still wait for, at cycles before its start, which is \p Offset cycles
+/// after the end of those blocks. A register in \p Shadow is defined later.
+static void collectIncoming(MachineBasicBlock &MBB, int Offset, unsigned Depth,
+                            const DenseSet<Register> &Shadow, DefMap &Defs,
+                            const TargetInstrInfo &TII,
+                            const InstrItineraryData *Itin,
+                            const TargetRegisterInfo &TRI) {
+  // Longer than the latencies that matter: the FDIV and most EFU results.
+  constexpr int Horizon = 32;
+  for (MachineBasicBlock *Pred : MBB.predecessors()) {
+    DefMap PredDefs;
+    int Cycles = getBlockCycles(getWords(*Pred), PredDefs, TII, Itin, TRI);
+    DenseSet<Register> Later = Shadow;
+    for (auto &[Reg, D] : PredDefs) {
+      if (!Later.insert(Reg).second)
+        continue;
+      auto [MI, Cycle] = D;
+      int At = Cycle - Cycles - Offset;
+      int Ready = At + getReadyLatency(*MI, Reg, TRI);
+      if (Ready <= 0)
+        continue;
+      auto It = Defs.find(Reg);
+      if (It == Defs.end() ||
+          It->second.second + getReadyLatency(*It->second.first, Reg, TRI) <
+              Ready)
+        Defs[Reg] = {MI, At};
+    }
+    if (Depth < 3 && Offset + Cycles < Horizon)
+      collectIncoming(*Pred, Offset + Cycles, Depth + 1, Later, Defs, TII, Itin,
+                      TRI);
+  }
+}
+
+/// Removes the empty words of the layout \p Words of a block that is not a
+/// loop while it takes no more than \p Cycles: the VU waits for an operand as
+/// long as the empty words do. A branch does not wait for a VI register that
+/// the word before it sets, so it stays as far from the definitions of its
+/// operands, and from the start of the block if a block before it sets one.
+/// (A read of Q or a test of the clip flags gets its wait from VUHazards.)
+static void removeEmptyWords(SmallVectorImpl<VU::Word> &Words, int Cycles,
+                             const DefMap &Incoming, const TargetInstrInfo &TII,
+                             const InstrItineraryData *Itin,
+                             const TargetRegisterInfo &TRI) {
+  auto IsBranch = [](const VU::Word &W) {
+    return (W.Upper && W.Upper->isBranch()) || (W.Lower && W.Lower->isBranch());
+  };
+  unsigned MinBranchWord = 0;
+  for (unsigned B = 0, E = Words.size(); B != E; ++B)
+    if (IsBranch(Words[B]))
+      MinBranchWord = std::min(B, 2u);
+  auto BranchWaits = [&](ArrayRef<VU::Word> Ws) {
+    for (unsigned B = 0, E = Ws.size(); B != E; ++B) {
+      if (!IsBranch(Ws[B]))
+        continue;
+      for (MachineInstr *MI : {Ws[B].Upper, Ws[B].Lower}) {
+        if (!MI || !MI->isBranch())
+          continue;
+        for (const MachineOperand &MO : MI->all_uses()) {
+          if (!VU::VIRegClass.contains(MO.getReg()) || MO.getReg() == VU::VI0)
+            continue;
+          bool Found = false;
+          for (unsigned D = B; D-- > 0 && !Found;)
+            for (MachineInstr *Def : {Ws[D].Upper, Ws[D].Lower}) {
+              int Idx =
+                  Def ? Def->findRegisterDefOperandIdx(MO.getReg(), &TRI) : -1;
+              if (Idx < 0)
+                continue;
+              Found = true;
+              if ((int)(B - D) < (int)TII
+                                     .getOperandLatency(Itin, *Def, Idx, *MI,
+                                                        MO.getOperandNo())
+                                     .value_or(1))
+                return false;
+            }
+          if (!Found && B < MinBranchWord)
+            return false;
+        }
+      }
+    }
+    return true;
+  };
+  for (unsigned W = Words.size(); W-- > 0;) {
+    if (Words[W].Upper || Words[W].Lower || Words[W].DelaySlot)
+      continue;
+    SmallVector<VU::Word, 32> Fewer(Words.begin(), Words.end());
+    Fewer.erase(Fewer.begin() + W);
+    DefMap Defs = Incoming;
+    if (BranchWaits(Fewer) &&
+        getBlockCycles(Fewer, Defs, TII, Itin, TRI) <= Cycles)
+      Words.assign(Fewer.begin(), Fewer.end());
+  }
+}
+
+static bool isLiveOut(const MachineBasicBlock &MBB, MCRegister Reg,
+                      const TargetRegisterInfo &TRI) {
+  return any_of(MBB.successors(), [&](const MachineBasicBlock *Succ) {
+    return any_of(Succ->liveins(),
+                  [&](const MachineBasicBlock::RegisterMaskPair &P) {
+                    return TRI.regsOverlap(P.PhysReg, Reg);
+                  });
+  });
+}
+
 bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
   if (skipFunction(MF.getFunction()))
     return false;
@@ -655,19 +899,26 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
 
   for (MachineBasicBlock &MBB : MF) {
-    if (!MBB.isSuccessor(&MBB))
+    bool IsLoop = MBB.isSuccessor(&MBB);
+    if (!IsLoop && !EnableBlocks)
       continue;
-    SmallVector<VU::Word, 32> Current;
-    for (MachineInstr &W : MBB) {
-      if (W.isMetaInstruction())
+    SmallVector<VU::Word, 32> Current = getWords(MBB);
+    // Another block: the definitions before it that it may wait for, and
+    // those of its words as they are.
+    DefMap Incoming, CurrentDefs;
+    int CurrentCycles;
+    if (IsLoop) {
+      CurrentCycles = VU::getLoopCycles(Current, TII, Itin, TRI);
+    } else {
+      if (count_if(Current, [](const VU::Word &W) {
+            return (W.Upper && W.Upper->getOpcode() != VU::NOP) ||
+                   (W.Lower && W.Lower->getOpcode() != VU::NOP);
+          }) < 2)
         continue;
-      VU::Word Word;
-      for (MachineInstr *MI : VU::getWordInstrs(W))
-        if (MI->getOpcode() != VU::DELAY_SLOT)
-          (VU::isLowerInstr(MI->getDesc()) ? Word.Lower : Word.Upper) = MI;
-      Current.push_back(Word);
+      collectIncoming(MBB, 0, 0, {}, Incoming, TII, Itin, TRI);
+      CurrentDefs = Incoming;
+      CurrentCycles = getBlockCycles(Current, CurrentDefs, TII, Itin, TRI);
     }
-    int CurrentCycles = VU::getLoopCycles(Current, TII, Itin, TRI);
     LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << Current.size()
                       << " words take " << CurrentCycles << " cycles\n");
 
@@ -683,10 +934,43 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
     };
     auto FindLayout = [&](int MaxCycles) -> std::optional<Layout> {
       LoopGraph G(STI);
-      if (!G.build(MBB)) {
-        LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": not a simple loop\n");
+      if (!G.build(MBB, IsLoop)) {
+        LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": not a simple "
+                          << (IsLoop ? "loop" : "block") << "\n");
         return std::nullopt;
       }
+      if (!IsLoop)
+        for (unsigned I = 0, E = G.Instrs.size(); I != E; ++I) {
+          MachineInstr &MI = *G.Instrs[I];
+          for (const MachineOperand &MO : MI.all_uses()) {
+            auto It = Incoming.find(MO.getReg());
+            if (It == Incoming.end())
+              continue;
+            auto [Def, Cycle] = It->second;
+            int DefIdx = Def->findRegisterDefOperandIdx(MO.getReg(), &TRI);
+            if (DefIdx >= 0)
+              G.FirstCycle[I] = std::max<int>(
+                  G.FirstCycle[I],
+                  Cycle + TII.getOperandLatency(Itin, *Def, DefIdx, MI,
+                                                MO.getOperandNo())
+                              .value_or(1));
+          }
+          // A result read after the block is ready no later, a VI register
+          // no later after its end either.
+          for (const MachineOperand &MO : MI.all_defs()) {
+            auto It = CurrentDefs.find(MO.getReg());
+            if (It == CurrentDefs.end() || It->second.first != &MI ||
+                !isLiveOut(MBB, MO.getReg(), TRI))
+              continue;
+            int Cycle = It->second.second;
+            G.LastCycle[I] = std::min(G.LastCycle[I], Cycle);
+            if (!VU::VIRegClass.contains(MO.getReg()))
+              continue;
+            int Latency = getReadyLatency(MI, MO.getReg(), TRI);
+            int Late = std::max(0, Cycle + Latency - CurrentCycles);
+            G.LastFromEnd[I] = std::min(G.LastFromEnd[I], Late - Latency);
+          }
+        }
 
       // The resources of an iteration bound the number of words.
       const MCSchedModel &SM = STI.getSchedModel();
@@ -695,6 +979,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       std::vector<unsigned> Busy(SM.getNumProcResourceKinds(), 0);
       unsigned Movable = 0;
       SmallDenseSet<unsigned, 2> MovableRes;
+      // Outside a loop, a unit that stays busy can be busy after the block.
+      auto Count = [&](unsigned Cycles) { return IsLoop ? Cycles : 1u; };
       for (unsigned I = 0, E = G.Resources.size(); I != E; ++I) {
         if (G.AltOpc[I]) {
           ++Movable;
@@ -705,7 +991,7 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
           continue;
         }
         for (auto [Idx, Cycles] : G.Resources[I])
-          Busy[Idx] += Cycles;
+          Busy[Idx] += Count(Cycles);
       }
       int MinL = 2;
       unsigned PairBusy = Movable;
@@ -717,6 +1003,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       }
       if (Movable)
         MinL = std::max<int>(MinL, divideCeil(PairBusy, MovableRes.size()));
+      if (!IsLoop)
+        MinL = std::max(MinL, G.getMinLength());
 
       LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << MaxCycles
                         << " cycles, at least " << MinL << " words\n");
@@ -735,9 +1023,11 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
           LLVM_DEBUG(dbgs() << "  no schedule in " << L << " words\n");
           return std::nullopt;
         }
+        bool HasBranch = G.Branch != LoopGraph::NoBranch;
         Layout New{SmallVector<VU::Word, 32>(L), 0,
-                   G.Instrs[G.Branch]->getDebugLoc()};
-        New.Words[L - 1].DelaySlot = true;
+                   G.Instrs[HasBranch ? G.Branch : 0]->getDebugLoc()};
+        if (HasBranch)
+          New.Words[L - 1].DelaySlot = true;
         // The words are counted with the field moves in their new form,
         // which changes back until the layout is taken.
         for (unsigned I = 0, E = G.Instrs.size(); I != E; ++I) {
@@ -760,7 +1050,12 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
           New.Offsets.push_back(
               {&Offset, Offset.getImm() + (After ? -R.Step : R.Step)});
         }
-        New.Cycles = VU::getLoopCycles(New.Words, TII, Itin, TRI);
+        if (IsLoop) {
+          New.Cycles = VU::getLoopCycles(New.Words, TII, Itin, TRI);
+        } else {
+          DefMap Defs = Incoming;
+          New.Cycles = getBlockCycles(New.Words, Defs, TII, Itin, TRI);
+        }
         for (MachineInstr *MI : New.Switched)
           switchForm(*MI, TII);
         LLVM_DEBUG(dbgs() << printMBBReference(MBB) << ": " << MaxCycles
@@ -828,6 +1123,8 @@ bool VULoopScheduler::runOnMachineFunction(MachineFunction &MF) {
       MO->setImm(Offset);
     for (MachineInstr *MI : Best->Switched)
       switchForm(*MI, TII);
+    if (!IsLoop)
+      removeEmptyWords(Best->Words, Best->Cycles, Incoming, TII, Itin, TRI);
     VU::rebuildWords(MBB, Best->Words, TII, Best->DL);
     for (MachineInstr *MI : Old)
       MI->eraseFromParent();

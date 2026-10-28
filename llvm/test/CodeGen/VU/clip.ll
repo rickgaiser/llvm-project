@@ -41,30 +41,30 @@ define void @test_after_clip() {
 define void @strip() {
 ; CHECK-LABEL: strip:
 ; CHECK:       ; %bb.0: ; %entry
-; CHECK-NEXT:    nop iaddiu vi4, vi0, 0
+; CHECK-NEXT:    nop iaddiu vi3, vi0, 0
 ; CHECK-NEXT:    nop lq.xyzw vf1, 1(vi0)
-; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi4)
-; CHECK-NEXT:    nop ilw.x vi3, 0(vi0)
-; CHECK-NEXT:    nop iaddi vi2, vi4, 1
+; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi3)
+; CHECK-NEXT:    nop ilw.x vi2, 0(vi0)
+; CHECK-NEXT:    nop iaddi vi5, vi3, 1
 ; CHECK-NEXT:    clipw.xyz vf2, vf1w nop
-; CHECK-NEXT:    nop sq.xyzw vf2, 200(vi4)
+; CHECK-NEXT:    nop sq.xyzw vf2, 200(vi3)
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibeq vi3, vi2, .LBB1_2
+; CHECK-NEXT:    nop ibeq vi2, vi5, .LBB1_2
 ; CHECK-NEXT:    nop fcand vi1, 262143
 ; CHECK-NEXT:  .LBB1_1: ; %loop
 ; CHECK-NEXT:    ; =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi2)
-; CHECK-NEXT:    nop iaddi vi2, vi2, 1
-; CHECK-NEXT:    nop iaddiu vi1, vi1, 32767
-; CHECK-NEXT:    nop isw.w vi1, 198(vi2)
+; CHECK-NEXT:    nop lq.xyzw vf2, 2(vi5)
+; CHECK-NEXT:    nop iaddi vi5, vi5, 1
+; CHECK-NEXT:    nop iaddiu vi3, vi1, 32767
+; CHECK-NEXT:    nop isw.w vi3, 198(vi5)
 ; CHECK-NEXT:    clipw.xyz vf2, vf1w nop
-; CHECK-NEXT:    nop sq.xyzw vf2, 199(vi2)
+; CHECK-NEXT:    nop sq.xyzw vf2, 199(vi5)
 ; CHECK-NEXT:    nop nop
-; CHECK-NEXT:    nop ibne vi3, vi2, .LBB1_1
+; CHECK-NEXT:    nop ibne vi2, vi5, .LBB1_1
 ; CHECK-NEXT:    nop fcand vi1, 262143
 ; CHECK-NEXT:  .LBB1_2:
-; CHECK-NEXT:    nop iaddiu vi1, vi1, 32767
-; CHECK-NEXT:    nop isw.w vi1, 199(vi2)
+; CHECK-NEXT:    nop iaddiu vi2, vi1, 32767
+; CHECK-NEXT:    nop isw.w vi2, 199(vi5)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop

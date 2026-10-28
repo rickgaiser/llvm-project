@@ -15,6 +15,7 @@
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define GET_INSTRINFO_CTOR_DTOR
@@ -25,6 +26,10 @@ using namespace llvm;
 #define DEBUG_TYPE "vu-instr-info"
 
 #include "VUGenDFAPacketizer.inc"
+
+static cl::opt<bool> PrologKernelOrder(
+    "vu-prolog-kernel-order", cl::Hidden, cl::init(true),
+    cl::desc("Order the prolog and epilog of a pipelined loop as the kernel"));
 
 // Destination masks.
 static constexpr unsigned MaskX = 8, MaskW = 1, MaskXYZ = 14, MaskXYZW = 15;
@@ -496,6 +501,10 @@ public:
   // An unrolled kernel needs no copies, which take a lower slot each and
   // lengthen the recurrences that they are on.
   bool isMVEExpanderSupported() override { return UseMVE; }
+  // With the stages of a prolog or epilog block interleaved as in the kernel,
+  // their registers overlap as in the kernel, and the schedulers after
+  // register allocation can interleave them too.
+  bool shouldOrderPrologEpilogAsKernel() override { return PrologKernelOrder; }
   void createRemainingIterationsGreaterCondition(
       int TC, MachineBasicBlock &MBB, SmallVectorImpl<MachineOperand> &Cond,
       DenseMap<MachineInstr *, MachineInstr *> &LastStage0Insts) override;

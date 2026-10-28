@@ -39,22 +39,23 @@ define void @transform() {
 ; CHECK-NEXT:    nop iblez vi4, .LBB0_5
 ; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:  .LBB0_2: ; %loop
-; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w lq.xyzw vf5, 0(vi3)
-; CHECK-NEXT:    nop lq.xyzw vf6, 1(vi3)
+; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w lq.xyzw vf31, 0(vi3)
 ; CHECK-NEXT:    nop iaddi vi1, vi1, -3
-; CHECK-NEXT:    maddax.xyzw acc, vf1, vf5x nop
-; CHECK-NEXT:    madday.xyzw acc, vf2, vf5y sq.xyzw vf6, 241(vi3)
-; CHECK-NEXT:    maddz.xyzw vf7, vf3, vf5z lq.xyzw vf5, 2(vi3)
-; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w lq.xyzw vf6, 3(vi3)
-; CHECK-NEXT:    maddax.xyzw acc, vf1, vf5x div q, vf0w, vf7w
-; CHECK-NEXT:    madday.xyzw acc, vf2, vf5y sq.xyzw vf6, 243(vi3)
-; CHECK-NEXT:    maddz.xyzw vf5, vf3, vf5z lq.xyzw vf9, 4(vi3)
-; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w lq.xyzw vf8, 5(vi3)
-; CHECK-NEXT:    nop iaddi vi3, vi3, 6
-; CHECK-NEXT:    maddax.xyzw acc, vf1, vf9x nop
-; CHECK-NEXT:    madday.xyzw acc, vf2, vf9y nop
-; CHECK-NEXT:    mulq.xyzw vf6, vf7, q div q, vf0w, vf5w
-; CHECK-NEXT:    maddz.xyzw vf7, vf3, vf9z nop
+; CHECK-NEXT:    nop lq.xyzw vf28, 2(vi3)
+; CHECK-NEXT:    nop lq.xyzw vf26, 4(vi3)
+; CHECK-NEXT:    maddax.xyzw acc, vf1, vf31x lq.xyzw vf30, 1(vi3)
+; CHECK-NEXT:    madday.xyzw acc, vf2, vf31y lq.xyzw vf27, 3(vi3)
+; CHECK-NEXT:    maddz.xyzw vf29, vf3, vf31z lq.xyzw vf8, 5(vi3)
+; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w iaddi vi3, vi3, 6
+; CHECK-NEXT:    maddax.xyzw acc, vf1, vf28x sq.xyzw vf30, 235(vi3)
+; CHECK-NEXT:    madday.xyzw acc, vf2, vf28y sq.xyzw vf27, 237(vi3)
+; CHECK-NEXT:    maddz.xyzw vf5, vf3, vf28z div q, vf0w, vf29w
+; CHECK-NEXT:    mulaw.xyzw acc, vf4, vf0w nop
+; CHECK-NEXT:    maddax.xyzw acc, vf1, vf26x nop
+; CHECK-NEXT:    madday.xyzw acc, vf2, vf26y nop
+; CHECK-NEXT:    maddz.xyzw vf7, vf3, vf26z nop
+; CHECK-NEXT:    nop waitq
+; CHECK-NEXT:    mulq.xyzw vf6, vf29, q div q, vf0w, vf5w
 ; CHECK-NEXT:  ; %bb.7: ; %loop
 ; CHECK-NEXT:    nop waitq
 ; CHECK-NEXT:  .LBB0_3: ; %loop
@@ -136,7 +137,6 @@ define void @transform() {
 ; CHECK-NEXT:  .LBB0_6: ; %done
 ; CHECK-NEXT:    nop xgkick vi2
 ; CHECK-NEXT:    nop[e] nop
-; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
 entry:
   %top = call i16 @llvm.vu.xtop()

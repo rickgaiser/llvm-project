@@ -10,7 +10,7 @@
 ; kept and the kernel is not unrolled: one loop of 21 words.
 
 ; CHECK:      VU: II 21 needs 21 upper and 14 lower words with 3 copies
-; CHECK-NEXT: %bb.7: 21 words take 21 cycles
+; CHECK:      %bb.7: 21 words take 21 cycles
 ; CHECK-NEXT: %bb.7: 21 cycles, at least 21 words
 
 target datalayout = "e-m:e-p:16:16-i32:32-i64:64-f32:32-v128:128-n16"
