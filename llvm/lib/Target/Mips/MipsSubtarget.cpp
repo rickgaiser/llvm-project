@@ -62,6 +62,22 @@ static bool isLargeDispatch(const Function &F) {
   return false;
 }
 
+// Compact kernels with several basic blocks around an annotated loop can
+// benefit from ILP-aware ordering without the larger live ranges typical of
+// computed-goto interpreters. Keep the default for other small functions.
+static bool isCompactLoopKernel(const Function &F) {
+  if (F.size() < 24 || F.size() > 32)
+    return false;
+  unsigned LoopLatches = 0;
+  unsigned NumInstructions = 0;
+  for (const BasicBlock &BB : F) {
+    NumInstructions += BB.size();
+    LoopLatches +=
+        BB.getTerminator()->getMetadata(LLVMContext::MD_loop) != nullptr;
+  }
+  return LoopLatches == 1 && NumInstructions >= 160;
+}
+
 // Very large computed-goto dispatch functions are unusually register-pressure
 // sensitive on the R5900. Prefer the bottom-up register-pressure scheduler for
 // these functions; preserve the existing source-order scheduler for smaller
@@ -74,6 +90,11 @@ createR5900DispatchDAGScheduler(SelectionDAGISel *IS,
     LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: register pressure for "
                       << F.getName() << '\n');
     return createBURRListDAGScheduler(IS, OptLevel);
+  }
+  if (isCompactLoopKernel(F)) {
+    LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: ILP for "
+                      << F.getName() << '\n');
+    return createILPListDAGScheduler(IS, OptLevel);
   }
   LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: source for " << F.getName()
                     << '\n');
