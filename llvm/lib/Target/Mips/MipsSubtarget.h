@@ -248,6 +248,8 @@ public:
   /// This overrides the PostRAScheduler bit in the SchedModel for each CPU.
   bool enablePostRAScheduler() const override;
   bool enableMachineScheduler() const override;
+  RegisterScheduler::FunctionPassCtor
+  getDAGScheduler(CodeGenOptLevel OptLevel) const override;
   bool enablePostRAMachineScheduler() const override;
   bool useAA() const override;
   // Software pipelining of R5900 VU0, FPU and MMI loops (MipsInstrInfo::
