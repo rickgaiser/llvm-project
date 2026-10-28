@@ -2927,7 +2927,12 @@ SDValue SelectionDAGLegalize::ExpandLegalINT_TO_FP(SDNode *Node,
       Chain = Slow.getValue(1);
     } else {
       SDValue SignCvt = DAG.getNode(ISD::SINT_TO_FP, dl, DestVT, Or);
-      Slow = DAG.getNode(ISD::FADD, dl, DestVT, SignCvt, SignCvt);
+      // SignCvt is a non-negative integer below 2^63, so the doubling is
+      // never NaN or infinity.
+      SDNodeFlags Flags;
+      Flags.setNoNaNs(true);
+      Flags.setNoInfs(true);
+      Slow = DAG.getNode(ISD::FADD, dl, DestVT, SignCvt, SignCvt, Flags);
       Fast = DAG.getNode(ISD::SINT_TO_FP, dl, DestVT, Op0);
     }
 

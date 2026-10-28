@@ -376,7 +376,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::FP_TO_SINT, MVT::i64, Expand);
     setOperationAction(ISD::FP_TO_UINT, MVT::i64, Expand);
     setOperationAction(ISD::SINT_TO_FP, MVT::i64, Expand);
-    setOperationAction(ISD::UINT_TO_FP, MVT::i64, Expand);
+    // One __floatundisf, not two signed conversions and a select.
+    setOperationAction(ISD::UINT_TO_FP, MVT::i64, LibCall);
   }
 
   setOperationAction(ISD::SMUL_LOHI,          MVT::i32, Custom);
