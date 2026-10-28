@@ -246,6 +246,24 @@ bool MipsSubtarget::enablePostRAScheduler() const { return !isR5900(); }
 /// scheduling model both before and after register allocation.
 bool MipsSubtarget::enableMachineScheduler() const { return isR5900(); }
 
+bool MipsSubtarget::enableJoinGlobalCopies(const MachineFunction &MF) const {
+  // Medium-sized computed-goto interpreters have many long-lived scalar
+  // values. Cross-block coalescing extends their live ranges and creates
+  // expensive register-pressure interactions with the R5900's machine
+  // scheduler. Preserve local coalescing and the scheduler itself.
+  const Function &F = MF.getFunction();
+  if (isR5900() && F.size() >= 64 && F.size() < 512) {
+    for (const BasicBlock &BB : F) {
+      if (isa<IndirectBrInst>(BB.getTerminator())) {
+        LLVM_DEBUG(dbgs() << "R5900 coalescing: skip global copies for "
+                          << F.getName() << '\n');
+        return false;
+      }
+    }
+  }
+  return TargetSubtargetInfo::enableJoinGlobalCopies();
+}
+
 bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
 
 /// Use alias analysis during code generation (DAGCombine and scheduling) on

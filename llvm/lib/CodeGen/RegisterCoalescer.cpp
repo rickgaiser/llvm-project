@@ -4398,7 +4398,7 @@ bool RegisterCoalescer::run(MachineFunction &fn) {
   TRI = STI.getRegisterInfo();
   TII = STI.getInstrInfo();
   if (EnableGlobalCopies == cl::boolOrDefault::BOU_UNSET)
-    JoinGlobalCopies = STI.enableJoinGlobalCopies();
+    JoinGlobalCopies = STI.enableJoinGlobalCopies(fn);
   else
     JoinGlobalCopies = (EnableGlobalCopies == cl::boolOrDefault::BOU_TRUE);
 

@@ -224,6 +224,7 @@ public:
   /// TargetLowering preference). It does not yet disable the postRA scheduler.
   virtual bool enableMachineScheduler() const;
 
+
   /// True if the machine scheduler should disable the TLI preference
   /// for preRA scheduling with the source level scheduler.
   virtual bool enableMachineSchedDefaultSched() const { return true; }
@@ -239,6 +240,11 @@ public:
   /// By default this is enabled if the machine scheduler is enabled, but
   /// can be overridden.
   virtual bool enableJoinGlobalCopies() const;
+  /// Per-function policy for cross-basic-block coalescing.
+  /// Targets without a function-specific policy retain the subtarget default.
+  virtual bool enableJoinGlobalCopies(const MachineFunction &MF) const {
+    return enableJoinGlobalCopies();
+  }
 
   /// Hack to bring up option. This should be unconditionally true, all targets
   /// should enable it and delete this.
