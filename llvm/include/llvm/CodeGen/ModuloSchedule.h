@@ -227,6 +227,7 @@ private:
                          MachineBasicBlock *BB);
   void rewritePhiValues(MachineBasicBlock *NewBB, unsigned StageNum,
                         ValueMapTy *VRMap, InstrMapTy &InstrMap);
+  void orderAsKernel(MachineBasicBlock *BB, InstrMapTy &InstrMap);
   void rewriteScheduledInstr(MachineBasicBlock *BB, InstrMapTy &InstrMap,
                              unsigned CurStageNum, unsigned PhiNum,
                              MachineInstr *Phi, Register OldReg,

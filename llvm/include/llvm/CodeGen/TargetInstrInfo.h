@@ -928,6 +928,11 @@ public:
     /// Return true if the target can expand pipelined schedule with modulo
     /// variable expansion.
     virtual bool isMVEExpanderSupported() { return false; }
+
+    /// Return true if the instructions of the prolog and epilog blocks are to
+    /// be ordered as in the kernel, with the stages interleaved, instead of
+    /// one stage after the other.
+    virtual bool shouldOrderPrologEpilogAsKernel() { return false; }
   };
 
   /// Analyze loop L, which must be a single-basic-block loop, and if the

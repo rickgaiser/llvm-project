@@ -195,6 +195,80 @@ void ModuloScheduleExpander::cleanup() {
 }
 
 /// Generate the pipeline prolog code.
+/// Orders the instructions of the prolog or epilog block \p BB as their
+/// originals in the kernel, if the target asks for it. Instructions of
+/// different stages in one such block belong to different iterations, which
+/// the schedule orders as in the kernel. The order is kept if a use comes
+/// before its definition, or reads another definition of a physical register.
+void ModuloScheduleExpander::orderAsKernel(MachineBasicBlock *BB,
+                                           InstrMapTy &InstrMap) {
+  if (!LoopInfo->shouldOrderPrologEpilogAsKernel())
+    return;
+  DenseMap<MachineInstr *, unsigned> Position;
+  for (MachineInstr *MI : Schedule.getInstructions())
+    Position.try_emplace(MI, Position.size());
+  // An instruction without an original stays after the one before it.
+  SmallVector<MachineInstr *, 32> Order;
+  SmallVector<unsigned, 32> Keys;
+  unsigned Key = 0;
+  for (MachineInstr &MI : *BB) {
+    if (MI.isPHI() || MI.isTerminator())
+      continue;
+    auto It = InstrMap.find(&MI);
+    if (It != InstrMap.end()) {
+      auto P = Position.find(It->second);
+      if (P != Position.end())
+        Key = P->second;
+    }
+    Order.push_back(&MI);
+    Keys.push_back(Key);
+  }
+  SmallVector<unsigned, 32> Index(Order.size());
+  for (unsigned I = 0, E = Order.size(); I != E; ++I)
+    Index[I] = I;
+  llvm::stable_sort(Index,
+                    [&](unsigned A, unsigned B) { return Keys[A] < Keys[B]; });
+
+  // The definition in the block that each use of a physical register reads.
+  auto ReachingDefs = [&](auto Instrs) {
+    DenseMap<MCRegister, MachineInstr *> Last;
+    DenseMap<std::pair<MachineInstr *, unsigned>, MachineInstr *> Reads;
+    for (MachineInstr *MI : Instrs) {
+      for (const MachineOperand &MO : MI->all_uses())
+        if (MO.getReg().isPhysical() && !MRI.isReserved(MO.getReg()))
+          Reads[{MI, MO.getOperandNo()}] = Last.lookup(MO.getReg());
+      for (const MachineOperand &MO : MI->all_defs())
+        if (MO.getReg().isPhysical())
+          Last[MO.getReg()] = MI;
+    }
+    return Reads;
+  };
+  SmallVector<MachineInstr *, 32> Sorted;
+  for (unsigned I : Index)
+    Sorted.push_back(Order[I]);
+  SmallPtrSet<MachineInstr *, 32> Seen;
+  for (MachineInstr *MI : Sorted) {
+    for (const MachineOperand &MO : MI->all_uses()) {
+      if (!MO.getReg().isVirtual())
+        continue;
+      MachineInstr *Def = MRI.getVRegDef(MO.getReg());
+      if (Def && Def->getParent() == BB && !Def->isPHI() && !Seen.count(Def))
+        return;
+    }
+    Seen.insert(MI);
+  }
+  if (ReachingDefs(Order) != ReachingDefs(Sorted))
+    return;
+
+  MachineBasicBlock::iterator InsertPt = BB->getFirstTerminator();
+  for (MachineInstr *MI : Sorted) {
+    LIS.RemoveMachineInstrFromMaps(*MI);
+    BB->splice(InsertPt, BB, MI);
+  }
+  for (MachineInstr *MI : Sorted)
+    LIS.InsertMachineInstrInMaps(*MI);
+}
+
 void ModuloScheduleExpander::generateProlog(unsigned LastStage,
                                             MachineBasicBlock *KernelBB,
                                             ValueMapTy *VRMap,
@@ -235,6 +309,7 @@ void ModuloScheduleExpander::generateProlog(unsigned LastStage,
       }
     }
     rewritePhiValues(NewBB, i, VRMap, InstrMap);
+    orderAsKernel(NewBB, InstrMap);
     LLVM_DEBUG({
       dbgs() << "prolog:\n";
       NewBB->dump();
@@ -316,6 +391,7 @@ void ModuloScheduleExpander::generateEpilog(
                          VRMapPhi, InstrMap, LastStage, EpilogStage, i == 1);
     generatePhis(NewBB, PrologBBs[i - 1], PredBB, KernelBB, VRMap, VRMapPhi,
                  InstrMap, LastStage, EpilogStage, i == 1);
+    orderAsKernel(NewBB, InstrMap);
     PredBB = NewBB;
 
     LLVM_DEBUG({
