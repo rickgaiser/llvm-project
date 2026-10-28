@@ -4418,7 +4418,9 @@ bool RegisterCoalescer::run(MachineFunction &fn) {
   // The MachineScheduler does not currently require JoinSplitEdges. This will
   // either be enabled unconditionally or replaced by a more general live range
   // splitting optimization.
-  JoinSplitEdges = EnableJoinSplits;
+  JoinSplitEdges = EnableJoinSplits.getNumOccurrences()
+                       ? static_cast<bool>(EnableJoinSplits)
+                       : STI.enableJoinSplitEdges(fn);
 
   if (VerifyCoalescing)
     MF->verify(LIS, SI, "Before register coalescing", &errs());

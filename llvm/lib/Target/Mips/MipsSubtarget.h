@@ -249,6 +249,7 @@ public:
   bool enablePostRAScheduler() const override;
   bool enableMachineScheduler() const override;
   bool enableJoinGlobalCopies(const MachineFunction &MF) const override;
+  bool enableJoinSplitEdges(const MachineFunction &MF) const override;
   RegisterScheduler::FunctionPassCtor
   getDAGScheduler(CodeGenOptLevel OptLevel) const override;
   bool enablePostRAMachineScheduler() const override;

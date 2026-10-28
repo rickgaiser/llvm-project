@@ -246,6 +246,12 @@ public:
     return enableJoinGlobalCopies();
   }
 
+  /// Whether to prioritize copies on split critical edges when coalescing.
+  /// The default remains disabled unless explicitly requested by the target.
+  virtual bool enableJoinSplitEdges(const MachineFunction &MF) const {
+    return false;
+  }
+
   /// Hack to bring up option. This should be unconditionally true, all targets
   /// should enable it and delete this.
   virtual bool enableTerminalRule() const { return false; }

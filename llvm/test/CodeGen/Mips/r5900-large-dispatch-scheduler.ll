@@ -6,7 +6,9 @@
 ; existing source-order scheduler. Other MIPS CPUs are unaffected.
 ; R5900-DAG: R5900 DAG scheduler: source for small_dispatch
 ; R5900-DAG: R5900 DAG scheduler: register pressure for large_dispatch
+; R5900-DAG: R5900 coalescing: prioritize split edges for large_dispatch
 ; MIPS3-NOT: R5900 DAG scheduler:
+; MIPS3-NOT: R5900 coalescing: prioritize split edges
 define i32 @small_dispatch(ptr %target) {
 entry:
   indirectbr ptr %target, [label %a, label %b]

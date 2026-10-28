@@ -51,6 +51,17 @@ bool MipsSubtarget::GINVWarningPrinted = false;
 
 void MipsSubtarget::anchor() {}
 
+// The size of computed-goto dispatches influences register pressure and copy
+// coalescing on the R5900. Share the detection across both policies.
+static bool isLargeDispatch(const Function &F) {
+  if (F.size() < 512)
+    return false;
+  for (const BasicBlock &BB : F)
+    if (isa<IndirectBrInst>(BB.getTerminator()))
+      return true;
+  return false;
+}
+
 // Very large computed-goto dispatch functions are unusually register-pressure
 // sensitive on the R5900. Prefer the bottom-up register-pressure scheduler for
 // these functions; preserve the existing source-order scheduler for smaller
@@ -59,14 +70,10 @@ static ScheduleDAGSDNodes *
 createR5900DispatchDAGScheduler(SelectionDAGISel *IS,
                                 CodeGenOptLevel OptLevel) {
   const Function &F = IS->MF->getFunction();
-  if (F.size() >= 512) {
-    for (const BasicBlock &BB : F) {
-      if (isa<IndirectBrInst>(BB.getTerminator())) {
-        LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: register pressure for "
-                          << F.getName() << '\n');
-        return createBURRListDAGScheduler(IS, OptLevel);
-      }
-    }
+  if (isLargeDispatch(F)) {
+    LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: register pressure for "
+                      << F.getName() << '\n');
+    return createBURRListDAGScheduler(IS, OptLevel);
   }
   LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: source for " << F.getName()
                     << '\n');
@@ -262,6 +269,19 @@ bool MipsSubtarget::enableJoinGlobalCopies(const MachineFunction &MF) const {
     }
   }
   return TargetSubtargetInfo::enableJoinGlobalCopies();
+}
+
+bool MipsSubtarget::enableJoinSplitEdges(const MachineFunction &MF) const {
+  // Revisit critical-edge split copies first in very large computed-goto
+  // functions. This reduces live-range interference and spills in the R5900
+  // register allocator without changing the policy for smaller functions.
+  const Function &F = MF.getFunction();
+  if (isR5900() && isLargeDispatch(F)) {
+    LLVM_DEBUG(dbgs() << "R5900 coalescing: prioritize split edges for "
+                      << F.getName() << '\n');
+    return true;
+  }
+  return false;
 }
 
 bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }
