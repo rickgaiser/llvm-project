@@ -93,6 +93,8 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::BRCOND, MVT::Other, Custom);
   for (MVT VT : {MVT::i16, MVT::v4i32})
     setOperationAction(ISD::UINT_TO_FP, VT, Custom);
+  // A comparison of integers that is not a branch: of their floats.
+  setOperationAction(ISD::SETCC, MVT::i16, Custom);
 
   // 16-bit integers.
   for (unsigned Op :
@@ -113,12 +115,12 @@ VUTargetLowering::VUTargetLowering(const TargetMachine &TM,
   for (unsigned Op : {ISD::INTRINSIC_VOID, ISD::INTRINSIC_W_CHAIN})
     setOperationAction(Op, MVT::Other, Custom);
 
-  setTargetDAGCombine({ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM,
-                       ISD::FMINNUM, ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT,
-                       ISD::EXTRACT_VECTOR_ELT, ISD::SINT_TO_FP,
-                       ISD::UINT_TO_FP, ISD::SELECT, ISD::VSELECT,
-                       ISD::BUILD_VECTOR, ISD::FDIV, ISD::INTRINSIC_W_CHAIN,
-                       ISD::VECTOR_SHUFFLE, ISD::EXTRACT_SUBVECTOR});
+  setTargetDAGCombine(
+      {ISD::FADD, ISD::FSUB, ISD::FMUL, ISD::FMAXNUM, ISD::FMINNUM,
+       ISD::FP_TO_SINT, ISD::INSERT_VECTOR_ELT, ISD::EXTRACT_VECTOR_ELT,
+       ISD::SINT_TO_FP, ISD::UINT_TO_FP, ISD::SELECT, ISD::VSELECT,
+       ISD::BUILD_VECTOR, ISD::FDIV, ISD::INTRINSIC_W_CHAIN,
+       ISD::VECTOR_SHUFFLE, ISD::EXTRACT_SUBVECTOR, ISD::TRUNCATE});
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::ConstantPool, ISD::JumpTable, ISD::BlockAddress})
@@ -565,10 +567,22 @@ VUTargetLowering::getMask(SDValue C, SelectionDAG &DAG) const {
 }
 
 SDValue VUTargetLowering::lowerSETCC(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  if (Op.getOperand(0).getValueType() == MVT::i16) {
+    // The branches compare VI registers (IBEQ, IBGTZ, ...).
+    if (all_of(Op->users(),
+               [](SDNode *U) { return U->getOpcode() == ISD::BRCOND; }))
+      return Op;
+    // Any 16-bit integer is exact as a float.
+    ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
+    unsigned Conv = isUnsignedIntSetCC(CC) ? ISD::UINT_TO_FP : ISD::SINT_TO_FP;
+    Op = DAG.getSetCC(DL, Op.getValueType(),
+                      DAG.getNode(Conv, DL, MVT::f32, Op.getOperand(0)),
+                      DAG.getNode(Conv, DL, MVT::f32, Op.getOperand(1)), CC);
+  }
   auto [M, Field] = getMask(Op, DAG);
   if (!M)
     return lowerUnsupported(Op, DAG, "VU: comparison");
-  SDLoc DL(Op);
   return DAG.getNode(VUISD::MASK_INT, DL, Op.getValueType(), M,
                      DAG.getTargetConstant(Field, DL, MVT::i32));
 }
@@ -1924,6 +1938,21 @@ SDValue VUTargetLowering::PerformDAGCombine(SDNode *N,
       break;
     return DAG.getNode(
         VUISD::INSERT_VI, DL, MVT::v4i32, N->getOperand(0), Elt.getOperand(0),
+        DAG.getTargetConstant(Idx->getZExtValue(), DL, MVT::i32));
+  }
+  case ISD::TRUNCATE: {
+    // The low 16 bits of a field of an integer vector: MTIR. This is done
+    // before the i32 element is legalized.
+    SDValue E = N->getOperand(0);
+    if (N->getValueType(0) != MVT::i16 ||
+        E.getOpcode() != ISD::EXTRACT_VECTOR_ELT ||
+        E.getOperand(0).getValueType() != MVT::v4i32)
+      break;
+    auto *Idx = dyn_cast<ConstantSDNode>(E.getOperand(1));
+    if (!Idx || Idx->getZExtValue() > 3)
+      break;
+    return DAG.getNode(
+        VUISD::EXTRACT_VI, DL, MVT::i16, E.getOperand(0),
         DAG.getTargetConstant(Idx->getZExtValue(), DL, MVT::i32));
   }
   case ISD::EXTRACT_VECTOR_ELT: {

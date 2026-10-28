@@ -26,6 +26,17 @@
 // tied register is then copied in every iteration, in front of the ADD, which
 // costs more than the MOVE (the model demo's mlit: 4 % slower).
 //
+// A merge of fields of a loaded vector loads them again, into the register
+// (LQ writes only the fields of its mask too):
+//   loop: %p = LQ.xyzw 0(%b); ...; %d = MERGE_FIELDS %t, %p, w
+//   ->
+//   loop: %p = LQ.xyzw 0(%b); ...; %d = LQ.w 0(%b), implicit %t (tied)
+// The same lower slot as the MOVE, and %p is not kept to the end of the
+// iteration for it, which the pipeliner would pay with copies (the strip
+// restart flag from the position's w in the model demo's mscei: II 20 with
+// two copies, 24 cycles a vertex). Only when nothing between the two may
+// store to the vector.
+//
 // This runs on SSA form, after MachineLICM (which takes the outside value out
 // of the loop) and before the pipeliner, on single block loops.
 //
@@ -35,10 +46,12 @@
 #include "VU.h"
 #include "VUSubtarget.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
+#include "llvm/InitializePasses.h"
 #include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
@@ -46,10 +59,14 @@ using namespace llvm;
 #define DEBUG_TYPE "vu-invariant-fields"
 
 STATISTIC(NumFolded, "Number of merges with fields set before the loop");
+STATISTIC(NumLoaded, "Number of merges of loaded fields loaded again");
 
 static cl::opt<bool> Enable("vu-enable-invariant-fields", cl::Hidden,
                             cl::init(true),
                             cl::desc("Fields set once before a loop"));
+static cl::opt<bool> EnableLoad("vu-enable-load-merged-fields", cl::Hidden,
+                                cl::init(true),
+                                cl::desc("Load merged fields again"));
 
 namespace {
 class VUInvariantFields : public MachineFunctionPass {
@@ -60,17 +77,28 @@ public:
   StringRef getPassName() const override { return "VU Invariant Fields"; }
   bool runOnMachineFunction(MachineFunction &MF) override;
 
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.setPreservesCFG();
+    AU.addRequired<AAResultsWrapperPass>();
+    MachineFunctionPass::getAnalysisUsage(AU);
+  }
+
 private:
   MachineRegisterInfo *MRI = nullptr;
   const TargetInstrInfo *TII = nullptr;
+  AAResults *AA = nullptr;
   bool fold(MachineInstr &Merge);
+  bool foldLoad(MachineInstr &Merge);
 };
 } // namespace
 
 char VUInvariantFields::ID = 0;
 
-INITIALIZE_PASS(VUInvariantFields, DEBUG_TYPE, "VU Invariant Fields", false,
-                false)
+INITIALIZE_PASS_BEGIN(VUInvariantFields, DEBUG_TYPE, "VU Invariant Fields",
+                      false, false)
+INITIALIZE_PASS_DEPENDENCY(AAResultsWrapperPass)
+INITIALIZE_PASS_END(VUInvariantFields, DEBUG_TYPE, "VU Invariant Fields", false,
+                    false)
 
 FunctionPass *llvm::createVUInvariantFieldsPass() {
   return new VUInvariantFields();
@@ -148,18 +176,49 @@ bool VUInvariantFields::fold(MachineInstr &Merge) {
   return true;
 }
 
+bool VUInvariantFields::foldLoad(MachineInstr &Merge) {
+  MachineBasicBlock &MBB = *Merge.getParent();
+  Register S = Merge.getOperand(2).getReg();
+  MachineInstr *Load = S.isVirtual() ? MRI->getVRegDef(S) : nullptr;
+  if (!Load || Load->getOpcode() != VU::LQ || Load->getParent() != &MBB ||
+      Load->getOperand(1).getImm() != 15 || !Load->hasOneMemOperand() ||
+      Load->hasOrderedMemoryRef())
+    return false;
+  for (auto I = std::next(Load->getIterator()); &*I != &Merge; ++I)
+    if (I->isCall() || I->hasUnmodeledSideEffects() ||
+        (I->mayStore() && I->mayAlias(AA, *Load, /*UseTBAA=*/true)))
+      return false;
+
+  LLVM_DEBUG(dbgs() << "Fields loaded again: " << Merge);
+  Register D = Merge.getOperand(0).getReg();
+  MachineInstr *New =
+      BuildMI(MBB, Merge, Merge.getDebugLoc(), TII->get(VU::LQ), D)
+          .addImm(Merge.getOperand(3).getImm())
+          .add(Load->getOperand(2))
+          .add(Load->getOperand(3))
+          .addReg(Merge.getOperand(1).getReg(), RegState::Implicit)
+          .cloneMemRefs(*Load);
+  New->tieOperands(0, New->getNumOperands() - 1);
+  Merge.eraseFromParent();
+  if (MRI->use_nodbg_empty(S))
+    Load->eraseFromParent();
+  ++NumLoaded;
+  return true;
+}
+
 bool VUInvariantFields::runOnMachineFunction(MachineFunction &MF) {
   if (!Enable || skipFunction(MF.getFunction()))
     return false;
   MRI = &MF.getRegInfo();
   TII = MF.getSubtarget().getInstrInfo();
+  AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
   bool Changed = false;
   for (MachineBasicBlock &MBB : MF) {
     if (!MBB.isSuccessor(&MBB))
       continue;
     for (MachineInstr &MI : make_early_inc_range(MBB))
       if (MI.getOpcode() == VU::MERGE_FIELDS)
-        Changed |= fold(MI);
+        Changed |= fold(MI) || (EnableLoad && foldLoad(MI));
   }
   return Changed;
 }

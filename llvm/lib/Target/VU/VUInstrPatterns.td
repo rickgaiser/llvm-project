@@ -60,6 +60,11 @@ def VUinsertvi : SDNode<"VUISD::INSERT_VI", SDTypeProfile<1, 3, [
                         SDTCisVT<0, v4i32>, SDTCisVT<1, v4i32>,
                         SDTCisVT<2, i16>, SDTCisVT<3, i32>]>>;
 
+// The low 16 bits of field $f of an integer vector, as a VI register.
+def VUextractvi : SDNode<"VUISD::EXTRACT_VI", SDTypeProfile<1, 2, [
+                         SDTCisVT<0, i16>, SDTCisVT<1, v4i32>,
+                         SDTCisVT<2, i32>]>>;
+
 // A scalar as a vector: the x field is the scalar, the other fields are
 // undefined. No instruction.
 def VUvec : SDNode<"VUISD::VEC", SDTypeProfile<1, 1, [SDTCisVT<0, v4f32>,
@@ -308,6 +313,7 @@ foreach N = [4, 12, 15] in {
 // i16 <-> f32: through the x field. MFIR sign-extends to 32 bits.
 def : Pat<(f32 (sint_to_fp (i16 VI:$v))), (ITOF0 8, (MFIR 8, VI:$v))>;
 def : Pat<(i16 (fp_to_sint (f32 VF:$v))), (MTIR (FTOI0 8, VF:$v), 0)>;
+def : Pat<(i16 (VUextractvi (v4i32 VF:$v), timm:$f)), (MTIR VF:$v, timm:$f)>;
 
 //===----------------------------------------------------------------------===//
 // Integer arithmetic (16-bit VI registers)

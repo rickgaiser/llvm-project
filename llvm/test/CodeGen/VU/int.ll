@@ -29,6 +29,7 @@ define void @int_ops() {
 ; CHECK-NEXT:    nop isw.w vi2, 0(vi1)
 ; CHECK-NEXT:    nop[e] nop
 ; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
   %t = call i16 @llvm.vu.xitop()
   %a = call i16 @llvm.vu.ilw(i16 %t, i32 1)
   %b = shl i16 %a, 2
@@ -57,6 +58,7 @@ define void @mul_const() {
 ; CHECK-NEXT:    nop isub vi1, vi0, vi2
 ; CHECK-NEXT:    nop isw.x vi1, 3(vi0)
 ; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
 ; CHECK-NEXT:    nop nop
   %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
   %m3 = mul i16 %a, 3
@@ -89,3 +91,88 @@ define void @insert_vi() {
   call void @llvm.vu.sq(<4 x float> %f, i16 2)
   ret void
 }
+
+; The low 16 bits of a field of an integer vector: MTIR.
+define void @extract_vi() {
+; CHECK-LABEL: extract_vi:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop lq.xyzw vf1, 0(vi0)
+; CHECK-NEXT:    nop ilw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop mtir vi2, vf1w
+; CHECK-NEXT:    nop ior vi1, vi2, vi1
+; CHECK-NEXT:    nop mfir.w vf1, vi1
+; CHECK-NEXT:    nop sq.xyzw vf1, 2(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+  %v = call <4 x float> @llvm.vu.lq(i16 0)
+  %a = call i16 @llvm.vu.ilw(i16 1, i32 0)
+  %i = bitcast <4 x float> %v to <4 x i32>
+  %e = extractelement <4 x i32> %i, i32 3
+  %t = trunc i32 %e to i16
+  %o = or i16 %t, %a
+  %s = sext i16 %o to i32
+  %w = insertelement <4 x i32> %i, i32 %s, i32 3
+  %f = bitcast <4 x i32> %w to <4 x float>
+  call void @llvm.vu.sq(<4 x float> %f, i16 2)
+  ret void
+}
+
+; A comparison of VI registers that is not a branch: of their floats.
+define void @compare_vi() {
+; CHECK-LABEL: compare_vi:
+; CHECK:       ; %bb.0:
+; CHECK-NEXT:    nop ilw.x vi2, 0(vi0)
+; CHECK-NEXT:    nop ilw.x vi1, 1(vi0)
+; CHECK-NEXT:    nop loi 0xff000000
+; CHECK-NEXT:    addi.x vf3, vf0, i loi 0x47800000
+; CHECK-NEXT:    addi.x vf5, vf0, i loi 0x7f000000
+; CHECK-NEXT:    nop mfir.x vf1, vi2
+; CHECK-NEXT:    nop mfir.x vf2, vi1
+; CHECK-NEXT:    nop isub vi2, vi2, vi1
+; CHECK-NEXT:    itof0.x vf1, vf1 nop
+; CHECK-NEXT:    itof0.x vf2, vf2 nop
+; CHECK-NEXT:    mulx.xyzw vf4, vf1, vf3x nop
+; CHECK-NEXT:    mulx.xyzw vf3, vf2, vf3x nop
+; CHECK-NEXT:    mulaw.xyzw acc, vf1, vf0w nop
+; CHECK-NEXT:    sub.xyzw vf1, vf1, vf2 nop
+; CHECK-NEXT:    maxx.xyzw vf4, vf4, vf0x nop
+; CHECK-NEXT:    maxx.xyzw vf3, vf3, vf0x nop
+; CHECK-NEXT:    miniw.xyzw vf4, vf4, vf0w nop
+; CHECK-NEXT:    miniw.xyzw vf3, vf3, vf0w nop
+; CHECK-NEXT:    maddx.xyzw vf4, vf4, vf5x nop
+; CHECK-NEXT:    mulaw.xyzw acc, vf2, vf0w nop
+; CHECK-NEXT:    maddx.xyzw vf3, vf3, vf5x nop
+; CHECK-NEXT:    addi.x vf5, vf0, i nop
+; CHECK-NEXT:    sub.xyzw vf2, vf3, vf4 nop
+; CHECK-NEXT:    mulx.xyzw vf1, vf1, vf5x nop
+; CHECK-NEXT:    mulx.xyzw vf2, vf2, vf5x nop
+; CHECK-NEXT:    maxx.xyzw vf1, vf1, vf0x nop
+; CHECK-NEXT:    maxx.xyzw vf2, vf2, vf0x nop
+; CHECK-NEXT:    miniw.xyzw vf1, vf1, vf0w nop
+; CHECK-NEXT:    miniw.xyzw vf2, vf2, vf0w nop
+; CHECK-NEXT:    ftoi0.x vf1, vf1 nop
+; CHECK-NEXT:    ftoi0.x vf2, vf2 nop
+; CHECK-NEXT:    nop mtir vi3, vf1x
+; CHECK-NEXT:    nop isub vi4, vi0, vi3
+; CHECK-NEXT:    nop isw.x vi3, 2(vi0)
+; CHECK-NEXT:    nop iand vi2, vi2, vi4
+; CHECK-NEXT:    nop iadd vi1, vi1, vi2
+; CHECK-NEXT:    nop mtir vi2, vf2x
+; CHECK-NEXT:    nop isw.x vi1, 3(vi0)
+; CHECK-NEXT:    nop isw.x vi2, 4(vi0)
+; CHECK-NEXT:    nop[e] nop
+; CHECK-NEXT:    nop nop
+; CHECK-NEXT:    nop nop
+  %a = call i16 @llvm.vu.ilw(i16 0, i32 0)
+  %b = call i16 @llvm.vu.ilw(i16 1, i32 0)
+  %c = icmp sgt i16 %a, %b
+  %z = zext i1 %c to i16
+  call void @llvm.vu.isw(i16 %z, i16 2, i32 0)
+  %m = call i16 @llvm.smax.i16(i16 %a, i16 %b)
+  call void @llvm.vu.isw(i16 %m, i16 3, i32 0)
+  %u = icmp ult i16 %a, %b
+  %y = zext i1 %u to i16
+  call void @llvm.vu.isw(i16 %y, i16 4, i32 0)
+  ret void
+}
+declare i16 @llvm.smax.i16(i16, i16)
