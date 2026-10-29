@@ -109,6 +109,13 @@ public:
   // N.B. These objects may change during compilation. It's not safe to cache
   // them between functions.
   virtual const TargetInstrInfo *getInstrInfo() const { return nullptr; }
+
+  /// Targets may preserve CFG block order when a highly probable return path
+  /// would otherwise lose a useful return-delay-slot instruction.
+  virtual bool enableBranchFolderBlockReordering(
+      const MachineFunction &MF) const {
+    return true;
+  }
   virtual const TargetFrameLowering *getFrameLowering() const {
     return nullptr;
   }

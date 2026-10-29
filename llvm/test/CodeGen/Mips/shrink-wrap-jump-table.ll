@@ -9,32 +9,30 @@
 ; RUN:     -mattr=+noabicalls < %s -o %t.s
 ; RUN: FileCheck %s --check-prefix=JT < %t.s
 
-; The hot case returns a load without a call, so $ra is saved only after it,
-; in the jump table block. The jump table branches to the shared return
-; block too (the values without a case), so the restore point is split
-; behind the jump table: its entries for the return block are redirected
-; to the new restore block, and the hot case keeps the old one.
-
-; The values without a case branch to the new restore block .LBB0_10, which
-; restores $ra, not to the shared return block .LBB0_2.
-; JT:       .LBB0_2: # %return
-; JT-NEXT:    jr $ra
-; JT:       .LBB0_10:
-; JT-NEXT:    ld $ra, 8($sp)
-; JT-NEXT:    ld $16, 0($sp)
-; JT-LABEL: .LJTI0_0:
-; JT-NEXT:    .4byte .LBB0_5
-; JT-NEXT:    .4byte .LBB0_7
-; JT-NEXT:    .4byte .LBB0_8
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_6
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_10
-; JT-NEXT:    .4byte .LBB0_9
+; A strongly likely byte load may occupy the return delay slot, while
+; shrink wrapping still saves $ra only on the cold switch/call paths. The jump
+; table default entries must land in the restore block, not the bare return.
+; JT:       # %bb.1: # %ram
+; JT:       jr $ra
+; JT-NEXT:  lbu $2, 0($1)
+; JT:       .LBB0_9:
+; JT-NEXT:  ld $16, 0($sp)
+; JT-NEXT:  ld $ra, 8($sp)
+; JT:       .LBB0_10: # %return
+; JT-NEXT:  jr $ra
+; JT:       .LJTI0_0:
+; JT-NEXT:  .4byte .LBB0_4
+; JT-NEXT:  .4byte .LBB0_6
+; JT-NEXT:  .4byte .LBB0_7
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_5
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_9
+; JT-NEXT:  .4byte .LBB0_8
 
 @ram = external global [65536 x i8]
 
@@ -47,73 +45,15 @@ declare zeroext i16 @slow_e(i32 signext)
 define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N32-LABEL: jump_table_restore:
 ; N32:       # %bb.0: # %entry
-; N32-NEXT:    lui $1, 255
-; N32-NEXT:    ori $1, $1, 65535
-; N32-NEXT:    and $3, $4, $1
-; N32-NEXT:    addiu $1, $zero, 1
-; N32-NEXT:    srl $2, $3, 20
-; N32-NEXT:    bne $2, $1, .LBB0_3
-; N32-NEXT:    nop
-; N32-NEXT:  # %bb.1: # %ram
-; N32-NEXT:    andi $1, $4, 65535
-; N32-NEXT:    lui $2, %hi(ram)
-; N32-NEXT:    xori $1, $1, 1
-; N32-NEXT:    addiu $2, $2, %lo(ram)
-; N32-NEXT:    addu $1, $2, $1
-; N32-NEXT:    lbu $2, 0($1)
-; N32-NEXT:  .LBB0_2: # %return
-; N32-NEXT:    jr $ra
-; N32-NEXT:    nop
-; N32-NEXT:  .LBB0_3: # %entry
-; N32-NEXT:    addiu $5, $2, -2
-; N32-NEXT:    sltiu $1, $5, 12
-; N32-NEXT:    beqz $1, .LBB0_2
-; N32-NEXT:    addiu $2, $zero, 255
-; N32-NEXT:  # %bb.4: # %entry
-; N32-NEXT:    addiu $sp, $sp, -16
-; N32-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
-; N32-NEXT:    sd $16, 0($sp) # 8-byte Folded Spill
-; N32-NEXT:    sll $1, $5, 2
-; N32-NEXT:    lui $5, %hi(.LJTI0_0)
-; N32-NEXT:    addu $1, $1, $5
-; N32-NEXT:    sll $4, $4, 3
-; N32-NEXT:    lw $1, %lo(.LJTI0_0)($1)
-; N32-NEXT:    jr $1
-; N32-NEXT:    andi $16, $4, 8
-; N32-NEXT:  .LBB0_5: # %sw.a
-; N32-NEXT:    jal slow_a
-; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $1, $2, $16
-; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    andi $2, $1, 255
-; N32-NEXT:  .LBB0_6: # %sw.d
-; N32-NEXT:    jal slow_d
-; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $1, $2, $16
-; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    andi $2, $1, 255
-; N32-NEXT:  .LBB0_7: # %sw.b
-; N32-NEXT:    jal slow_b
-; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $1, $2, $16
-; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    andi $2, $1, 255
-; N32-NEXT:  .LBB0_8: # %sw.c
-; N32-NEXT:    jal slow_c
-; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $1, $2, $16
-; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    andi $2, $1, 255
-; N32-NEXT:  .LBB0_9: # %sw.e
-; N32-NEXT:    jal slow_e
-; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $1, $2, $16
-; N32-NEXT:    andi $2, $1, 255
-; N32-NEXT:  .LBB0_10:
-; N32-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
-; N32-NEXT:    ld $16, 0($sp) # 8-byte Folded Reload
-; N32-NEXT:    jr $ra
-; N32-NEXT:    addiu $sp, $sp, 16
+; N32:       bne $2, $1, .LBB0_2
+; N32:       # %bb.1: # %ram
+; N32:       jr $ra
+; N32-NEXT:  lbu $2, 0($1)
+; N32:       .LBB0_9:
+; N32-NEXT:  ld $16, 0($sp)
+; N32-NEXT:  ld $ra, 8($sp)
+; N32:       .LBB0_10: # %return
+; N32-NEXT:  jr $ra
 ;
 ; N64-LABEL: jump_table_restore:
 ; N64:       # %bb.0: # %entry

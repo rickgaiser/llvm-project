@@ -19,8 +19,9 @@
 #include "MipsRegisterInfo.h"
 #include "MipsSelectionDAGInfo.h"
 #include "MipsTargetMachine.h"
-#include "llvm/CodeGen/MachinePipeliner.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/SingleRegClassMutations.h"
@@ -29,6 +30,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/LibraryOptions.h"
+#include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -319,6 +321,41 @@ bool MipsSubtarget::enableJoinSplitEdges(const MachineFunction &MF) const {
     return true;
   }
   return false;
+}
+
+bool MipsSubtarget::enableBranchFolderBlockReordering(
+    const MachineFunction &MF) const {
+  if (!isR5900() || !MF.getFunction().getReturnType()->isIntegerTy(8))
+    return true;
+
+  // A near-certain byte-load fast path that jumps straight to a shared
+  // return can use the load in the return's delay slot if the two blocks
+  // remain adjacent. The branch folder may otherwise move the shared
+  // return elsewhere even though the source marks this path as likely.
+  const MachineBasicBlock &Entry = MF.front();
+  for (auto I = Entry.succ_begin(); I != Entry.succ_end(); ++I) {
+    const MachineBasicBlock *Hot = *I;
+    if (Entry.getSuccProbability(I) < BranchProbability(19, 20) ||
+        Hot->succ_size() != 1)
+      continue;
+
+    const MachineBasicBlock *Ret = *Hot->succ_begin();
+    if (Ret->empty() || !Ret->back().isReturn())
+      continue;
+
+    for (auto RI = Hot->rbegin(); RI != Hot->rend(); ++RI) {
+      if (RI->isTerminator() || RI->isMetaInstruction())
+        continue;
+      if (RI->getOpcode() == Mips::LBu) {
+        LLVM_DEBUG(dbgs() << "R5900 branch folder: preserve hot byte-load "
+                             "return in "
+                          << MF.getName() << '\n');
+        return false;
+      }
+      break;
+    }
+  }
+  return true;
 }
 
 bool MipsSubtarget::enablePostRAMachineScheduler() const { return isR5900(); }

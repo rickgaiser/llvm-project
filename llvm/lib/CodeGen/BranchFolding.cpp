@@ -162,7 +162,8 @@ PreservedAnalyses BranchFolderPass::run(MachineFunction &MF,
   MBFIWrapper MBBFreqInfo(MBFI);
   BranchFolder Folder(EnableTailMerge, /*CommonHoist=*/true, MBBFreqInfo, MBPI,
                       PSI);
-  Folder.setBasicBlockReordering(true);
+  Folder.setBasicBlockReordering(
+      MF.getSubtarget().enableBranchFolderBlockReordering(MF));
   if (Folder.OptimizeFunction(MF, MF.getSubtarget().getInstrInfo(),
                               MF.getSubtarget().getRegisterInfo()))
     return getMachineFunctionPassPreservedAnalyses();
@@ -185,7 +186,10 @@ bool BranchFolderLegacy::runOnMachineFunction(MachineFunction &MF) {
       EnableTailMerge, EnableCommonHoist, MBBFreqInfo,
       getAnalysis<MachineBranchProbabilityInfoWrapperPass>().getMBPI(),
       &getAnalysis<ProfileSummaryInfoWrapperPass>().getPSI());
-  Folder.setBasicBlockReordering(EnableBasicBlockReordering);
+  bool Reorder =
+      EnableBasicBlockReordering &&
+      MF.getSubtarget().enableBranchFolderBlockReordering(MF);
+  Folder.setBasicBlockReordering(Reorder);
   return Folder.OptimizeFunction(MF, MF.getSubtarget().getInstrInfo(),
                                  MF.getSubtarget().getRegisterInfo());
 }
