@@ -1,6 +1,6 @@
 # VU entry functions: the contract between a frontend and the VU target
 
-A frontend (clang's HLSL through `VUHLSLAdapter`, vuk with `--entry`, or a
+A frontend (clang's HLSL through `VUHLSLAdapter`, or a
 SPIR-V translator) describes a micro program as one **entry function** and a
 few **globals**. `VUEntryLowering` turns it into a micro program: it lays out VU
 data memory, builds the loop over the items of a batch, and writes the layout
