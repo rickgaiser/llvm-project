@@ -1,6 +1,8 @@
 ; REQUIRES: asserts
 ; RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi=n32 -debug-only=mips-subtarget -o /dev/null %s 2>&1 | FileCheck %s --check-prefix=R5900
 ; RUN: llc -mtriple=mips64el -mcpu=mips3 -target-abi=n32 -debug-only=mips-subtarget -o /dev/null %s 2>&1 | FileCheck %s --check-prefix=MIPS3 --allow-empty
+; RUN: llc -mtriple=mips64el -mcpu=r5900 -target-abi=n32 -debug-only=mips-r5900-issue -o /dev/null %s 2>&1 | FileCheck %s --check-prefix=ISSUE
+; RUN: llc -mtriple=mips64el -mcpu=mips3 -target-abi=n32 -debug-only=mips-r5900-issue -o /dev/null %s 2>&1 | FileCheck %s --check-prefix=NOISSUE --allow-empty
 ; Ensure the register-pressure DAG scheduler is reserved for very large
 ; computed-goto graphs, while a small indirect branch uses the
 ; existing source-order scheduler. Other MIPS CPUs are unaffected.
@@ -9,6 +11,9 @@
 ; R5900-DAG: R5900 coalescing: prioritize split edges for large_dispatch
 ; MIPS3-NOT: R5900 DAG scheduler:
 ; MIPS3-NOT: R5900 coalescing: prioritize split edges
+; ISSUE-NOT: R5900 dual issue: omit nop padding for large computed-goto dispatch small_dispatch
+; ISSUE: R5900 dual issue: omit nop padding for large computed-goto dispatch large_dispatch
+; NOISSUE-NOT: R5900 dual issue: omit nop padding
 define i32 @small_dispatch(ptr %target) {
 entry:
   indirectbr ptr %target, [label %a, label %b]

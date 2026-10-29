@@ -33,6 +33,7 @@
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
 #include "llvm/CodeGen/TargetSchedule.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
 #include <optional>
 
 using namespace llvm;
@@ -115,6 +116,7 @@ private:
   bool OptForSize = false;
   /// Nops are only inserted in loops that are not too large.
   bool AllowNops = false;
+  bool AllowFunctionNops = true;
   std::unique_ptr<R5900IssueDAG> DAG;
   /// The nops inserted in the current basic block.
   SmallVector<MachineInstr *, 8> Nops;
@@ -259,7 +261,8 @@ bool MipsR5900Issue::scheduleBlock(MachineBasicBlock &MBB, unsigned StartSlot,
     OldOrder.push_back(&MI);
   Nops.clear();
   AllowNops =
-      !OptForSize && MLI->getLoopFor(&MBB) && MBB.size() <= R5900IssueNopLimit;
+      AllowFunctionNops && !OptForSize && MLI->getLoopFor(&MBB) &&
+      MBB.size() <= R5900IssueNopLimit;
 
   MipsR5900IssueModel Model(SchedModel, *TRI);
   Model.startBlock(StartSlot);
@@ -352,6 +355,11 @@ bool MipsR5900Issue::runOnMachineFunction(MachineFunction &MF) {
   SchedModel.init(&STI);
   MLI = &getAnalysis<MachineLoopInfoWrapperPass>().getLI();
   OptForSize = MF.getFunction().hasOptSize();
+  AllowFunctionNops = STI.enableR5900IssueNops(MF);
+  if (!AllowFunctionNops)
+    LLVM_DEBUG(dbgs() << "R5900 dual issue: omit nop padding for large "
+                         "computed-goto dispatch "
+                      << MF.getName() << '\n');
   DAG = std::make_unique<R5900IssueDAG>(MF);
   auto &ORE = getAnalysis<MachineOptimizationRemarkEmitterPass>().getORE();
 

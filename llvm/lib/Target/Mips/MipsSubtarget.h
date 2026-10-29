@@ -250,6 +250,7 @@ public:
   bool enableMachineScheduler() const override;
   bool enableJoinGlobalCopies(const MachineFunction &MF) const override;
   bool enableJoinSplitEdges(const MachineFunction &MF) const override;
+  bool enableR5900IssueNops(const MachineFunction &MF) const;
   bool enableBranchFolderBlockReordering(
       const MachineFunction &MF) const override;
   RegisterScheduler::FunctionPassCtor

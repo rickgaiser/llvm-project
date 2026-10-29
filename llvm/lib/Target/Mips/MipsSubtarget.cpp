@@ -323,6 +323,15 @@ bool MipsSubtarget::enableJoinSplitEdges(const MachineFunction &MF) const {
   return false;
 }
 
+bool MipsSubtarget::enableR5900IssueNops(const MachineFunction &MF) const {
+  // Large computed-goto dispatchers execute many short, mutually exclusive
+  // opcode handlers. Inserting speculative dual-issue padding throughout those
+  // handlers increases the code footprint and can outweigh the locally
+  // estimated scheduling benefit. Keep instruction reordering, but omit
+  // optional nop padding for this structural case.
+  return !isR5900() || !isLargeDispatch(MF.getFunction());
+}
+
 bool MipsSubtarget::enableBranchFolderBlockReordering(
     const MachineFunction &MF) const {
   if (!isR5900() || !MF.getFunction().getReturnType()->isIntegerTy(8))
