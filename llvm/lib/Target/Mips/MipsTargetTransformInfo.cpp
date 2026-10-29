@@ -10,6 +10,7 @@
 #include "MipsSEISelLowering.h"
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/PatternMatch.h"
@@ -51,6 +52,21 @@ void MipsTTIImpl::getUnrollingPreferences(
         if (!CB->getCalledFunction() ||
             isLoweredToCall(CB->getCalledFunction()))
           return;
+
+  // Short fixed-count loops with multiway control flow spend significant
+  // R5900 cycles repeating branches and their delay slots. At -O3, give full
+  // unrolling of a four-iteration, call-free dispatch loop more room to trade
+  // code size for fewer dynamic branches. Other loop shapes retain the normal
+  // generic unroll threshold, as do all other MIPS processors.
+  if (TLI->getTargetMachine().getOptLevel() == CodeGenOptLevel::Aggressive &&
+      SE.getSmallConstantTripCount(L) == 4 &&
+      any_of(L->blocks(), [](BasicBlock *BB) {
+        return any_of(*BB, [](Instruction &I) {
+          const auto *SI = dyn_cast<SwitchInst>(&I);
+          return SI && SI->getNumCases() >= 4;
+        });
+      }))
+    UP.Threshold = std::max(UP.Threshold, 1200u);
 
   UP.Partial = UP.Runtime = UP.UpperBound = true;
   UP.PartialThreshold = 120;
