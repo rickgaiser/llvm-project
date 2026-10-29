@@ -280,6 +280,22 @@ bool MipsSubtarget::enableJoinGlobalCopies(const MachineFunction &MF) const {
   // expensive register-pressure interactions with the R5900's machine
   // scheduler. Preserve local coalescing and the scheduler itself.
   const Function &F = MF.getFunction();
+  // Short loop kernels with many PHIs tend to create long live ranges when
+  // cross-block copies are coalesced. Keep copies local to avoid extra spills.
+  if (isR5900() && F.size() >= 12 && F.size() <= 20) {
+    unsigned NumPhis = 0, LoopLatches = 0;
+    for (const BasicBlock &BB : F) {
+      for (const Instruction &I : BB)
+        NumPhis += isa<PHINode>(I);
+      LoopLatches +=
+          BB.getTerminator()->getMetadata(LLVMContext::MD_loop) != nullptr;
+    }
+    if (NumPhis >= 12 && LoopLatches == 1) {
+      LLVM_DEBUG(dbgs() << "R5900 coalescing: skip global copies for PHI-rich "
+                        << F.getName() << '\n');
+      return false;
+    }
+  }
   if (isR5900() && F.size() >= 64 && F.size() < 512) {
     for (const BasicBlock &BB : F) {
       if (isa<IndirectBrInst>(BB.getTerminator())) {
