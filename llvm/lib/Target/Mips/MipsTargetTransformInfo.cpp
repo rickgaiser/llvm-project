@@ -37,6 +37,51 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                   C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
 }
 
+unsigned MipsTTIImpl::adjustInliningThreshold(const CallBase *CB) const {
+  if (!ST->isR5900() ||
+      TLI->getTargetMachine().getOptLevel() != CodeGenOptLevel::Aggressive ||
+      CB->getFunction()->hasOptSize() || CB->getFunction()->hasOptNone())
+    return 0;
+
+  const Function *Callee = CB->getCalledFunction();
+  if (!Callee || !Callee->hasLocalLinkage() || Callee->isDeclaration() ||
+      Callee->hasOptSize() || !Callee->getReturnType()->isVoidTy() ||
+      Callee->arg_size() > 3)
+    return 0;
+
+  unsigned Switches = 0;
+  for (const BasicBlock &BB : *Callee) {
+    for (const Instruction &I : BB) {
+      if (const auto *SI = dyn_cast<SwitchInst>(&I)) {
+        if (SI->getNumCases() < 4 || ++Switches > 4)
+          return 0;
+      }
+      if (const auto *Call = dyn_cast<CallBase>(&I))
+        if (!Call->getCalledFunction() ||
+            isLoweredToCall(Call->getCalledFunction()))
+          return 0;
+    }
+  }
+  if (Switches != 4)
+    return 0;
+
+  // Bound code growth to small groups of direct calls in the same function.
+  // The inliner may split the original call block as it expands the group.
+  unsigned Calls = 0;
+  for (const User *U : Callee->users()) {
+    const auto *Call = dyn_cast<CallBase>(U);
+    if (!Call || Call->getFunction() != CB->getFunction() || ++Calls > 4)
+      return 0;
+  }
+  if (Calls < 2)
+    return 0;
+
+  // A roughly 3K-cost unrolled state dispatcher needs an additional budget
+  // beyond the standard O3 threshold. Keep the allowance limited to the
+  // specific call-group shape above rather than raising the global threshold.
+  return 3000;
+}
+
 void MipsTTIImpl::getUnrollingPreferences(
     Loop *L, ScalarEvolution &SE, TTI::UnrollingPreferences &UP,
     OptimizationRemarkEmitter *ORE) const {
