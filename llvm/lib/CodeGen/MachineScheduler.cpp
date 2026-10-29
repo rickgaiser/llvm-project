@@ -4909,7 +4909,7 @@ public:
 static ScheduleDAGInstrs *createILPMaxScheduler(MachineSchedContext *C) {
   return new ScheduleDAGMILive(C, std::make_unique<ILPScheduler>(true));
 }
-static ScheduleDAGInstrs *createILPMinScheduler(MachineSchedContext *C) {
+ScheduleDAGInstrs *llvm::createILPMinScheduler(MachineSchedContext *C) {
   return new ScheduleDAGMILive(C, std::make_unique<ILPScheduler>(false));
 }
 

@@ -39,6 +39,7 @@
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/LibraryOptions.h"
@@ -311,6 +312,26 @@ void MipsPassConfig::addPreSched2() {
 
 ScheduleDAGInstrs *
 MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
+  const MachineFunction &MF = *C->MF;
+  const Function &F = MF.getFunction();
+  // Very large computed-goto interpreters place substantial pressure on the
+  // R5900's in-order issue pipeline. A bottom-up ILP-minimizing schedule can
+  // preserve shorter dependence chains without altering smaller kernels.
+  // Restrict this policy to very large R5900 O3 dispatches; generic MIPS,
+  // small dispatches, and size-optimized functions keep the normal scheduler.
+  if (MF.getSubtarget<MipsSubtarget>().isR5900() &&
+      getOptLevel() == CodeGenOptLevel::Aggressive && F.size() >= 2048 &&
+      !F.hasOptSize() &&
+      any_of(F, [](const BasicBlock &BB) {
+        return isa<IndirectBrInst>(BB.getTerminator());
+      })) {
+    LLVM_DEBUG(dbgs() << "R5900 MachineScheduler: ILP-min for " << F.getName()
+                      << '\n');
+    return createILPMinScheduler(C);
+  }
+
+  LLVM_DEBUG(dbgs() << "Mips MachineScheduler: normal for " << F.getName()
+                    << '\n');
   ScheduleDAGMILive *DAG = createSchedLive(C);
   if (C->MF->getSubtarget<MipsSubtarget>().isR5900())
     DAG->addMutation(createSingleRegClassOrderMutation());
