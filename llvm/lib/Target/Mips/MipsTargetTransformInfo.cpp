@@ -10,12 +10,21 @@
 #include "MipsSEISelLowering.h"
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/Support/CommandLine.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
+
+// The IR pipeline's optimization level is not necessarily the target machine
+// codegen level (notably under LTO). Keep the workload-specific budget
+// overrides explicitly opt-in until they have independent benchmark coverage.
+static cl::opt<bool> EnableR5900StateDispatchOpts(
+    "mips-r5900-state-dispatch-opts", cl::Hidden, cl::init(false),
+    cl::desc("Enable experimental R5900 switch-loop/inlining budgets"));
 
 bool MipsTTIImpl::hasDivRemOp(Type *DataType, bool IsSigned) const {
   EVT VT = TLI->getValueType(DL, DataType);
@@ -36,6 +45,49 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                   C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
 }
 
+unsigned MipsTTIImpl::adjustInliningThreshold(const CallBase *CB) const {
+  if (!ST->isR5900() || !EnableR5900StateDispatchOpts ||
+      CB->getFunction()->hasOptSize() || CB->getFunction()->hasOptNone())
+    return 0;
+
+  const Function *Callee = CB->getCalledFunction();
+  if (!Callee || !Callee->hasLocalLinkage() || Callee->isDeclaration() ||
+      Callee->hasOptSize() || !Callee->getReturnType()->isVoidTy() ||
+      Callee->arg_size() > 3)
+    return 0;
+
+  unsigned Switches = 0;
+  for (const BasicBlock &BB : *Callee) {
+    for (const Instruction &I : BB) {
+      if (const auto *SI = dyn_cast<SwitchInst>(&I)) {
+        if (SI->getNumCases() < 4 || ++Switches > 4)
+          return 0;
+      }
+      if (const auto *Call = dyn_cast<CallBase>(&I))
+        if (!Call->getCalledFunction() ||
+            isLoweredToCall(Call->getCalledFunction()))
+          return 0;
+    }
+  }
+  if (Switches != 4)
+    return 0;
+
+  // Bound code growth to small groups of direct calls in the same function.
+  // The inliner may split the original call block as it expands the group.
+  unsigned Calls = 0;
+  for (const User *U : Callee->users()) {
+    const auto *Call = dyn_cast<CallBase>(U);
+    if (!Call || Call->getFunction() != CB->getFunction() || ++Calls > 4)
+      return 0;
+  }
+  if (Calls < 2)
+    return 0;
+
+  // The explicit experiment permits a 3K-cost dispatcher. Do not infer the
+  // IR pass-pipeline optimization level from the TargetMachine's codegen level.
+  return 3000;
+}
+
 void MipsTTIImpl::getUnrollingPreferences(
     Loop *L, ScalarEvolution &SE, TTI::UnrollingPreferences &UP,
     OptimizationRemarkEmitter *ORE) const {
@@ -51,6 +103,21 @@ void MipsTTIImpl::getUnrollingPreferences(
         if (!CB->getCalledFunction() ||
             isLoweredToCall(CB->getCalledFunction()))
           return;
+
+  // Short fixed-count loops with multiway control flow spend significant
+  // R5900 cycles repeating branches and their delay slots. When explicitly
+  // enabled, give full unrolling of a four-iteration, call-free loop more room to trade
+  // code size for fewer dynamic branches. Other loop shapes retain the normal
+  // generic unroll threshold, as do all other MIPS processors.
+  if (EnableR5900StateDispatchOpts &&
+      SE.getSmallConstantTripCount(L) == 4 &&
+      any_of(L->blocks(), [](BasicBlock *BB) {
+        return any_of(*BB, [](Instruction &I) {
+          const auto *SI = dyn_cast<SwitchInst>(&I);
+          return SI && SI->getNumCases() >= 4;
+        });
+      }))
+    UP.Threshold = std::max(UP.Threshold, 1200u);
 
   UP.Partial = UP.Runtime = UP.UpperBound = true;
   UP.PartialThreshold = 120;
