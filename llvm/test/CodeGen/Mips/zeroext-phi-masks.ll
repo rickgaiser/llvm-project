@@ -128,3 +128,91 @@ done:
 }
 
 !0 = !{!"branch_weights", i32 10000, i32 1}
+
+; Optsize/minsize must retain the shared mask instead of duplicating it in
+; predecessor blocks. These also exercise functions with multiple incoming
+; values requiring masks, where sinking increases static code size.
+define zeroext i8 @small_return(ptr %p, i32 %a, i32 %b, i32 %which) #0 {
+; CHECK-LABEL: small_return:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    addiu $1, $zero, 1
+; CHECK-NEXT:    beq $2, $1, .LBB3_3
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.1: # %entry
+; CHECK-NEXT:    bnez $2, .LBB3_4
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.2: # %from_a
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:  .LBB3_3: # %from_b
+; CHECK-NEXT:    sll $1, $6, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:  .LBB3_4: # %load
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    lbu $2, 0($1)
+entry:
+  switch i32 %which, label %load [
+    i32 0, label %from_a
+    i32 1, label %from_b
+  ]
+from_a:
+  %av = trunc i32 %a to i8
+  br label %done
+from_b:
+  %bv = trunc i32 %b to i8
+  br label %done
+load:
+  %byte = load volatile i8, ptr %p
+  br label %done
+done:
+  %v = phi i8 [ %byte, %load ], [ %av, %from_a ], [ %bv, %from_b ]
+  ret i8 %v
+}
+
+define zeroext i8 @minimum_return(ptr %p, i32 %a, i32 %b, i32 %which) #1 {
+; CHECK-LABEL: minimum_return:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    addiu $1, $zero, 1
+; CHECK-NEXT:    beq $2, $1, .LBB4_3
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.1: # %entry
+; CHECK-NEXT:    bnez $2, .LBB4_4
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.2: # %from_a
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:  .LBB4_3: # %from_b
+; CHECK-NEXT:    sll $1, $6, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:  .LBB4_4: # %load
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    lbu $2, 0($1)
+entry:
+  switch i32 %which, label %load [
+    i32 0, label %from_a
+    i32 1, label %from_b
+  ]
+from_a:
+  %av = trunc i32 %a to i8
+  br label %done
+from_b:
+  %bv = trunc i32 %b to i8
+  br label %done
+load:
+  %byte = load volatile i8, ptr %p
+  br label %done
+done:
+  %v = phi i8 [ %byte, %load ], [ %av, %from_a ], [ %bv, %from_b ]
+  ret i8 %v
+}
+
+attributes #0 = { optsize }
+attributes #1 = { minsize }
