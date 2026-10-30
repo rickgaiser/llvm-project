@@ -17,6 +17,7 @@
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -30,6 +31,13 @@ static cl::opt<unsigned> R5900MaxCacheLineUnrollSize(
     "mips-r5900-cache-line-unroll-size", cl::Hidden, cl::init(2048),
     cl::desc("Largest unrolled size of an R5900 loop that is unrolled to read "
              "a cache line of a stream per iteration"));
+
+// The IR pipeline's optimization level is not necessarily the target machine
+// codegen level (notably under LTO). Keep the workload-specific budget
+// overrides explicitly opt-in until they have independent benchmark coverage.
+static cl::opt<bool> EnableR5900StateDispatchOpts(
+    "mips-r5900-state-dispatch-opts", cl::Hidden, cl::init(false),
+    cl::desc("Enable experimental R5900 switch-loop/inlining budgets"));
 
 bool MipsTTIImpl::hasDivRemOp(Type *DataType, bool IsSigned) const {
   EVT VT = TLI->getValueType(DL, DataType);
@@ -51,8 +59,7 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
 }
 
 unsigned MipsTTIImpl::adjustInliningThreshold(const CallBase *CB) const {
-  if (!ST->isR5900() ||
-      TLI->getTargetMachine().getOptLevel() != CodeGenOptLevel::Aggressive ||
+  if (!ST->isR5900() || !EnableR5900StateDispatchOpts ||
       CB->getFunction()->hasOptSize() || CB->getFunction()->hasOptNone())
     return 0;
 
@@ -89,9 +96,8 @@ unsigned MipsTTIImpl::adjustInliningThreshold(const CallBase *CB) const {
   if (Calls < 2)
     return 0;
 
-  // A roughly 3K-cost unrolled state dispatcher needs an additional budget
-  // beyond the standard O3 threshold. Keep the allowance limited to the
-  // specific call-group shape above rather than raising the global threshold.
+  // The explicit experiment permits a 3K-cost dispatcher. Do not infer the
+  // IR pass-pipeline optimization level from the TargetMachine's codegen level.
   return 3000;
 }
 
@@ -311,11 +317,11 @@ void MipsTTIImpl::getUnrollingPreferences(
           return;
 
   // Short fixed-count loops with multiway control flow spend significant
-  // R5900 cycles repeating branches and their delay slots. At -O3, give full
-  // unrolling of a four-iteration, call-free dispatch loop more room to trade
+  // R5900 cycles repeating branches and their delay slots. When explicitly
+  // enabled, give full unrolling of a four-iteration, call-free loop more room to trade
   // code size for fewer dynamic branches. Other loop shapes retain the normal
   // generic unroll threshold, as do all other MIPS processors.
-  if (TLI->getTargetMachine().getOptLevel() == CodeGenOptLevel::Aggressive &&
+  if (EnableR5900StateDispatchOpts &&
       SE.getSmallConstantTripCount(L) == 4 &&
       any_of(L->blocks(), [](BasicBlock *BB) {
         return any_of(*BB, [](Instruction &I) {

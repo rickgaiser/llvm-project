@@ -1,12 +1,13 @@
-// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=R5900
+// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -mllvm -mips-r5900-state-dispatch-opts -emit-llvm -o - %s | FileCheck %s --check-prefix=R5900
+// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O2 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -Os -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu mips64r2 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 
 // A call-free, fixed four-iteration loop with a multiway branch may be worth
-// fully unrolling on the R5900. Do not expand the same loop at lower
-// optimization levels or on generic MIPS. The volatile loads keep the four
-// alternatives distinct after IR optimization.
+// fully unrolling on the R5900 with an explicitly enabled experimental budget.
+// Without the flag, retain normal unrolling at O3 and on other CPUs. Volatile
+// loads keep the four alternatives distinct after IR optimization.
 
 // R5900-LABEL: define{{.*}} @test_switch_four(
 // R5900-COUNT-4: switch i8

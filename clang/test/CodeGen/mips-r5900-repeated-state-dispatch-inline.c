@@ -1,13 +1,14 @@
-// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=R5900
+// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -mllvm -mips-r5900-state-dispatch-opts -emit-llvm -o - %s | FileCheck %s --check-prefix=R5900
+// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O2 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -Os -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -Oz -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
 // RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu mips64r2 -target-abi n32 -O3 -emit-llvm -o - %s | FileCheck %s --check-prefix=GENERIC
-// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -DFIVE_CALLS -emit-llvm -o - %s | FileCheck %s --check-prefix=FIVE
+// RUN: %clang_cc1 -triple mips64el-unknown-none -target-cpu r5900 -target-abi n32 -O3 -mllvm -mips-r5900-state-dispatch-opts -DFIVE_CALLS -emit-llvm -o - %s | FileCheck %s --check-prefix=FIVE
 
-// On R5900 O3, repeated calls to a local, call-free state dispatcher with
-// four multiway branches can be more profitable to inline after unrolling.
-// Other MIPS CPUs and lower optimization levels retain the outlined helper.
+// With an explicit experimental flag, R5900 may inline repeated calls to a
+// local dispatcher with four multiway branches after unrolling. The regular
+// pipeline and other MIPS CPUs retain the outlined helper.
 // R5900-LABEL: define{{.*}} @outer_loop(
 // R5900-NOT: @dispatch4(
 // R5900: ret void
