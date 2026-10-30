@@ -143,17 +143,17 @@ define zeroext i8 @small_return(ptr %p, i32 %a, i32 %b, i32 %which) #0 {
 ; CHECK-NEXT:    bnez $2, .LBB3_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.2: # %from_a
-; CHECK-NEXT:    sll $1, $5, 0
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:    j .LBB3_5
+; CHECK-NEXT:    sll $2, $5, 0
 ; CHECK-NEXT:  .LBB3_3: # %from_b
-; CHECK-NEXT:    sll $1, $6, 0
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:    j .LBB3_5
+; CHECK-NEXT:    sll $2, $6, 0
 ; CHECK-NEXT:  .LBB3_4: # %load
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    lbu $2, 0($1)
+; CHECK-NEXT:  .LBB3_5: # %done
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $2, 255
 entry:
   switch i32 %which, label %load [
     i32 0, label %from_a
@@ -184,17 +184,17 @@ define zeroext i8 @minimum_return(ptr %p, i32 %a, i32 %b, i32 %which) #1 {
 ; CHECK-NEXT:    bnez $2, .LBB4_4
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.2: # %from_a
-; CHECK-NEXT:    sll $1, $5, 0
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:    j .LBB4_5
+; CHECK-NEXT:    sll $2, $5, 0
 ; CHECK-NEXT:  .LBB4_3: # %from_b
-; CHECK-NEXT:    sll $1, $6, 0
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    andi $2, $1, 255
+; CHECK-NEXT:    j .LBB4_5
+; CHECK-NEXT:    sll $2, $6, 0
 ; CHECK-NEXT:  .LBB4_4: # %load
 ; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    lbu $2, 0($1)
+; CHECK-NEXT:  .LBB4_5: # %done
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    andi $2, $2, 255
 entry:
   switch i32 %which, label %load [
     i32 0, label %from_a
