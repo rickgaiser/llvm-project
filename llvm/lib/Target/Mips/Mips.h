@@ -42,6 +42,7 @@ ModulePass *createMipsOs16Pass();
 ModulePass *createMips16HardFloatPass();
 
 FunctionPass *createMipsOptimizePICCallPass();
+FunctionPass *createMipsOptimizeZeroExtPass();
 FunctionPass *createMipsDelaySlotFillerPass();
 FunctionPass *createMipsBranchExpansion();
 FunctionPass *createMipsConstantIslandPass();
@@ -66,6 +67,7 @@ void initializeMipsAsmPrinterPass(PassRegistry &);
 void initializeMipsBranchExpansionPass(PassRegistry &);
 void initializeMipsDAGToDAGISelLegacyPass(PassRegistry &);
 void initializeMipsDelaySlotFillerPass(PassRegistry &);
+void initializeMipsOptimizeZeroExtPass(PassRegistry &);
 void initializeMipsMulMulBugFixPass(PassRegistry &);
 void initializeMipsPostLegalizerCombinerPass(PassRegistry &);
 void initializeMipsPreLegalizerCombinerPass(PassRegistry &);

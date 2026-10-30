@@ -20,8 +20,8 @@
 ; JT:       .LBB0_2: # %return
 ; JT-NEXT:    jr $ra
 ; JT:       .LBB0_10:
-; JT-NEXT:    ld $16, 0($sp)
 ; JT-NEXT:    ld $ra, 8($sp)
+; JT-NEXT:    ld $16, 0($sp)
 ; JT-LABEL: .LJTI0_0:
 ; JT-NEXT:    .4byte .LBB0_5
 ; JT-NEXT:    .4byte .LBB0_7
@@ -63,7 +63,7 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N32-NEXT:    lbu $2, 0($1)
 ; N32-NEXT:  .LBB0_2: # %return
 ; N32-NEXT:    jr $ra
-; N32-NEXT:    andi $2, $2, 255
+; N32-NEXT:    nop
 ; N32-NEXT:  .LBB0_3: # %entry
 ; N32-NEXT:    addiu $5, $2, -2
 ; N32-NEXT:    sltiu $1, $5, 12
@@ -83,33 +83,37 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N32-NEXT:  .LBB0_5: # %sw.a
 ; N32-NEXT:    jal slow_a
 ; N32-NEXT:    srl $4, $3, 1
+; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    srlv $2, $2, $16
+; N32-NEXT:    andi $2, $1, 255
 ; N32-NEXT:  .LBB0_6: # %sw.d
 ; N32-NEXT:    jal slow_d
 ; N32-NEXT:    srl $4, $3, 1
+; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    srlv $2, $2, $16
+; N32-NEXT:    andi $2, $1, 255
 ; N32-NEXT:  .LBB0_7: # %sw.b
 ; N32-NEXT:    jal slow_b
 ; N32-NEXT:    srl $4, $3, 1
+; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    srlv $2, $2, $16
+; N32-NEXT:    andi $2, $1, 255
 ; N32-NEXT:  .LBB0_8: # %sw.c
 ; N32-NEXT:    jal slow_c
 ; N32-NEXT:    srl $4, $3, 1
+; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
-; N32-NEXT:    srlv $2, $2, $16
+; N32-NEXT:    andi $2, $1, 255
 ; N32-NEXT:  .LBB0_9: # %sw.e
 ; N32-NEXT:    jal slow_e
 ; N32-NEXT:    srl $4, $3, 1
-; N32-NEXT:    srlv $2, $2, $16
+; N32-NEXT:    srlv $1, $2, $16
+; N32-NEXT:    andi $2, $1, 255
 ; N32-NEXT:  .LBB0_10:
-; N32-NEXT:    ld $16, 0($sp) # 8-byte Folded Reload
 ; N32-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
-; N32-NEXT:    addiu $sp, $sp, 16
+; N32-NEXT:    ld $16, 0($sp) # 8-byte Folded Reload
 ; N32-NEXT:    jr $ra
-; N32-NEXT:    andi $2, $2, 255
+; N32-NEXT:    addiu $sp, $sp, 16
 ;
 ; N64-LABEL: jump_table_restore:
 ; N64:       # %bb.0: # %entry
@@ -131,7 +135,7 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N64-NEXT:    lbu $2, 0($1)
 ; N64-NEXT:  .LBB0_2: # %return
 ; N64-NEXT:    jr $ra
-; N64-NEXT:    andi $2, $2, 255
+; N64-NEXT:    nop
 ; N64-NEXT:  .LBB0_3: # %entry
 ; N64-NEXT:    addiu $5, $5, -2
 ; N64-NEXT:    sltiu $1, $5, 12
@@ -157,33 +161,37 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N64-NEXT:  .LBB0_5: # %sw.a
 ; N64-NEXT:    jal slow_a
 ; N64-NEXT:    srl $4, $3, 1
+; N64-NEXT:    srlv $1, $2, $16
 ; N64-NEXT:    j .LBB0_10
-; N64-NEXT:    srlv $2, $2, $16
+; N64-NEXT:    andi $2, $1, 255
 ; N64-NEXT:  .LBB0_6: # %sw.d
 ; N64-NEXT:    jal slow_d
 ; N64-NEXT:    srl $4, $3, 1
+; N64-NEXT:    srlv $1, $2, $16
 ; N64-NEXT:    j .LBB0_10
-; N64-NEXT:    srlv $2, $2, $16
+; N64-NEXT:    andi $2, $1, 255
 ; N64-NEXT:  .LBB0_7: # %sw.b
 ; N64-NEXT:    jal slow_b
 ; N64-NEXT:    srl $4, $3, 1
+; N64-NEXT:    srlv $1, $2, $16
 ; N64-NEXT:    j .LBB0_10
-; N64-NEXT:    srlv $2, $2, $16
+; N64-NEXT:    andi $2, $1, 255
 ; N64-NEXT:  .LBB0_8: # %sw.c
 ; N64-NEXT:    jal slow_c
 ; N64-NEXT:    srl $4, $3, 1
+; N64-NEXT:    srlv $1, $2, $16
 ; N64-NEXT:    j .LBB0_10
-; N64-NEXT:    srlv $2, $2, $16
+; N64-NEXT:    andi $2, $1, 255
 ; N64-NEXT:  .LBB0_9: # %sw.e
 ; N64-NEXT:    jal slow_e
 ; N64-NEXT:    srl $4, $3, 1
-; N64-NEXT:    srlv $2, $2, $16
+; N64-NEXT:    srlv $1, $2, $16
+; N64-NEXT:    andi $2, $1, 255
 ; N64-NEXT:  .LBB0_10:
 ; N64-NEXT:    ld $16, 0($sp) # 8-byte Folded Reload
 ; N64-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
-; N64-NEXT:    daddiu $sp, $sp, 16
 ; N64-NEXT:    jr $ra
-; N64-NEXT:    andi $2, $2, 255
+; N64-NEXT:    daddiu $sp, $sp, 16
 ;
 ; O32R6-LABEL: jump_table_restore:
 ; O32R6:       # %bb.0: # %entry
@@ -199,8 +207,7 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; O32R6-NEXT:    addu $1, $1, $2
 ; O32R6-NEXT:    lbu $2, 0($1)
 ; O32R6-NEXT:  $BB0_2: # %return
-; O32R6-NEXT:    jr $ra
-; O32R6-NEXT:    andi $2, $2, 255
+; O32R6-NEXT:    jrc $ra
 ; O32R6-NEXT:  $BB0_3: # %entry
 ; O32R6-NEXT:    addiu $5, $5, -2
 ; O32R6-NEXT:    sltiu $1, $5, 12
@@ -220,33 +227,37 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; O32R6-NEXT:  $BB0_5: # %sw.a
 ; O32R6-NEXT:    jal slow_a
 ; O32R6-NEXT:    srl $4, $3, 1
+; O32R6-NEXT:    srlv $1, $2, $16
 ; O32R6-NEXT:    j $BB0_10
-; O32R6-NEXT:    srlv $2, $2, $16
+; O32R6-NEXT:    andi $2, $1, 255
 ; O32R6-NEXT:  $BB0_6: # %sw.d
 ; O32R6-NEXT:    jal slow_d
 ; O32R6-NEXT:    srl $4, $3, 1
+; O32R6-NEXT:    srlv $1, $2, $16
 ; O32R6-NEXT:    j $BB0_10
-; O32R6-NEXT:    srlv $2, $2, $16
+; O32R6-NEXT:    andi $2, $1, 255
 ; O32R6-NEXT:  $BB0_7: # %sw.b
 ; O32R6-NEXT:    jal slow_b
 ; O32R6-NEXT:    srl $4, $3, 1
+; O32R6-NEXT:    srlv $1, $2, $16
 ; O32R6-NEXT:    j $BB0_10
-; O32R6-NEXT:    srlv $2, $2, $16
+; O32R6-NEXT:    andi $2, $1, 255
 ; O32R6-NEXT:  $BB0_8: # %sw.c
 ; O32R6-NEXT:    jal slow_c
 ; O32R6-NEXT:    srl $4, $3, 1
+; O32R6-NEXT:    srlv $1, $2, $16
 ; O32R6-NEXT:    j $BB0_10
-; O32R6-NEXT:    srlv $2, $2, $16
+; O32R6-NEXT:    andi $2, $1, 255
 ; O32R6-NEXT:  $BB0_9: # %sw.e
 ; O32R6-NEXT:    jal slow_e
 ; O32R6-NEXT:    srl $4, $3, 1
-; O32R6-NEXT:    srlv $2, $2, $16
+; O32R6-NEXT:    srlv $1, $2, $16
+; O32R6-NEXT:    andi $2, $1, 255
 ; O32R6-NEXT:  $BB0_10:
 ; O32R6-NEXT:    lw $16, 16($sp) # 4-byte Folded Reload
 ; O32R6-NEXT:    lw $ra, 20($sp) # 4-byte Folded Reload
-; O32R6-NEXT:    addiu $sp, $sp, 24
 ; O32R6-NEXT:    jr $ra
-; O32R6-NEXT:    andi $2, $2, 255
+; O32R6-NEXT:    addiu $sp, $sp, 24
 entry:
   %shl = shl i32 %a, 3
   %shift = and i32 %shl, 8
