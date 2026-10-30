@@ -240,6 +240,18 @@ public:
   /// can be overridden.
   virtual bool enableJoinGlobalCopies() const;
 
+  /// Per-function preference for joining copies across basic blocks.
+  /// Targets that do not override this retain the subtarget-wide policy.
+  virtual bool enableJoinGlobalCopies(const MachineFunction &MF) const {
+    return enableJoinGlobalCopies();
+  }
+
+  /// Whether to prioritize copies on split critical edges when coalescing.
+  /// The default remains disabled unless explicitly enabled by a target.
+  virtual bool enableJoinSplitEdges(const MachineFunction &MF) const {
+    return false;
+  }
+
   /// Hack to bring up option. This should be unconditionally true, all targets
   /// should enable it and delete this.
   virtual bool enableTerminalRule() const { return false; }
