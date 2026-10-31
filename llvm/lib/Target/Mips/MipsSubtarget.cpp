@@ -19,12 +19,17 @@
 #include "MipsRegisterInfo.h"
 #include "MipsSelectionDAGInfo.h"
 #include "MipsTargetMachine.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
 #include "llvm/CodeGen/SingleRegClassMutations.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/LibraryOptions.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -46,6 +51,48 @@ bool MipsSubtarget::CRCWarningPrinted = false;
 bool MipsSubtarget::GINVWarningPrinted = false;
 
 void MipsSubtarget::anchor() {}
+
+// This cannot be the default R5900 policy: the NJEMU Z80 dispatch benefits,
+// but its 68000 dispatch regresses. Keep the choice explicit per compilation.
+static cl::opt<bool> R5900CyclicDispatchNoGlobalCopies(
+    "mips-r5900-cyclic-dispatch-no-global-copies", cl::Hidden, cl::init(false),
+    cl::desc("Disable global copy coalescing in cyclic R5900 indirect dispatches"));
+
+// A computed-goto dispatch in a cycle repeatedly transports values between
+// handlers and the dispatch block. This is the structural scope of the
+// opt-in: it avoids changing one-shot indirect branches or arbitrary loops.
+static bool hasCyclicIndirectDispatch(const Function &F) {
+  for (const BasicBlock &BB : F) {
+    if (!isa<IndirectBrInst>(BB.getTerminator()))
+      continue;
+
+    SmallVector<const BasicBlock *, 32> Worklist;
+    SmallPtrSet<const BasicBlock *, 32> Seen;
+    for (const BasicBlock *Successor : successors(&BB))
+      Worklist.push_back(Successor);
+
+    while (!Worklist.empty()) {
+      const BasicBlock *Current = Worklist.pop_back_val();
+      if (Current == &BB)
+        return true;
+      if (!Seen.insert(Current).second)
+        continue;
+      for (const BasicBlock *Successor : successors(Current))
+        Worklist.push_back(Successor);
+    }
+  }
+  return false;
+}
+
+bool MipsSubtarget::enableJoinGlobalCopies(const MachineFunction &MF) const {
+  if (R5900CyclicDispatchNoGlobalCopies && isR5900() &&
+      hasCyclicIndirectDispatch(MF.getFunction())) {
+    LLVM_DEBUG(dbgs() << "R5900 coalescing: cyclic indirect dispatch in "
+                      << MF.getName() << '\n');
+    return false;
+  }
+  return TargetSubtargetInfo::enableJoinGlobalCopies();
+}
 
 MipsSubtarget::MipsSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
                              StringRef ABIName, bool little,
