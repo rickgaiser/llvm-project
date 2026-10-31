@@ -86,6 +86,7 @@ using TargetRegisterClass = MCRegisterClass;
                            RTLIB::Libcall LC) const;
     SDValue lowerLOAD(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSTORE(SDValue Op, SelectionDAG &DAG) const;
+    SDValue lowerPREFETCH(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerVectorShift(SDValue Op, SelectionDAG &DAG) const;

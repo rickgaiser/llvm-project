@@ -1039,6 +1039,7 @@ let DecoderNamespace = "MicroMips" in {
   let DecoderMethod = "DecodeCacheOpMM" in {
     def CACHE_MM : MMRel, CacheOp<"cache", mem_mm_12>,
                    CACHE_PREF_FM_MM<0x08, 0x6>, ISA_MICROMIPS32_NOT_MIPS32R6;
+    let hasSideEffects = 0, mayLoad = 1, mayStore = 1 in
     def PREF_MM  : MMRel, CacheOp<"pref", mem_mm_12>,
                    CACHE_PREF_FM_MM<0x18, 0x2>, ISA_MICROMIPS32_NOT_MIPS32R6;
   }

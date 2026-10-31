@@ -73,6 +73,10 @@ private:
   virtual bool selectIntAddrLSL2MM(SDValue Addr, SDValue &Base,
                                    SDValue &Offset) const;
 
+  /// Match addr+simm9 and addr
+  virtual bool selectIntAddrSImm9(SDValue Addr, SDValue &Base,
+                                  SDValue &Offset) const;
+
   /// Match addr+simm10 and addr
   virtual bool selectIntAddrSImm10(SDValue Addr, SDValue &Base,
                                    SDValue &Offset) const;

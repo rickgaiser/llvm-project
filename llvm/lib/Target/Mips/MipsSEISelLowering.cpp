@@ -415,6 +415,9 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   setOperationAction(ISD::SDIVREM, MVT::i32, Custom);
   setOperationAction(ISD::UDIVREM, MVT::i32, Custom);
   setOperationAction(ISD::ATOMIC_FENCE,       MVT::Other, Custom);
+  // PREF is MIPS IV and MIPS32. The R5900 has it too.
+  if (Subtarget.hasMips4_32() || Subtarget.isR5900())
+    setOperationAction(ISD::PREFETCH, MVT::Other, Custom);
   if (Subtarget.hasMips32r6()) {
     setOperationAction(ISD::LOAD,               MVT::i32, Legal);
     setOperationAction(ISD::STORE,              MVT::i32, Legal);
@@ -787,6 +790,8 @@ SDValue MipsSETargetLowering::LowerOperation(SDValue Op,
   switch(Op.getOpcode()) {
   case ISD::LOAD:  return lowerLOAD(Op, DAG);
   case ISD::STORE: return lowerSTORE(Op, DAG);
+  case ISD::PREFETCH:
+    return lowerPREFETCH(Op, DAG);
   case ISD::SMUL_LOHI: return lowerMulDiv(Op, MipsISD::Mult, true, true, DAG);
   case ISD::UMUL_LOHI: return lowerMulDiv(Op, MipsISD::Multu, true, true, DAG);
   case ISD::MULHS:     return lowerMulDiv(Op, MipsISD::Mult, false, true, DAG);
@@ -3160,6 +3165,14 @@ SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getStore(Chain, DL, Hi, Ptr, MachinePointerInfo(),
                       commonAlignment(Nd.getAlign(), 4),
                       Nd.getMemOperand()->getFlags(), Nd.getAAInfo());
+}
+
+// PREF only prefetches data. Drop instruction prefetches, keeping the chain.
+SDValue MipsSETargetLowering::lowerPREFETCH(SDValue Op,
+                                            SelectionDAG &DAG) const {
+  if (Op.getConstantOperandVal(4) == 0)
+    return Op.getOperand(0);
+  return Op;
 }
 
 SDValue MipsSETargetLowering::lowerBITCAST(SDValue Op,

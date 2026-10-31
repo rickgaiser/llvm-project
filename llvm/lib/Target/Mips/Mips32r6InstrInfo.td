@@ -659,7 +659,11 @@ class CACHE_HINT_DESC<string instr_asm, Operand MemOpnd>
 }
 
 class CACHE_DESC : CACHE_HINT_DESC<"cache", mem_simm9>;
-class PREF_DESC : CACHE_HINT_DESC<"pref", mem_simm9>;
+class PREF_DESC : CACHE_HINT_DESC<"pref", mem_simm9> {
+  bit hasSideEffects = 0;
+  bit mayLoad = 1;
+  bit mayStore = 1;
+}
 
 class COP2LD_DESC_BASE<string instr_asm, RegisterOperand COPOpnd> {
   dag OutOperandList = (outs COPOpnd:$rt);

@@ -1374,6 +1374,7 @@ def addrRegImm :
 def addrDefault :
   ComplexPattern<iPTR, 2, "selectAddrDefault", [frameindex]>;
 
+def addrimm9 : ComplexPattern<iPTR, 2, "selectIntAddrSImm9", [frameindex]>;
 def addrimm10 : ComplexPattern<iPTR, 2, "selectIntAddrSImm10", [frameindex]>;
 def addrimm10lsl1 : ComplexPattern<iPTR, 2, "selectIntAddrSImm10Lsl1",
                                    [frameindex]>;
@@ -2606,8 +2607,10 @@ class CacheOp<string instr_asm, Operand MemOpnd> :
 let AdditionalPredicates = [NotInMicroMips] in {
   def CACHE : MMRel, CacheOp<"cache", mem>, CACHEOP_FM<0b101111>,
               INSN_MIPS3_32_NOT_32R6_64R6;
+  // PREF is MIPS IV, not MIPS III. The R5900 has it too.
+  let hasSideEffects = 0, mayLoad = 1, mayStore = 1 in
   def PREF :  MMRel, CacheOp<"pref", mem>, CACHEOP_FM<0b110011>,
-              INSN_MIPS3_32_NOT_32R6_64R6;
+              INSN_MIPS4_32_R5900_NOT_32R6_64R6;
 }
 // FIXME: We are missing the prefx instruction.
 def ROL : MipsAsmPseudoInst<(outs),
@@ -3507,3 +3510,33 @@ include "MipsR5900InstrInfo.td"
 // R5900 VU0 (COP2)
 include "MipsVU0InstrFormats.td"
 include "MipsVU0InstrInfo.td"
+
+//===----------------------------------------------------------------------===//
+// Data prefetch
+//===----------------------------------------------------------------------===//
+
+// llvm.prefetch(addr, rw, locality, cache type) for data (cache type 1).
+// MipsSETargetLowering drops instruction prefetches. The hint follows the
+// locality as in GCC: 0 is streamed (load 4, store 5), 1 and 2 are normal
+// (load 0, store 1) and 3 is retained (load 6, store 7).
+multiclass PrefetchPats<Instruction PrefInst, ComplexPattern Addr> {
+  foreach RW = [0, 1] in
+    foreach Locality = [0, 1, 2, 3] in
+      def : MipsPat<(prefetch Addr:$addr, (i32 RW), (i32 Locality), (i32 1)),
+                    (PrefInst Addr:$addr,
+                              !add(RW, !cond(!eq(Locality, 0) : 4,
+                                             !eq(Locality, 3) : 6,
+                                             true : 0)))>;
+}
+
+let AdditionalPredicates = [NotInMicroMips] in {
+  defm : PrefetchPats<PREF, addr>, INSN_MIPS4_32_NOT_32R6_64R6;
+  defm : PrefetchPats<PREF_R6, addrimm9>, ISA_MIPS32R6;
+}
+defm : PrefetchPats<PREF_MM, addrimm12>, ISA_MICROMIPS32_NOT_MIPS32R6;
+defm : PrefetchPats<PREF_MMR6, addrimm12>, ISA_MICROMIPS32R6;
+
+// The R5900 only defines hint 0 (load). The other hints are reserved and
+// act as 0, so always use 0.
+let InsnPredicates = [IsR5900], EncodingPredicates = [HasStdEnc] in
+def : MipsPat<(prefetch addr:$addr, timm, timm, (i32 1)), (PREF addr:$addr, 0)>;

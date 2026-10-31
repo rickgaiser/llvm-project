@@ -415,7 +415,11 @@ class CACHE_HINT_MMR6_DESC<string instr_asm, Operand MemOpnd>
 }
 
 class CACHE_MMR6_DESC : CACHE_HINT_MMR6_DESC<"cache", mem_mm_12>;
-class PREF_MMR6_DESC : CACHE_HINT_MMR6_DESC<"pref", mem_mm_12>;
+class PREF_MMR6_DESC : CACHE_HINT_MMR6_DESC<"pref", mem_mm_12> {
+  bit hasSideEffects = 0;
+  bit mayLoad = 1;
+  bit mayStore = 1;
+}
 
 class LB_LBU_MMR6_DESC_BASE<string instr_asm, Operand MemOpnd,
                             RegisterOperand GPROpnd>
