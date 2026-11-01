@@ -68,3 +68,53 @@ loop:
 exit:
   ret i32 %add
 }
+
+; An inline asm statement counts as the instructions it holds: four here, so
+; the loop is long and its delay slot is filled.
+
+; FIX-LABEL: test_asm_long_loop:
+; FIX:       .LBB2_1:
+; FIX:       sq $9, 48($4)
+; FIX:       bnez
+; FIX-NEXT:  daddiu $4, $4, 64
+
+define void @test_asm_long_loop(ptr %p, i32 %n) {
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %q = phi ptr [ %p, %entry ], [ %q.next, %loop ]
+  call void asm sideeffect "lq $$8, 0($0)\0A\09lq $$9, 16($0)\0A\09sq $$8, 32($0)\0A\09sq $$9, 48($0)", "r,~{$8},~{$9},~{memory}"(ptr %q)
+  %q.next = getelementptr i8, ptr %q, i32 64
+  %i.next = add i32 %i, 1
+  %c = icmp ne i32 %i.next, %n
+  br i1 %c, label %loop, label %exit
+
+exit:
+  ret void
+}
+
+; Directives, labels and comments are not instructions: this loop is short.
+
+; FIX-LABEL: test_asm_short_loop:
+; FIX:       .LBB3_1:
+; FIX:       bnez
+; FIX-NEXT:  nop
+
+define void @test_asm_short_loop(ptr %p, i32 %n) {
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %q = phi ptr [ %p, %entry ], [ %q.next, %loop ]
+  call void asm sideeffect ".set push\0A\09.set noat # a comment\0A1:\0A\09sw $$0, 0($0)\0A\09.set pop", "r,~{memory}"(ptr %q)
+  %q.next = getelementptr i8, ptr %q, i32 64
+  %i.next = add i32 %i, 1
+  %c = icmp ne i32 %i.next, %n
+  br i1 %c, label %loop, label %exit
+
+exit:
+  ret void
+}

@@ -20,6 +20,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -367,6 +368,35 @@ static bool hasUnoccupiedSlot(const MachineInstr *MI) {
 /// - a branch delay slot of the loop is not NOP (EE 2.9 or later).
 ///
 /// We need to do this because of a hardware bug in the R5900 chip.
+// The instructions of an inline asm statement: its lines and ;-separated
+// statements without labels, directives and comments. Never more than it
+// assembles to (a macro may expand to more), so a short loop is not missed.
+static unsigned countInlineAsmInstrs(const MachineInstr &MI) {
+  StringRef Str = MI.getOperand(0).getSymbolName();
+  unsigned Count = 0;
+  SmallVector<StringRef, 16> Lines;
+  Str.split(Lines, '\n');
+  for (StringRef Line : Lines) {
+    SmallVector<StringRef, 4> Stmts;
+    Line.split(Stmts, ';');
+    for (StringRef Stmt : Stmts) {
+      Stmt = Stmt.take_until([](char C) { return C == '#'; }).trim();
+      while (!Stmt.empty()) {
+        size_t Colon = Stmt.find(':');
+        if (Colon == StringRef::npos ||
+            !llvm::all_of(Stmt.take_front(Colon), [](char C) {
+              return isAlnum(C) || C == '_' || C == '.' || C == '$';
+            }))
+          break;
+        Stmt = Stmt.drop_front(Colon + 1).trim();
+      }
+      if (!Stmt.empty() && !Stmt.starts_with("."))
+        ++Count;
+    }
+  }
+  return Count;
+}
+
 static bool isR5900ShortLoopBranch(const MachineInstr *MI,
                                    const MachineBasicBlock &MBB) {
   // Must be a conditional branch (not jump or indirect branch)
@@ -400,7 +430,7 @@ static bool isR5900ShortLoopBranch(const MachineInstr *MI,
     if (Instr.isDebugInstr() || Instr.isTransient())
       continue;
 
-    ++InstrCount;
+    InstrCount += Instr.isInlineAsm() ? countInlineAsmInstrs(Instr) : 1;
 
     // If there's another branch in the loop, the erratum doesn't apply
     if (Instr.isBranch() || Instr.isCall()) {
