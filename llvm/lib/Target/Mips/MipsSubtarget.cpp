@@ -20,11 +20,16 @@
 #include "MipsSelectionDAGInfo.h"
 #include "MipsTargetMachine.h"
 #include "llvm/CodeGen/MachinePipeliner.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/SchedulerRegistry.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/SingleRegClassMutations.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/LibraryOptions.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -46,6 +51,44 @@ bool MipsSubtarget::CRCWarningPrinted = false;
 bool MipsSubtarget::GINVWarningPrinted = false;
 
 void MipsSubtarget::anchor() {}
+
+// Remain opt-in until benefits have been reproduced outside the NJEMU
+// dispatcher. The block threshold is adjustable for small codegen tests.
+static cl::opt<bool> R5900PressureDAG(
+    "mips-r5900-pressure-dag", cl::Hidden, cl::init(false),
+    cl::desc("Try pressure-aware DAG scheduling in large R5900 dispatches"));
+static cl::opt<unsigned> R5900PressureDAGMinBlocks(
+    "mips-r5900-pressure-dag-min-blocks", cl::Hidden, cl::init(512),
+    cl::desc("Minimum block count for opt-in R5900 pressure DAG scheduling"));
+
+// Very large computed-goto dispatch functions are unusually register-pressure
+// sensitive on the R5900. Prefer the bottom-up register-pressure scheduler for
+// these functions; preserve the existing source-order scheduler for smaller
+// functions and for all other MIPS CPUs.
+static ScheduleDAGSDNodes *
+createR5900DispatchDAGScheduler(SelectionDAGISel *IS,
+                                CodeGenOptLevel OptLevel) {
+  const Function &F = IS->MF->getFunction();
+  if (R5900PressureDAG && F.size() >= R5900PressureDAGMinBlocks) {
+    for (const BasicBlock &BB : F) {
+      if (isa<IndirectBrInst>(BB.getTerminator())) {
+        LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: register pressure for "
+                          << F.getName() << '\n');
+        return createBURRListDAGScheduler(IS, OptLevel);
+      }
+    }
+  }
+  LLVM_DEBUG(dbgs() << "R5900 DAG scheduler: source for " << F.getName()
+                    << '\n');
+  return createSourceListDAGScheduler(IS, OptLevel);
+}
+
+RegisterScheduler::FunctionPassCtor
+MipsSubtarget::getDAGScheduler(CodeGenOptLevel OptLevel) const {
+  if (isR5900() && OptLevel != CodeGenOptLevel::None)
+    return createR5900DispatchDAGScheduler;
+  return nullptr;
+}
 
 MipsSubtarget::MipsSubtarget(const Triple &TT, StringRef CPU, StringRef FS,
                              StringRef ABIName, bool little,
