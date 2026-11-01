@@ -16,18 +16,22 @@ define i32 @computed_jump(ptr %target, i32 %a, i32 %b, ptr %out) {
 ; ON-NEXT:    addu $3, $3, $1
 ; ON-NEXT:    jr $4
 ; ON-NEXT:    sll $1, $7, 0
+; ON-NEXT:    .p2align 3
 ; ON-NEXT:  .LBB0_1: # %one
 ; ON-NEXT:    mult $2, $3, $2
 ; ON-NEXT:    jr $ra
 ; ON-NEXT:    sw $2, 0($1)
+; ON-NEXT:    .p2align 3
 ; ON-NEXT:  .LBB0_2: # %three
 ; ON-NEXT:    sll $2, $3, 3
 ; ON-NEXT:    jr $ra
 ; ON-NEXT:    sw $2, 0($1)
+; ON-NEXT:    .p2align 3
 ; ON-NEXT:  .LBB0_3: # %four
 ; ON-NEXT:    addiu $2, $3, 15
 ; ON-NEXT:    jr $ra
 ; ON-NEXT:    sw $2, 0($1)
+; ON-NEXT:    .p2align 3
 ; ON-NEXT:  .LBB0_4: # %two
 ; ON-NEXT:    xor $2, $3, $2
 ; ON-NEXT:    jr $ra
@@ -42,18 +46,22 @@ define i32 @computed_jump(ptr %target, i32 %a, i32 %b, ptr %out) {
 ; OFF-NEXT:    addu $2, $5, $3
 ; OFF-NEXT:    jr $4
 ; OFF-NEXT:    subu $3, $5, $3
+; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB0_1: # %one
 ; OFF-NEXT:    mult $2, $2, $3
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    sw $2, 0($1)
+; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB0_2: # %three
 ; OFF-NEXT:    sll $2, $2, 3
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    sw $2, 0($1)
+; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB0_3: # %four
 ; OFF-NEXT:    addiu $2, $2, 15
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    sw $2, 0($1)
+; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB0_4: # %two
 ; OFF-NEXT:    xor $2, $2, $3
 ; OFF-NEXT:    jr $ra
