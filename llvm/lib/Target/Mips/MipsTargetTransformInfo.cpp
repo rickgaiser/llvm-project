@@ -249,7 +249,13 @@ void MipsTTIImpl::getUnrollingPreferences(
             isLoweredToCall(CB->getCalledFunction()))
           return;
 
-  UP.Partial = UP.Runtime = UP.UpperBound = true;
+  UP.Partial = UP.UpperBound = true;
+  // Not at run time a loop with branches inside, whose copies do not issue
+  // together, nor a loop that was vectorized: its vector body and its scalar
+  // remainder usually run only a few times (measured: a triangle rasterizer
+  // and the copies of an LZ77 decoder, ps2-llvm-benchmarks).
+  UP.Runtime = L->getNumBlocks() == 1 &&
+               !getBooleanLoopAttribute(L, "llvm.loop.isvectorized");
   UP.PartialThreshold = 120;
   UP.OptSizeThreshold = 0;
   UP.PartialOptSizeThreshold = 0;

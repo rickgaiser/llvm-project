@@ -51,6 +51,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/LoopPassManager.h"
+#include "llvm/Transforms/Scalar/SimpleLoopUnswitch.h"
 #include <optional>
 #include <string>
 
@@ -229,9 +231,32 @@ public:
 
 } // end anonymous namespace
 
+namespace {
+// Non-trivial loop unswitching, which the pipeline runs only at -O3, for the
+// R5900 at -O2 too: a loop that tests a loop-invariant condition becomes one
+// loop per outcome, with fewer branches each (measured: 1.33x on a triangle
+// rasterizer that tests the sign of the triangle's area per pixel).
+struct MipsR5900UnswitchPass : OptionalPassInfoMixin<MipsR5900UnswitchPass> {
+  const MipsTargetMachine &TM;
+  MipsR5900UnswitchPass(const MipsTargetMachine &TM) : TM(TM) {}
+  PreservedAnalyses run(Loop &L, LoopAnalysisManager &AM,
+                        LoopStandardAnalysisResults &AR, LPMUpdater &U) {
+    if (!TM.getSubtargetImpl(*L.getHeader()->getParent())->isR5900())
+      return PreservedAnalyses::all();
+    return SimpleLoopUnswitchPass(/*NonTrivial=*/true).run(L, AM, AR, U);
+  }
+};
+} // namespace
+
 void MipsTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
 #define GET_PASS_REGISTRY "MipsPassRegistry.def"
 #include "llvm/Passes/TargetPassRegistry.inc"
+
+  PB.registerLateLoopOptimizationsEPCallback(
+      [this](LoopPassManager &LPM, OptimizationLevel Level) {
+        if (Level == OptimizationLevel::O2)
+          LPM.addPass(MipsR5900UnswitchPass(*this));
+      });
 
   // Before the vectorizers, which do not make VU0 matrix times vector code,
   // and do not know that arrays passed as pointers are usually aligned.

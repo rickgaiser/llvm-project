@@ -163,7 +163,133 @@ loop:
 exit:
   ret void
 }
+
+; A loop with a branch inside is not unrolled at run time: its copies do not
+; issue together.
+define void @branchy(ptr %p, i32 %n, i32 %c) {
+; R5900-LABEL: define void @branchy(
+; R5900-SAME: ptr [[P:%.*]], i32 [[N:%.*]], i32 [[C:%.*]]) #[[ATTR0]] {
+; R5900-NEXT:  [[ENTRY:.*]]:
+; R5900-NEXT:    br label %[[LOOP:.*]]
+; R5900:       [[LOOP]]:
+; R5900-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LATCH:.*]] ]
+; R5900-NEXT:    [[A:%.*]] = getelementptr i32, ptr [[P]], i32 [[I]]
+; R5900-NEXT:    [[V:%.*]] = load i32, ptr [[A]], align 4
+; R5900-NEXT:    [[T:%.*]] = icmp sgt i32 [[V]], 0
+; R5900-NEXT:    br i1 [[T]], label %[[THEN:.*]], label %[[LATCH]]
+; R5900:       [[THEN]]:
+; R5900-NEXT:    store i32 [[C]], ptr [[A]], align 4
+; R5900-NEXT:    br label %[[LATCH]]
+; R5900:       [[LATCH]]:
+; R5900-NEXT:    [[I_NEXT]] = add i32 [[I]], 1
+; R5900-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], [[N]]
+; R5900-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; R5900:       [[EXIT]]:
+; R5900-NEXT:    ret void
+;
+; MIPS3-LABEL: define void @branchy(
+; MIPS3-SAME: ptr [[P:%.*]], i32 [[N:%.*]], i32 [[C:%.*]]) #[[ATTR0]] {
+; MIPS3-NEXT:  [[ENTRY:.*]]:
+; MIPS3-NEXT:    br label %[[LOOP:.*]]
+; MIPS3:       [[LOOP]]:
+; MIPS3-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LATCH:.*]] ]
+; MIPS3-NEXT:    [[A:%.*]] = getelementptr i32, ptr [[P]], i32 [[I]]
+; MIPS3-NEXT:    [[V:%.*]] = load i32, ptr [[A]], align 4
+; MIPS3-NEXT:    [[T:%.*]] = icmp sgt i32 [[V]], 0
+; MIPS3-NEXT:    br i1 [[T]], label %[[THEN:.*]], label %[[LATCH]]
+; MIPS3:       [[THEN]]:
+; MIPS3-NEXT:    store i32 [[C]], ptr [[A]], align 4
+; MIPS3-NEXT:    br label %[[LATCH]]
+; MIPS3:       [[LATCH]]:
+; MIPS3-NEXT:    [[I_NEXT]] = add i32 [[I]], 1
+; MIPS3-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], [[N]]
+; MIPS3-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; MIPS3:       [[EXIT]]:
+; MIPS3-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %latch ]
+  %a = getelementptr i32, ptr %p, i32 %i
+  %v = load i32, ptr %a
+  %t = icmp sgt i32 %v, 0
+  br i1 %t, label %then, label %latch
+
+then:
+  store i32 %c, ptr %a
+  br label %latch
+
+latch:
+  %i.next = add i32 %i, 1
+  %done = icmp eq i32 %i.next, %n
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+; Nor is a loop that was vectorized: its vector body and its remainder
+; usually run only a few times.
+define void @vectorized(ptr %d, ptr %s, i32 %n) {
+; R5900-LABEL: define void @vectorized(
+; R5900-SAME: ptr [[D:%.*]], ptr [[S:%.*]], i32 [[N:%.*]]) #[[ATTR0]] {
+; R5900-NEXT:  [[ENTRY:.*]]:
+; R5900-NEXT:    br label %[[LOOP:.*]]
+; R5900:       [[LOOP]]:
+; R5900-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; R5900-NEXT:    [[SA:%.*]] = getelementptr i8, ptr [[S]], i32 [[I]]
+; R5900-NEXT:    [[V:%.*]] = load i8, ptr [[SA]], align 1
+; R5900-NEXT:    [[DA:%.*]] = getelementptr i8, ptr [[D]], i32 [[I]]
+; R5900-NEXT:    store i8 [[V]], ptr [[DA]], align 1
+; R5900-NEXT:    [[I_NEXT]] = add i32 [[I]], 1
+; R5900-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], [[N]]
+; R5900-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]], !llvm.loop [[LOOP2:![0-9]+]]
+; R5900:       [[EXIT]]:
+; R5900-NEXT:    ret void
+;
+; MIPS3-LABEL: define void @vectorized(
+; MIPS3-SAME: ptr [[D:%.*]], ptr [[S:%.*]], i32 [[N:%.*]]) #[[ATTR0]] {
+; MIPS3-NEXT:  [[ENTRY:.*]]:
+; MIPS3-NEXT:    br label %[[LOOP:.*]]
+; MIPS3:       [[LOOP]]:
+; MIPS3-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; MIPS3-NEXT:    [[SA:%.*]] = getelementptr i8, ptr [[S]], i32 [[I]]
+; MIPS3-NEXT:    [[V:%.*]] = load i8, ptr [[SA]], align 1
+; MIPS3-NEXT:    [[DA:%.*]] = getelementptr i8, ptr [[D]], i32 [[I]]
+; MIPS3-NEXT:    store i8 [[V]], ptr [[DA]], align 1
+; MIPS3-NEXT:    [[I_NEXT]] = add i32 [[I]], 1
+; MIPS3-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], [[N]]
+; MIPS3-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]], !llvm.loop [[LOOP0:![0-9]+]]
+; MIPS3:       [[EXIT]]:
+; MIPS3-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %sa = getelementptr i8, ptr %s, i32 %i
+  %v = load i8, ptr %sa
+  %da = getelementptr i8, ptr %d, i32 %i
+  store i8 %v, ptr %da
+  %i.next = add i32 %i, 1
+  %done = icmp eq i32 %i.next, %n
+  br i1 %done, label %exit, label %loop, !llvm.loop !0
+
+exit:
+  ret void
+}
+
+!0 = distinct !{!0, !1}
+!1 = !{!"llvm.loop.isvectorized", i32 1}
 ;.
 ; R5900: [[LOOP0]] = distinct !{[[LOOP0]], [[META1:![0-9]+]]}
 ; R5900: [[META1]] = !{!"llvm.loop.unroll.disable"}
+; R5900: [[LOOP2]] = distinct !{[[LOOP2]], [[META3:![0-9]+]]}
+; R5900: [[META3]] = !{!"llvm.loop.isvectorized", i32 1}
+;.
+; MIPS3: [[LOOP0]] = distinct !{[[LOOP0]], [[META1:![0-9]+]]}
+; MIPS3: [[META1]] = !{!"llvm.loop.isvectorized", i32 1}
 ;.
