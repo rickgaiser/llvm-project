@@ -66,6 +66,8 @@ bool MipsOptimizeZeroExt::isAlreadyZeroExtended(
       return Reg == Mips::R0 || Reg == Mips::R0_64;
 
     const MachineInstr *Def = MRI.getVRegDef(Reg);
+    if (!Def)
+      return false;
     switch (Def->getOpcode()) {
     case Mips::LBu:
       return Mask >= 0xff;
@@ -117,7 +119,7 @@ bool MipsOptimizeZeroExt::trySinkMask(MachineInstr &MaskMI,
     return false;
 
   MachineInstr *Phi = MRI.getVRegDef(PhiReg);
-  if (!Phi->isPHI() || Phi->getParent() != MaskMI.getParent())
+  if (!Phi || !Phi->isPHI() || Phi->getParent() != MaskMI.getParent())
     return false;
 
   MachineBasicBlock *Join = Phi->getParent();
@@ -141,6 +143,13 @@ bool MipsOptimizeZeroExt::trySinkMask(MachineInstr &MaskMI,
   if (!HasExtendedIncoming)
     return false;
 
+  // Replacing the mask destination with the PHI must also respect the
+  // destination's register-class constraints.
+  Register MaskDst = MaskMI.getOperand(0).getReg();
+  if (!MaskDst.isVirtual() ||
+      !MRI.constrainRegClass(PhiReg, MRI.getRegClass(MaskDst)))
+    return false;
+
   for (unsigned I : NeedsMask) {
     Register Incoming = Phi->getOperand(I).getReg();
     MachineBasicBlock *Pred = Phi->getOperand(I + 1).getMBB();
@@ -152,14 +161,17 @@ bool MipsOptimizeZeroExt::trySinkMask(MachineInstr &MaskMI,
     Phi->getOperand(I).setReg(Extended);
   }
 
-  MRI.replaceRegWith(MaskMI.getOperand(0).getReg(), PhiReg);
+  MRI.replaceRegWith(MaskDst, PhiReg);
   MaskMI.eraseFromParent();
   ++NumSunkMasks;
   return true;
 }
 
 bool MipsOptimizeZeroExt::runOnMachineFunction(MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()))
+  // Sinking can duplicate a single ANDi across multiple predecessor blocks.
+  // Do not increase static code size in size-optimized functions.
+  if (skipFunction(MF.getFunction()) || MF.getFunction().hasOptSize() ||
+      MF.getFunction().hasMinSize())
     return false;
 
   MachineRegisterInfo &MRI = MF.getRegInfo();
