@@ -71,6 +71,8 @@ public:
   uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
                                    unsigned NumPrefetches) const override;
 
+  unsigned adjustInliningThreshold(const CallBase *CB) const override;
+
   void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                TTI::UnrollingPreferences &UP,
                                OptimizationRemarkEmitter *ORE) const override;
