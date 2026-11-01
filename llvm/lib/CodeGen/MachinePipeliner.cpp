@@ -1292,6 +1292,10 @@ LoopCarriedOrderDepsTracker::getInstrTag(SUnit *SU) const {
   if (TII->isGlobalMemoryObject(MI))
     return InstrTag::Barrier;
 
+  // A prefetch does not change what the other accesses read or write.
+  if (TII->isPrefetch(*MI))
+    return std::nullopt;
+
   if (MI->mayStore() ||
       (MI->mayLoad() && !MI->isDereferenceableInvariantLoad()))
     return InstrTag::LoadOrStore;

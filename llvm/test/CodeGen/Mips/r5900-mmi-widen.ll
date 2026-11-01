@@ -4,7 +4,8 @@
 ; R5900 MMI extensions of v8i16 and v16i8 (PEXTL/PEXTU, then an arithmetic
 ; shift for a sign extension), and of v4i8 and v4i16 to v4i32, 16x16->32
 ; multiplies (PMULTH), splats of a register (PCPYLD, PCPYH) and v4i32 of four
-; registers (PEXTLW, PCPYLD).
+; registers (PEXTLW, PCPYLD). A v4i32 multiply of values that fit in 16 bits
+; is the rd of PMULTH: the products of the low halves of the words.
 
 define void @sext_h_w(ptr %p, ptr %q) {
 ; CHECK-LABEL: sext_h_w:
@@ -77,7 +78,7 @@ define void @mul_sext(ptr %p, ptr %q, ptr %r) {
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    sll $4, $6, 0
 ; CHECK-NEXT:    lq $2, 0($2)
-; CHECK-NEXT:    pmulth $1, $1, $2
+; CHECK-NEXT:    pmulth $zero, $1, $2
 ; CHECK-NEXT:    pmflo $1
 ; CHECK-NEXT:    pmfhi $2
 ; CHECK-NEXT:    pcpyld $3, $2, $1
@@ -94,24 +95,6 @@ define void @mul_sext(ptr %p, ptr %q, ptr %r) {
   ret void
 }
 define void @mul_splat(ptr %p, i16 %v, ptr %r) {
-; CHECK-LABEL: mul_splat:
-; CHECK:       # %bb.0:
-; CHECK-NEXT:    sll $1, $4, 0
-; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
-; CHECK-NEXT:    pcpyld $2, $5, $5
-; CHECK-NEXT:    lq $1, 0($1)
-; CHECK-NEXT:    pcpyh $2, $2
-; CHECK-NEXT:    pmulth $1, $1, $2
-; CHECK-NEXT:    pmflo $1
-; CHECK-NEXT:    pmfhi $2
-; CHECK-NEXT:    pcpyud $3, $1, $2
-; CHECK-NEXT:    pcpyld $1, $2, $1
-; CHECK-NEXT:    sll $2, $6, 0
-; CHECK-NEXT:    psraw $1, $1, 15
-; CHECK-NEXT:    sq $1, 0($2)
-; CHECK-NEXT:    psraw $3, $3, 15
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sq $3, 16($2)
   %a = load <8 x i16>, ptr %p, align 16
   %ea = sext <8 x i16> %a to <8 x i32>
   %ev = sext i16 %v to i32
@@ -181,13 +164,13 @@ define void @madd_chain(ptr %p, ptr %q, <8 x i16> %c, ptr %r) {
 ; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
 ; CHECK-NEXT:    lq $4, 0($2)
 ; CHECK-NEXT:    lq $1, 16($1)
-; CHECK-NEXT:    pmulth $4, $3, $4
+; CHECK-NEXT:    pmulth $zero, $3, $4
 ; CHECK-NEXT:    lq $2, 16($2)
-; CHECK-NEXT:    pmaddh $1, $1, $2
+; CHECK-NEXT:    pmaddh $zero, $1, $2
 ; CHECK-NEXT:    sll $2, $8, 0
 ; CHECK-NEXT:    pcpyld $1, $7, $6
 ; CHECK-NEXT:    lq $4, 16($2)
-; CHECK-NEXT:    pmaddh $1, $3, $1
+; CHECK-NEXT:    pmaddh $zero, $3, $1
 ; CHECK-NEXT:    pmflo $1
 ; CHECK-NEXT:    pmfhi $3
 ; CHECK-NEXT:    pcpyud $5, $1, $3
@@ -231,12 +214,12 @@ define void @madd_tree(ptr %p, ptr %q, i16 %v, ptr %r) {
 ; CHECK-NEXT:    lq $2, 0($2)
 ; CHECK-NEXT:    pcpyld $4, $6, $6
 ; CHECK-NEXT:    lq $1, 16($1)
-; CHECK-NEXT:    pmulth $5, $3, $2
+; CHECK-NEXT:    pmulth $zero, $3, $2
 ; CHECK-NEXT:    pcpyh $4, $4
-; CHECK-NEXT:    pmaddh $4, $1, $4
+; CHECK-NEXT:    pmaddh $zero, $1, $4
 ; CHECK-NEXT:    sll $4, $7, 0
-; CHECK-NEXT:    pmaddh $2, $1, $2
-; CHECK-NEXT:    pmaddh $1, $3, $1
+; CHECK-NEXT:    pmaddh $zero, $1, $2
+; CHECK-NEXT:    pmaddh $zero, $3, $1
 ; CHECK-NEXT:    pmflo $1
 ; CHECK-NEXT:    pmfhi $2
 ; CHECK-NEXT:    pcpyld $3, $2, $1
@@ -273,10 +256,10 @@ define void @madd_multi_use(ptr %p, ptr %q, ptr %r) {
 ; CHECK-NEXT:    sll $2, $5, 0
 ; CHECK-NEXT:    lq $1, 0($1)
 ; CHECK-NEXT:    lq $2, 0($2)
-; CHECK-NEXT:    pmulth $2, $1, $2
+; CHECK-NEXT:    pmulth $zero, $1, $2
 ; CHECK-NEXT:    pmflo $2
 ; CHECK-NEXT:    pmfhi $3
-; CHECK-NEXT:    pmulth $1, $1, $1
+; CHECK-NEXT:    pmulth $zero, $1, $1
 ; CHECK-NEXT:    pcpyud $4, $2, $3
 ; CHECK-NEXT:    pcpyld $1, $3, $2
 ; CHECK-NEXT:    pmflo $2
@@ -407,4 +390,73 @@ define <4 x i32> @build_w_zero(i32 %a, i32 %b) {
   %1 = insertelement <4 x i32> zeroinitializer, i32 %a, i32 0
   %2 = insertelement <4 x i32> %1, i32 %b, i32 2
   ret <4 x i32> %2
+}
+
+define <4 x i32> @mul_w_small(<4 x i32> %a, <4 x i32> %b) {
+; CHECK-LABEL: mul_w_small:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    pnor $3, $zero, $zero
+; CHECK-NEXT:    # kill: def $r7_64 killed $r7_64 def $r7_128
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pcpyld $1, $7, $6
+; CHECK-NEXT:    pcpyld $2, $5, $4
+; CHECK-NEXT:    psrlw $3, $3, 24
+; CHECK-NEXT:    pand $2, $2, $3
+; CHECK-NEXT:    psraw $1, $1, 16
+; CHECK-NEXT:    pmulth $2, $2, $1
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %x = and <4 x i32> %a, splat (i32 255)
+  %y = ashr <4 x i32> %b, splat (i32 16)
+  %m = mul <4 x i32> %x, %y
+  ret <4 x i32> %m
+}
+
+; 17 bits: not PMULTH.
+define <4 x i32> @mul_w_wide(<4 x i32> %a, <4 x i32> %b) {
+; CHECK-LABEL: mul_w_wide:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    pnor $3, $zero, $zero
+; CHECK-NEXT:    # kill: def $r7_64 killed $r7_64 def $r7_128
+; CHECK-NEXT:    # kill: def $r6_64 killed $r6_64 def $r6_128
+; CHECK-NEXT:    # kill: def $r5_64 killed $r5_64 def $r5_128
+; CHECK-NEXT:    # kill: def $r4_64 killed $r4_64 def $r4_128
+; CHECK-NEXT:    pcpyld $1, $7, $6
+; CHECK-NEXT:    pcpyld $2, $5, $4
+; CHECK-NEXT:    psrlw $3, $3, 16
+; CHECK-NEXT:    pand $2, $2, $3
+; CHECK-NEXT:    psraw $1, $1, 16
+; CHECK-NEXT:    sll $4, $2, 0
+; CHECK-NEXT:    sll $3, $1, 0
+; CHECK-NEXT:    dsrl $5, $2, 32
+; CHECK-NEXT:    mult $3, $4, $3
+; CHECK-NEXT:    dsrl $4, $1, 32
+; CHECK-NEXT:    sll $5, $5, 0
+; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:    pcpyud $1, $1, $1
+; CHECK-NEXT:    pcpyud $2, $2, $2
+; CHECK-NEXT:    mult $4, $5, $4
+; CHECK-NEXT:    sll $5, $1, 0
+; CHECK-NEXT:    sll $6, $2, 0
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    mult $5, $6, $5
+; CHECK-NEXT:    dsrl $2, $2, 32
+; CHECK-NEXT:    sll $1, $1, 0
+; CHECK-NEXT:    sll $2, $2, 0
+; CHECK-NEXT:    mult $1, $2, $1
+; CHECK-NEXT:    pextlw $2, $4, $3
+; CHECK-NEXT:    # kill: def $r3_64 killed $r3_64 killed $r3_128
+; CHECK-NEXT:    pextlw $1, $1, $5
+; CHECK-NEXT:    pcpyld $2, $1, $2
+; CHECK-NEXT:    # kill: def $r2_64 killed $r2_64 killed $r2_128
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    pcpyud $3, $2, $2
+  %x = and <4 x i32> %a, splat (i32 65535)
+  %y = ashr <4 x i32> %b, splat (i32 16)
+  %m = mul <4 x i32> %x, %y
+  ret <4 x i32> %m
 }

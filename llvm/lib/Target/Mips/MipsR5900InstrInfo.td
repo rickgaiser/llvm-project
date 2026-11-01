@@ -162,7 +162,7 @@ let Predicates = [IsR5900] in {
   // 3-operand MULTU: (rd, HI, LO) <- rs * rt (unsigned)
   // Note: low 32 bits of signed/unsigned multiply are identical, so both use
   // mul
-  let Defs = [HI0, LO0],
+  let hasSideEffects = 0, Defs = [HI0, LO0],
       isCommutable = 1 in def R5900_MULTU
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "multu\t$rd, $rs, $rt", [], FrmR>,
@@ -173,14 +173,14 @@ let Predicates = [IsR5900] in {
   //===----------------------------------------------------------------------===//
 
   // 3-operand MADD: (rd, HI, LO) <- (HI,LO) + rs * rt (signed)
-  let Defs = [HI0, LO0],
+  let hasSideEffects = 0, Defs = [HI0, LO0],
       Uses = [HI0, LO0] in def R5900_MADD
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "madd\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI_3R_FM<0x00>;
 
   // 3-operand MADDU: (rd, HI, LO) <- (HI,LO) + rs * rt (unsigned)
-  let Defs = [HI0, LO0],
+  let hasSideEffects = 0, Defs = [HI0, LO0],
       Uses = [HI0, LO0] in def R5900_MADDU
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "maddu\t$rd, $rs, $rt", [], FrmR>,
@@ -197,6 +197,13 @@ let Predicates = [IsR5900] in {
     let Constraints = "$accin = $acc" in def PseudoR5900MADDAcc
         : PseudoSE<(outs GPR32Opnd:$rd, ACC64:$acc),
                    (ins GPR32Opnd:$rs, GPR32Opnd:$rt, ACC64:$accin), []>;
+    // The same in HI1 and LO1 (MULT1, MADD1), for MipsR5900Mult1.
+    def PseudoR5900MULT1Acc
+        : PseudoSE<(outs GPR32Opnd:$rd, ACC64_1:$acc),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt), []>;
+    let Constraints = "$accin = $acc" in def PseudoR5900MADD1Acc
+        : PseudoSE<(outs GPR32Opnd:$rd, ACC64_1:$acc),
+                   (ins GPR32Opnd:$rs, GPR32Opnd:$rt, ACC64_1:$accin), []>;
   }
 
   //===----------------------------------------------------------------------===//
@@ -224,14 +231,14 @@ let Predicates = [IsR5900] in {
   //===----------------------------------------------------------------------===//
 
   // 3-operand MULT1: (rd, HI1, LO1) <- rs * rt (signed)
-  let Defs = [HI1, LO1],
+  let hasSideEffects = 0, Defs = [HI1, LO1],
       isCommutable = 1 in def MULT1
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "mult1\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI_3R_FM<0x18>;
 
   // 3-operand MULTU1: (rd, HI1, LO1) <- rs * rt (unsigned)
-  let Defs = [HI1, LO1],
+  let hasSideEffects = 0, Defs = [HI1, LO1],
       isCommutable = 1 in def MULTU1
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "multu1\t$rd, $rs, $rt", [], FrmR>,
@@ -293,14 +300,14 @@ let Predicates = [IsR5900] in {
   //===----------------------------------------------------------------------===//
 
   // 3-operand MADD1: (rd, HI1, LO1) <- (HI1,LO1) + rs * rt (signed)
-  let Defs = [HI1, LO1], Uses = [HI1, LO1],
+  let hasSideEffects = 0, Defs = [HI1, LO1], Uses = [HI1, LO1],
       DecoderNamespace = "R5900" in def MADD1
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "madd1\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI_3R_FM<0x20>;
 
   // 3-operand MADDU1: (rd, HI1, LO1) <- (HI1,LO1) + rs * rt (unsigned)
-  let Defs = [HI1, LO1], Uses = [HI1, LO1],
+  let hasSideEffects = 0, Defs = [HI1, LO1], Uses = [HI1, LO1],
       DecoderNamespace = "R5900" in def MADDU1
       : InstSE<(outs GPR32Opnd:$rd), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                "maddu1\t$rd, $rs, $rt", [], FrmR>,
@@ -317,6 +324,15 @@ let Predicates = [IsR5900] in {
   let Uses = [HI0, LO0],
       DecoderNamespace = "R5900" in def PMFHL_LW
       : InstSE<(outs GPR64Opnd:$rd), (ins), "pmfhl.lw\t$rd", [], FrmR>,
+      R5900_MMI_PMFHL_FM<0b00000>;
+
+  // PMFHL.LW of all 128 bits: rd = {LO.w0, HI.w0, LO.w2, HI.w2}, the
+  // products of halfwords 0, 2, 4 and 6 after PMULTH and PMADDH (the v4i32
+  // products of 16-bit values).
+  let hasSideEffects = 0, isCodeGenOnly = 1,
+      Uses = [HI0_64, LO0_64, HI1_64, LO1_64],
+      DecoderNamespace = "R5900" in def PMFHL_LW128
+      : InstSE<(outs GPR128Opnd:$rd), (ins), "pmfhl.lw\t$rd", [], FrmR>,
       R5900_MMI_PMFHL_FM<0b00000>;
 
   // PMFHL.UW - Move HI:LO to GPR64 (upper word units)
@@ -878,35 +894,31 @@ let Predicates = [IsR5900] in {
 
   // MFSA - Move From Shift Amount register
   // rd = SA (used for context save)
-  let DecoderNamespace =
-      "R5900" in def MFSA : InstSE<(outs GPR64Opnd:$rd), (ins), "mfsa\t$rd", [],
+  let hasSideEffects = 0, DecoderNamespace = "R5900", Uses = [SAR] in def MFSA : InstSE<(outs GPR64Opnd:$rd), (ins), "mfsa\t$rd", [],
                                    FrmR>,
       R5900_MFSA_FM;
 
   // MTSA - Move To Shift Amount register
   // SA = rs (used for context restore)
-  let DecoderNamespace =
-      "R5900" in def MTSA : InstSE<(outs), (ins GPR64Opnd:$rs), "mtsa\t$rs", [],
+  let hasSideEffects = 0, DecoderNamespace = "R5900", Defs = [SAR] in def MTSA : InstSE<(outs), (ins GPR64Opnd:$rs), "mtsa\t$rs", [],
                                    FrmR>,
       R5900_MTSA_FM;
 
   // MTSAB - Move Byte count To Shift Amount register
   // SA = (rs XOR imm) * 8 (for byte alignment)
-  let DecoderNamespace =
-      "R5900" in def MTSAB : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
+  let hasSideEffects = 0, DecoderNamespace = "R5900", Defs = [SAR] in def MTSAB : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
                                     "mtsab\t$rs, $imm", [], FrmI>,
       R5900_MTSAB_FM;
 
   // MTSAH - Move Halfword count To Shift Amount register
   // SA = (rs XOR imm) * 16 (for halfword alignment)
-  let DecoderNamespace =
-      "R5900" in def MTSAH : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
+  let hasSideEffects = 0, DecoderNamespace = "R5900", Defs = [SAR] in def MTSAH : InstSE<(outs), (ins GPR64Opnd:$rs, simm16:$imm),
                                     "mtsah\t$rs, $imm", [], FrmI>,
       R5900_MTSAH_FM;
 
   // QFSRV - Quadword Funnel Shift Right Variable
   // rd = (rs || rt) >> SA (concatenate rs and rt, shift right by SA bits)
-  let DecoderNamespace = "R5900" in def QFSRV
+  let hasSideEffects = 0, DecoderNamespace = "R5900", Uses = [SAR] in def QFSRV
       : InstSE<(outs GPR128Opnd:$rd), (ins GPR128Opnd:$rs, GPR128Opnd:$rt),
                "qfsrv\t$rd, $rs, $rt", [], FrmR>,
       R5900_MMI1_FM<0b11011>;

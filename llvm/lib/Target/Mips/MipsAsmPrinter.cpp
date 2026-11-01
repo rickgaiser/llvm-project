@@ -405,6 +405,33 @@ void MipsAsmPrinter::emitFunctionEntryLabel() {
   else
     TS.emitDirectiveSetNoMips16();
 
+  // R5900: start the function at the first 8-byte offset of its line (the
+  // function is aligned to the line) that keeps its returns out of the last 16
+  // bytes of a line; see MipsR5900IssuePass.
+  if (MipsFI->placeReturns()) {
+    const TargetInstrInfo &TII = *Subtarget->getInstrInfo();
+    auto ReturnsPlaced = [&](unsigned Pad) {
+      uint64_t Offset = Pad;
+      for (const MachineBasicBlock &MBB : *MF) {
+        Offset = alignTo(Offset, MBB.getAlignment());
+        for (const MachineInstr &MI : MBB) {
+          if (MI.isInlineAsm())
+            return true;
+          if (MI.isReturn() && Offset % 64 >= 48)
+            return false;
+          Offset += TII.getInstSizeInBytes(MI);
+        }
+      }
+      return true;
+    };
+    for (unsigned Pad = 0; Pad < 64; Pad += 8)
+      if (ReturnsPlaced(Pad)) {
+        if (Pad)
+          OutStreamer->emitZeros(Pad);
+        break;
+      }
+  }
+
   TS.emitDirectiveEnt(*CurrentFnSym);
   OutStreamer->emitLabel(CurrentFnSym);
 }

@@ -16,6 +16,7 @@
 #include "MipsSubtarget.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
@@ -39,6 +40,7 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/KnownBits.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
@@ -524,8 +526,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
 
   if (Subtarget.isR5900()) {
     setTargetDAGCombine({ISD::TRUNCATE, ISD::SIGN_EXTEND, ISD::ZERO_EXTEND,
-                         ISD::ANY_EXTEND, ISD::BITCAST,
-                         ISD::EXTRACT_VECTOR_ELT});
+                         ISD::ANY_EXTEND, ISD::BITCAST, ISD::EXTRACT_VECTOR_ELT,
+                         ISD::BUILD_VECTOR});
 
     // R5900 FPU only supports 4 compare conditions: C.F, C.EQ, C.OLT, C.OLE
     // (and their inversions via bc1t/bc1f). Expand all conditions that would
@@ -1453,13 +1455,95 @@ static SDValue readR5900PMULTHResult(SDNode *Mul, const SDLoc &DL,
                      Copy(Mips::PCPYLD, Hi, Lo), Copy(Mips::PCPYUD, Lo, Hi));
 }
 
-/// R5900: (v8i32 (mul A, B)) of values that fit in 16 bits to PMULTH, which
-/// multiplies 8 pairs of halfwords.
-static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
-                                      const MipsSubtarget &Subtarget) {
-  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+bool llvm::decomposeR5900MulConst(const APInt &C, R5900MulConst &D) {
+  if (C.isZero())
+    return false;
+  // A power of 2, or a sum or difference of two: C = 2^a + 2^b, 2^a - 2^b,
+  // -(2^a) + ... (NumOps counts the shifts by 0 as free).
+  auto Try = [&](const APInt &V, int Sign) {
+    if (V.isPowerOf2()) {
+      D = {Sign, 0, V.logBase2(), 0, 0};
+      D.NumOps = (D.Shift0 != 0) + (Sign < 0);
+      return true;
+    }
+    unsigned Low = V.countr_zero();
+    APInt Rest = V - APInt::getOneBitSet(V.getBitWidth(), Low);
+    if (Rest.isPowerOf2()) {
+      // 2^a + 2^b
+      D = {Sign, Sign, Rest.logBase2(), Low, 0};
+      D.NumOps = (D.Shift0 != 0) + (D.Shift1 != 0) + 1 + (Sign < 0);
+      return true;
+    }
+    APInt Up = V + APInt::getOneBitSet(V.getBitWidth(), Low);
+    if (Up.isPowerOf2() && !Up.isSignMask()) {
+      // 2^a - 2^b
+      D = {Sign, -Sign, Up.logBase2(), Low, 0};
+      D.NumOps = (D.Shift0 != 0) + (D.Shift1 != 0) + 1;
+      return true;
+    }
+    return false;
+  };
+  if (Try(C, 1))
+    return true;
+  return C.isNegative() && !C.isMinSignedValue() && Try(-C, -1);
+}
+
+/// R5900: (mul X, splat C) of an MMI vector to shifts and an add or subtract
+/// (decomposeR5900MulConst): PSLLW or PSLLH, PADDW or PSUBW. Otherwise the
+/// multiply is done element by element.
+static SDValue performR5900MulConstCombine(SDNode *N, SelectionDAG &DAG,
+                                           const MipsSubtarget &Subtarget) {
+  EVT VT = N->getValueType(0);
+  if (!Subtarget.isR5900() || (VT != MVT::v4i32 && VT != MVT::v8i16))
+    return SDValue();
+  APInt C;
+  SDValue X = N->getOperand(0);
+  if (!ISD::isConstantSplatVector(N->getOperand(1).getNode(), C))
+    return SDValue();
+  R5900MulConst D;
+  if (!decomposeR5900MulConst(C.trunc(VT.getScalarSizeInBits()), D))
     return SDValue();
   SDLoc DL(N);
+  auto Shl = [&](unsigned S) {
+    return S ? DAG.getNode(ISD::SHL, DL, VT, X, DAG.getConstant(S, DL, VT)) : X;
+  };
+  SDValue Zero = DAG.getConstant(0, DL, VT);
+  SDValue T0 = Shl(D.Shift0);
+  if (!D.S1)
+    return D.S0 > 0 ? T0 : DAG.getNode(ISD::SUB, DL, VT, Zero, T0);
+  SDValue T1 = Shl(D.Shift1);
+  if (D.S0 > 0)
+    return DAG.getNode(D.S1 > 0 ? ISD::ADD : ISD::SUB, DL, VT, T0, T1);
+  // -(2^a) - 2^b, or -(2^a) + 2^b
+  return D.S1 > 0 ? DAG.getNode(ISD::SUB, DL, VT, T1, T0)
+                  : DAG.getNode(ISD::SUB, DL, VT,
+                                DAG.getNode(ISD::SUB, DL, VT, Zero, T0), T1);
+}
+
+/// R5900: (v8i32 (mul A, B)) of values that fit in 16 bits to PMULTH, which
+/// multiplies 8 pairs of halfwords; (v4i32 (mul A, B)) of such values to
+/// the rd of PMULTH, the products of halfwords 0, 2, 4 and 6: the low halves
+/// of the words.
+static SDValue performR5900MULCombine(SDNode *N, SelectionDAG &DAG,
+                                      const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR5900())
+    return SDValue();
+  SDLoc DL(N);
+  if (SDValue V = performR5900MulConstCombine(N, DAG, Subtarget))
+    return V;
+  if (N->getValueType(0) == MVT::v4i32) {
+    SDValue A = N->getOperand(0), B = N->getOperand(1);
+    if (DAG.ComputeNumSignBits(A) <= 16 || DAG.ComputeNumSignBits(B) <= 16)
+      return SDValue();
+    SDValue MulOps[] = {DAG.getBitcast(MVT::v8i16, A),
+                        DAG.getBitcast(MVT::v8i16, B)};
+    return SDValue(DAG.getMachineNode(Mips::PMULTH, DL,
+                                      DAG.getVTList(MVT::v4i32, MVT::Glue),
+                                      MulOps),
+                   0);
+  }
+  if (N->getValueType(0) != MVT::v8i32)
+    return SDValue();
   SDValue A = narrowR5900PMULTHOperand(N->getOperand(0), DL, DAG);
   SDValue B =
       A ? narrowR5900PMULTHOperand(N->getOperand(1), DL, DAG) : SDValue();
@@ -1522,7 +1606,8 @@ static SDValue performR5900MulAddCombine(SDNode *N, SelectionDAG &DAG,
 /// combiner visits the root of the tree before its operands.
 static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
                                       const MipsSubtarget &Subtarget) {
-  if (!Subtarget.isR5900() || N->getValueType(0) != MVT::v8i32)
+  EVT VT = N->getValueType(0);
+  if (!Subtarget.isR5900() || (VT != MVT::v8i32 && VT != MVT::v4i32))
     return SDValue();
   SDLoc DL(N);
   SumTerms S;
@@ -1538,12 +1623,24 @@ static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
   SmallVector<SDValue, 4> Others;
   for (const SumTerm &T : S.Terms) {
     SDValue V = T.V;
-    if (V.getOpcode() == ISD::MUL && V.hasOneUse())
-      if (SDValue A = narrowR5900PMULTHOperand(V.getOperand(0), DL, DAG))
+    if (V.getOpcode() == ISD::MUL && V.hasOneUse()) {
+      // v4i32: words of 16-bit values, multiplied as their low halfwords
+      // (the high halfwords are their sign).
+      if (VT == MVT::v4i32) {
+        if (DAG.ComputeNumSignBits(V.getOperand(0)) > 16 &&
+            DAG.ComputeNumSignBits(V.getOperand(1)) > 16) {
+          Products.push_back({DAG.getBitcast(MVT::v8i16, V.getOperand(0)),
+                              DAG.getBitcast(MVT::v8i16, V.getOperand(1))});
+          continue;
+        }
+      } else if (SDValue A =
+                     narrowR5900PMULTHOperand(V.getOperand(0), DL, DAG)) {
         if (SDValue B = narrowR5900PMULTHOperand(V.getOperand(1), DL, DAG)) {
           Products.push_back({A, B});
           continue;
         }
+      }
+    }
     Others.push_back(V);
   }
   if (Products.size() < 2)
@@ -1556,9 +1653,15 @@ static SDValue performR5900ADDCombine(SDNode *N, SelectionDAG &DAG,
     Acc = DAG.getMachineNode(Acc ? Mips::PMADDH : Mips::PMULTH, DL,
                              DAG.getVTList(MVT::v8i16, MVT::Glue), Ops);
   }
-  SDValue Sum = readR5900PMULTHResult(Acc, DL, DAG);
+  // v4i32: the sums of the products of halfwords 0, 2, 4 and 6, PMFHL.LW,
+  // without the late write of rd that PMULTH of the words would have.
+  SDValue Sum = VT == MVT::v4i32
+                    ? SDValue(DAG.getMachineNode(Mips::PMFHL_LW128, DL,
+                                                 MVT::v4i32, SDValue(Acc, 1)),
+                              0)
+                    : readR5900PMULTHResult(Acc, DL, DAG);
   for (SDValue Other : Others)
-    Sum = DAG.getNode(ISD::ADD, DL, MVT::v8i32, Sum, Other);
+    Sum = DAG.getNode(ISD::ADD, DL, VT, Sum, Other);
   return Sum;
 }
 
@@ -2399,6 +2502,52 @@ static SDValue performVU0LaneOpCombine(SDNode *N, SelectionDAG &DAG,
                      X.getOperand(1));
 }
 
+/// VU0: (fp_to_sint (op ... (extract_vector_elt V, I) ...)) of a v4f32 V,
+/// with ops that each take the value and a constant (fmul, fadd, fsub,
+/// fminnum, fmaxnum), to (extract_vector_elt (fp_to_sint (op ... V ...)), I):
+/// the VU0 does the ops and VFTOI0 on all fields in the slots of one, and
+/// the integer goes to a GPR with the others (QMFC2) instead of each through
+/// the FPU (MTC1, ..., CVT.W.S, MFC1). The conversions of other fields of V
+/// with the same ops are the same vector ops (CSE): as the channels of a
+/// color, (u32)(fminf(c[0], 1.0f) * 128.0f) and so on.
+static SDValue performVU0LaneConvertCombine(SDNode *N, SelectionDAG &DAG,
+                                            const MipsSubtarget &Subtarget) {
+  if (!Subtarget.hasVU0() || !VU0LaneOp || N->getValueType(0) != MVT::i32 ||
+      N->getOperand(0).getValueType() != MVT::f32)
+    return SDValue();
+  // The ops from the conversion down to the field.
+  SmallVector<SDNode *, 4> Ops;
+  SDValue V = N->getOperand(0);
+  while (V.getOpcode() != ISD::EXTRACT_VECTOR_ELT) {
+    unsigned Opc = V.getOpcode();
+    if ((Opc != ISD::FMUL && Opc != ISD::FADD && Opc != ISD::FSUB &&
+         Opc != ISD::FMINNUM && Opc != ISD::FMAXNUM) ||
+        !V.hasOneUse() || Ops.size() == 4)
+      return SDValue();
+    // The value is the first operand of fsub, either one of the others.
+    unsigned C = isa<ConstantFPSDNode>(V.getOperand(1)) ? 1 : 0;
+    if (!isa<ConstantFPSDNode>(V.getOperand(C)) || (C == 0 && Opc == ISD::FSUB))
+      return SDValue();
+    Ops.push_back(V.getNode());
+    V = V.getOperand(1 - C);
+  }
+  SDValue Vec = V.getOperand(0);
+  if (Vec.getValueType() != MVT::v4f32 || !isa<ConstantSDNode>(V.getOperand(1)))
+    return SDValue();
+  SDLoc DL(N);
+  for (SDNode *Op : reverse(Ops)) {
+    unsigned C = isa<ConstantFPSDNode>(Op->getOperand(1)) ? 1 : 0;
+    SDValue Splat = DAG.getSplatBuildVector(MVT::v4f32, DL, Op->getOperand(C));
+    Vec = C ? DAG.getNode(Op->getOpcode(), DL, MVT::v4f32, Vec, Splat,
+                          Op->getFlags())
+            : DAG.getNode(Op->getOpcode(), DL, MVT::v4f32, Splat, Vec,
+                          Op->getFlags());
+  }
+  SDValue Int = DAG.getNode(ISD::FP_TO_SINT, DL, MVT::v4i32, Vec);
+  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::i32, Int,
+                     V.getOperand(1));
+}
+
 namespace {
 /// A term a * b of a sum computed through the VU0 ACC. Field selects a
 /// broadcast field of b (0-3), or all fields (VU0AccFull).
@@ -2814,12 +2963,136 @@ static SDValue performVU0BlendCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
-SDValue
-MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
+/// The address of \p Ld modulo 16, if its IR pointer is a constant offset
+/// from a 16-byte aligned one: known so, or the address of a load or store
+/// with that alignment in its block (such as the pointer of a loop, which
+/// computeKnownBits does not follow).
+static std::optional<int64_t> getR5900AddrMod16(const LoadSDNode *Ld,
+                                                const DataLayout &DL) {
+  const MachineMemOperand *MMO = Ld->getMemOperand();
+  const Value *V = MMO->getValue();
+  if (!V)
+    return std::nullopt;
+  APInt Off(DL.getIndexTypeSizeInBits(V->getType()), 0);
+  const Value *B =
+      V->stripAndAccumulateConstantOffsets(DL, Off, /*AllowNonInbounds=*/true);
+  auto *BI = dyn_cast<Instruction>(B);
+  bool Aligned = computeKnownBits(B, DL).countMinTrailingZeros() >= 4 ||
+                 any_of(B->users(), [&](const User *U) {
+                   auto *I = dyn_cast<Instruction>(U);
+                   return I && getLoadStorePointerOperand(I) == B &&
+                          getLoadStoreAlignment(I) >= Align(16) &&
+                          (!BI || I->getParent() == BI->getParent());
+                 });
+  if (!Aligned)
+    return std::nullopt;
+  return (Off.getSExtValue() + MMO->getOffset()) & 15;
+}
+
+/// R5900: a v8i16 of the bytes p[2k] (k = 0..7) of memory, such as a plane of
+/// rows that alternate with others: the 16 bytes at p, from LQ of the
+/// quadwords of p and p + 14 (the first and last of the bytes, so nothing
+/// else is read) and QFSRV by p & 15 (MTSAB). Halfword k then has byte 2k in
+/// its low byte; for zero extending loads an AND clears the high byte. If p
+/// is 16-byte aligned, one LQ; if p - 1 is, the high bytes of the quadword
+/// at p - 1 (one LQ and PSRLH 8), which the loads of p[2k - 1] share.
+/// Instead of 8 byte loads and a vector built through memory.
+static SDValue
+performR5900ByteGatherCombine(SDNode *N, SelectionDAG &DAG,
+                              TargetLowering::DAGCombinerInfo &DCI,
+                              const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR5900() || !Subtarget.isGP64bit() ||
+      N->getValueType(0) != MVT::v8i16 || DCI.isBeforeLegalize())
+    return SDValue();
+  SmallVector<LoadSDNode *, 8> Loads;
+  SDValue Base;
+  int64_t First = 0;
+  bool Zext = true;
+  for (unsigned K = 0; K != 8; ++K) {
+    auto *Ld = dyn_cast<LoadSDNode>(N->getOperand(K));
+    if (!Ld || !Ld->isSimple() || !Ld->isUnindexed() ||
+        Ld->getMemoryVT() != MVT::i8 ||
+        (Ld->getExtensionType() != ISD::EXTLOAD &&
+         Ld->getExtensionType() != ISD::ZEXTLOAD) ||
+        (K && Ld->getChain() != Loads[0]->getChain()))
+      return SDValue();
+    SDValue Ptr = Ld->getBasePtr(), B = Ptr;
+    int64_t Off = 0;
+    if (DAG.isBaseWithConstantOffset(Ptr)) {
+      B = Ptr.getOperand(0);
+      Off = cast<ConstantSDNode>(Ptr.getOperand(1))->getSExtValue();
+    }
+    if (!K) {
+      Base = B;
+      First = Off;
+    } else if (B != Base || Off != First + 2 * int64_t(K)) {
+      return SDValue();
+    }
+    Zext &= Ld->getExtensionType() == ISD::ZEXTLOAD;
+    Loads.push_back(Ld);
+  }
+  if (!isInt<16>(First) || !isInt<16>(First + 14))
+    return SDValue();
+
+  SDLoc DL(N);
+  EVT PtrVT = Base.getValueType();
+  SDValue Chain = Loads[0]->getChain();
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineMemOperand *MMO = MF.getMachineMemOperand(
+      Loads[0]->getPointerInfo(), MachineMemOperand::MOLoad,
+      LocationSize::precise(15), Align(1), Loads[0]->getAAInfo());
+  auto LoadQ = [&](int64_t Offset) {
+    SDValue Ops[] = {Base, DAG.getTargetConstant(Offset, DL, PtrVT), Chain};
+    MachineSDNode *LQ = DAG.getMachineNode(
+        Mips::LQ, DL, DAG.getVTList(MVT::v16i8, MVT::Other), Ops);
+    DAG.setNodeMemRefs(LQ, {MMO});
+    return SDValue(LQ, 0);
+  };
+  std::optional<int64_t> Mod16 =
+      Loads[0]->getAlign() >= Align(16)
+          ? 0
+          : getR5900AddrMod16(Loads[0], DAG.getDataLayout());
+  SDValue Vec, NewChain;
+  if (Mod16 == 1 && isInt<16>(First - 1)) {
+    SDValue Q = LoadQ(First - 1);
+    for (LoadSDNode *Ld : Loads)
+      DAG.ReplaceAllUsesOfValueWith(SDValue(Ld, 1), Q.getValue(1));
+    return DAG.getNode(ISD::SRL, DL, MVT::v8i16, DAG.getBitcast(MVT::v8i16, Q),
+                       DAG.getConstant(8, DL, MVT::v8i16));
+  }
+  if (Mod16 == 0) {
+    Vec = LoadQ(First);
+    NewChain = Vec.getValue(1);
+  } else {
+    SDValue Lo = LoadQ(First), Hi = LoadQ(First + 14);
+    NewChain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Lo.getValue(1),
+                           Hi.getValue(1));
+    SDValue P = Loads[0]->getBasePtr();
+    if (PtrVT != MVT::i64)
+      P = DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, P);
+    SDValue SAOps[] = {P, DAG.getTargetConstant(0, DL, MVT::i32)};
+    SDNode *SA = DAG.getMachineNode(Mips::MTSAB, DL, MVT::Glue, SAOps);
+    SDValue ShiftOps[] = {Hi, Lo, SDValue(SA, 0)};
+    Vec = SDValue(DAG.getMachineNode(Mips::QFSRV, DL, MVT::v16i8, ShiftOps), 0);
+  }
+  for (LoadSDNode *Ld : Loads)
+    DAG.ReplaceAllUsesOfValueWith(SDValue(Ld, 1), NewChain);
+  SDValue Res = DAG.getBitcast(MVT::v8i16, Vec);
+  if (Zext)
+    Res = DAG.getNode(ISD::AND, DL, MVT::v8i16, Res,
+                      DAG.getConstant(0xff, DL, MVT::v8i16));
+  return Res;
+}
+
+SDValue MipsSETargetLowering::PerformDAGCombine(SDNode *N,
+                                                DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
   SDValue Val;
 
   switch (N->getOpcode()) {
+  case ISD::BUILD_VECTOR:
+    Val = performR5900ByteGatherCombine(N, DAG, DCI, Subtarget);
+    break;
   case ISD::AND:
     Val = performANDCombine(N, DAG, DCI, Subtarget);
     break;
@@ -2875,6 +3148,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     break;
   case ISD::FP_TO_SINT:
     Val = performVU0FixedPointCombine(N, DAG, Subtarget);
+    if (!Val)
+      Val = performVU0LaneConvertCombine(N, DAG, Subtarget);
     break;
   case ISD::SINT_TO_FP:
   case ISD::UINT_TO_FP:
@@ -3055,6 +3330,67 @@ SDValue MipsSETargetLowering::lowerLOAD(SDValue Op, SelectionDAG &DAG) const {
     SDValue Ptr = Nd.getBasePtr();
     SDValue Chain = Nd.getChain();
     EVT PtrVT = Ptr.getValueType();
+
+    // Unaligned: LQ ignores the low 4 bits of the address, so LQ 0(p) and
+    // LQ 15(p) are the two aligned quadwords with the 16 bytes at p (only
+    // those: the same one if p is aligned), and QFSRV with SA = p & 15 bytes
+    // (MTSAB) shifts the bytes at p into place. Two loads instead of the four
+    // of LDL/LDR. With p = b + c, b 16-byte aligned (MipsR5900Realign makes
+    // that visible) and c a constant, the quadwords are at b + (c & ~15) and
+    // b + (c & ~15) + 16, and SA is the constant c & 15: the loads of nearby
+    // elements share their quadwords.
+    // b + c, also as (or b, c) when b is aligned
+    SDValue Base = Ptr;
+    int64_t Off = 0;
+    if (DAG.isBaseWithConstantOffset(Ptr))
+      if (auto *C = dyn_cast<ConstantSDNode>(Ptr.getOperand(1)))
+        if (isInt<16>(C->getSExtValue() + 31)) {
+          Base = Ptr.getOperand(0);
+          Off = C->getSExtValue();
+        }
+    bool BaseAligned = DAG.computeKnownBits(Base).countMinTrailingZeros() >= 4;
+    // With an unknown base and an offset that is not a multiple of 16, the
+    // MTSAB would need the address in a register (an ADDIU), and loads at
+    // such offsets (as in[i + k] for the taps k of a filter) each set another
+    // SA: LDL/LDR below is faster there. 8-byte aligned loads are two LDs,
+    // unless the base is aligned: then they share their quadwords too.
+    if (Subtarget.isGP64bit() &&
+        (BaseAligned || (Nd.getAlign() < Align(8) && Off % 16 == 0))) {
+      MachineMemOperand *MMO = Nd.getMemOperand();
+      auto LoadQ = [&](int64_t Offset) {
+        SDValue Ops[] = {Base, DAG.getTargetConstant(Offset, DL, PtrVT), Chain};
+        MachineSDNode *LQ = DAG.getMachineNode(
+            Mips::LQ, DL, DAG.getVTList(MVT::v16i8, MVT::Other), Ops);
+        DAG.setNodeMemRefs(LQ, {MMO});
+        return SDValue(LQ, 0);
+      };
+      if (BaseAligned && Off % 16 == 0) {
+        SDValue Q = LoadQ(Off);
+        SDValue Ops[2] = {DAG.getBitcast(MemVT, Q), Q.getValue(1)};
+        return DAG.getMergeValues(Ops, DL);
+      }
+      int64_t LoOff = BaseAligned ? alignDown(Off, 16) : Off;
+      SDValue Lo = LoadQ(LoOff),
+              Hi = LoadQ(BaseAligned ? LoOff + 16 : Off + 15);
+      Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Lo.getValue(1),
+                          Hi.getValue(1));
+      // SA = (rs ^ imm) & 15 bytes: the constant, or the low bits of the
+      // base (an offset that is a multiple of 16 does not change them).
+      SDValue SAReg =
+          BaseAligned
+              ? DAG.getRegister(Mips::R0_64, MVT::i64)
+              : (PtrVT == MVT::i64
+                     ? Base
+                     : DAG.getNode(ISD::ANY_EXTEND, DL, MVT::i64, Base));
+      SDValue SAOps[] = {SAReg, DAG.getTargetConstant(
+                                    BaseAligned ? Off & 15 : 0, DL, MVT::i32)};
+      SDNode *SA = DAG.getMachineNode(Mips::MTSAB, DL, MVT::Glue, SAOps);
+      SDValue ShiftOps[] = {Hi, Lo, SDValue(SA, 0)};
+      SDValue Vec =
+          SDValue(DAG.getMachineNode(Mips::QFSRV, DL, MVT::v16i8, ShiftOps), 0);
+      SDValue Ops[2] = {DAG.getBitcast(MemVT, Vec), Chain};
+      return DAG.getMergeValues(Ops, DL);
+    }
 
     // Unaligned with 64-bit GPRs: load the two doublewords (LDL/LDR, or LD
     // when 8-byte aligned) and join them with PCPYLD.
@@ -5647,7 +5983,25 @@ enum class R5900Shuffle {
   ExchCenter, // PEXCW A: <0, 2, 1, 3>
   Rotate3,    // PROT3W A: <1, 2, 0, 3>
   SwapHalves, // PCPYLD A, (PCPYUD A, A): <2, 3, 0, 1>
+  // Elements S to S + NumElts - 1 of A then B (B, A shifted right by S):
+  // QFSRV B, A after MTSAB of S times the element size.
+  Funnel,
 };
+
+/// The first element S of a Funnel shuffle mask, or 0 if \p Mask is not
+/// consecutive elements of its two sources from 0 < S < NumElts.
+static unsigned getR5900FunnelStart(ArrayRef<int> Mask, unsigned NumElts) {
+  int S = -1;
+  for (unsigned I = 0; I < NumElts; ++I) {
+    if (Mask[I] < 0)
+      continue;
+    if (S < 0)
+      S = Mask[I] - (int)I;
+    if (Mask[I] != S + (int)I)
+      return 0;
+  }
+  return S > 0 && (unsigned)S < NumElts ? S : 0;
+}
 
 /// Classify a shuffle mask of \p NumElts elements. With \p SingleSrc both
 /// operands are the same vector, so an index into the second one is the same
@@ -5683,7 +6037,8 @@ static R5900Shuffle classifyR5900Shuffle(ArrayRef<int> Mask, unsigned NumElts,
   if (Matches([&](unsigned I) { return I < Half ? Half + I : NumElts + I; }))
     return R5900Shuffle::CatHi;
   if (NumElts != 4 || !SingleSrc)
-    return R5900Shuffle::None;
+    return getR5900FunnelStart(Mask, NumElts) ? R5900Shuffle::Funnel
+                                              : R5900Shuffle::None;
   auto MatchesWords = [&](std::array<unsigned, 4> Words) {
     return Matches([&](unsigned I) { return Words[I]; });
   };
@@ -5695,7 +6050,8 @@ static R5900Shuffle classifyR5900Shuffle(ArrayRef<int> Mask, unsigned NumElts,
     return R5900Shuffle::Rotate3;
   if (MatchesWords({2, 3, 0, 1}))
     return R5900Shuffle::SwapHalves;
-  return R5900Shuffle::None;
+  return getR5900FunnelStart(Mask, NumElts) ? R5900Shuffle::Funnel
+                                            : R5900Shuffle::None;
 }
 
 /// The number of MMI instructions of a shuffle kind for \p NumElts elements.
@@ -5708,6 +6064,7 @@ unsigned llvm::getR5900ShuffleOps(ArrayRef<int> Mask, unsigned NumElts,
     // Two shifts or exchanges and a pack, one less from a single source.
     return SingleSrc ? 2 : 3;
   case R5900Shuffle::SwapHalves:
+  case R5900Shuffle::Funnel:
     return 2;
   default:
     return 1;
@@ -5788,6 +6145,15 @@ static SDValue lowerR5900VECTOR_SHUFFLE(ShuffleVectorSDNode *Node,
     return SDValue(DAG.getMachineNode(Mips::PROT3W, DL, VT, A), 0);
   case R5900Shuffle::SwapHalves:
     return MMI(Mips::PCPYLD, A, MMI(Mips::PCPYUD, A, A));
+  case R5900Shuffle::Funnel: {
+    unsigned Bytes =
+        getR5900FunnelStart(Mask, NumElts) * VT.getScalarSizeInBits() / 8;
+    SDValue SAOps[] = {DAG.getRegister(Mips::R0_64, MVT::i64),
+                       DAG.getTargetConstant(Bytes, DL, MVT::i32)};
+    SDNode *SA = DAG.getMachineNode(Mips::MTSAB, DL, MVT::Glue, SAOps);
+    SDValue Ops[] = {B, A, SDValue(SA, 0)};
+    return SDValue(DAG.getMachineNode(Mips::QFSRV, DL, VT, Ops), 0);
+  }
   }
   llvm_unreachable("unknown R5900 shuffle");
 }

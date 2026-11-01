@@ -245,12 +245,15 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; R5900-NEXT:    addu $1, $2, $1
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    lhu $2, 0($1)
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB4_4: # %sw.a
 ; R5900-NEXT:    j ha
 ; R5900-NEXT:    sll $4, $4, 0
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB4_5: # %sw.b
 ; R5900-NEXT:    j hb
 ; R5900-NEXT:    sll $4, $4, 0
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB4_6: # %sw.default
 ; R5900-NEXT:    j hc
 ; R5900-NEXT:    sll $4, $4, 0
@@ -279,19 +282,23 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; NOTAIL-NEXT:    addu $1, $2, $1
 ; NOTAIL-NEXT:    j .LBB4_7
 ; NOTAIL-NEXT:    lhu $2, 0($1)
+; NOTAIL-NEXT:    .p2align 3
 ; NOTAIL-NEXT:  .LBB4_4: # %sw.a
 ; NOTAIL-NEXT:    jal ha
 ; NOTAIL-NEXT:    sll $4, $4, 0
 ; NOTAIL-NEXT:    j .LBB4_7
 ; NOTAIL-NEXT:    nop
+; NOTAIL-NEXT:    .p2align 3
 ; NOTAIL-NEXT:  .LBB4_5: # %sw.b
 ; NOTAIL-NEXT:    jal hb
 ; NOTAIL-NEXT:    sll $4, $4, 0
 ; NOTAIL-NEXT:    j .LBB4_7
 ; NOTAIL-NEXT:    nop
+; NOTAIL-NEXT:    .p2align 3
 ; NOTAIL-NEXT:  .LBB4_6: # %sw.default
 ; NOTAIL-NEXT:    jal hc
 ; NOTAIL-NEXT:    sll $4, $4, 0
+; NOTAIL-NEXT:    .p2align 3
 ; NOTAIL-NEXT:  .LBB4_7: # %return
 ; NOTAIL-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
 ; NOTAIL-NEXT:    jr $ra
@@ -326,6 +333,7 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; PIC-NEXT:    ld $gp, 0($sp) # 8-byte Folded Reload
 ; PIC-NEXT:    jr $ra
 ; PIC-NEXT:    addiu $sp, $sp, 16
+; PIC-NEXT:    .p2align 3
 ; PIC-NEXT:  .LBB4_4: # %sw.a
 ; PIC-NEXT:    lw $25, %call16(ha)($gp)
 ; PIC-NEXT:    .reloc .Ltmp3, R_MIPS_JALR, ha
@@ -336,16 +344,18 @@ define zeroext i16 @switch_ret(i32 signext %a) nounwind {
 ; PIC-NEXT:    ld $gp, 0($sp) # 8-byte Folded Reload
 ; PIC-NEXT:    jr $ra
 ; PIC-NEXT:    addiu $sp, $sp, 16
+; PIC-NEXT:    .p2align 3
 ; PIC-NEXT:  .LBB4_5: # %sw.b
 ; PIC-NEXT:    lw $25, %call16(hb)($gp)
 ; PIC-NEXT:    .reloc .Ltmp4, R_MIPS_JALR, hb
 ; PIC-NEXT:  .Ltmp4:
 ; PIC-NEXT:    jalr $25
 ; PIC-NEXT:    sll $4, $4, 0
-; PIC-NEXT:    ld $gp, 0($sp) # 8-byte Folded Reload
 ; PIC-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
+; PIC-NEXT:    ld $gp, 0($sp) # 8-byte Folded Reload
 ; PIC-NEXT:    jr $ra
 ; PIC-NEXT:    addiu $sp, $sp, 16
+; PIC-NEXT:    .p2align 3
 ; PIC-NEXT:  .LBB4_6: # %sw.default
 ; PIC-NEXT:    lw $25, %call16(hc)($gp)
 ; PIC-NEXT:    .reloc .Ltmp5, R_MIPS_JALR, hc

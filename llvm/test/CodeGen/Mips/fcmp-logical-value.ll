@@ -47,6 +47,7 @@ define i32 @and3(float %a, float %b, float %c, float %n) {
 ; R5900-NEXT:    nop
 ; R5900-NEXT:  # %bb.3:
 ; R5900-NEXT:    addiu $2, $zero, 1
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB0_4:
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    nop

@@ -28,6 +28,11 @@
 // multiplied by 1.0 in ft (the R5900 multiplier is exact for a power of two
 // in ft, but can be 1 ULP low with it in fs).
 //
+// There is one ACC, which a chain holds from its first to its last step. A
+// chain whose terms become ready far apart holds it while it waits, and keeps
+// the other chains of the block from overlapping it, which the adds and
+// multiplies would do. Such a sum is left as it is.
+//
 //===----------------------------------------------------------------------===//
 
 #include "Mips.h"
@@ -44,6 +49,8 @@
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/CodeGen/TargetSchedule.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -53,6 +60,11 @@ using namespace llvm;
 
 STATISTIC(NumChainsOptimized, "Number of FPU ACC chains optimized");
 STATISTIC(NumInstructionsSaved, "Number of instructions saved");
+
+static cl::opt<unsigned> MaxTermSpread(
+    "mips-r5900-acc-chain-max-spread", cl::Hidden, cl::init(4),
+    cl::desc("Most cycles between the readiness of the first and the last "
+             "term of an R5900 FPU ACC chain"));
 
 namespace {
 
@@ -95,6 +107,13 @@ private:
   MachineRegisterInfo *MRI = nullptr;
   /// 1.0f in an FPR, made once per function when a chain needs it.
   Register One;
+  TargetSchedModel SchedModel;
+  /// The cycle at which the value of a register defined in the block is
+  /// available, if its operands are available at the start of the block.
+  DenseMap<Register, unsigned> ReadyAt;
+
+  unsigned getReadyAt(Register Reg) const { return ReadyAt.lookup(Reg); }
+  void computeReadyAt(const MachineBasicBlock &MBB);
 
   bool isNode(Register Reg, const MachineBasicBlock &MBB) const;
   bool buildChain(MachineInstr &Root, Chain &C) const;
@@ -118,6 +137,7 @@ bool MipsR5900FPUAccChain::runOnMachineFunction(MachineFunction &MF) {
   TII = STI->getInstrInfo();
   MRI = &MF.getRegInfo();
   One = Register();
+  SchedModel.init(STI);
 
   bool Modified = false;
   for (auto &MBB : MF)
@@ -208,6 +228,18 @@ bool MipsR5900FPUAccChain::buildChain(MachineInstr &Root, Chain &C) const {
   // ACC can not start negated.
   if (!C.Reassoc && C.Terms[0].Neg)
     return false;
+  // The terms must become ready close together, so that the chain does not
+  // hold ACC while it waits for one.
+  unsigned First = ~0u, Last = 0;
+  for (const Term &T : C.Terms) {
+    unsigned At = getReadyAt(T.A);
+    if (T.FMul)
+      At = std::max(At, getReadyAt(T.B));
+    First = std::min(First, At);
+    Last = std::max(Last, At);
+  }
+  if (Last - First > MaxTermSpread)
+    return false;
   if (none_of(C.Terms, [](const Term &T) { return !T.Neg; }))
     return false;
   return true;
@@ -271,6 +303,22 @@ void MipsR5900FPUAccChain::transformChain(MachineBasicBlock &MBB,
   NumInstructionsSaved += C.Nodes.size();
 }
 
+void MipsR5900FPUAccChain::computeReadyAt(const MachineBasicBlock &MBB) {
+  ReadyAt.clear();
+  for (const MachineInstr &MI : MBB) {
+    if (MI.isDebugInstr())
+      continue;
+    unsigned Start = 0;
+    for (const MachineOperand &MO : MI.uses())
+      if (MO.isReg() && MO.getReg().isVirtual())
+        Start = std::max(Start, getReadyAt(MO.getReg()));
+    unsigned Latency = SchedModel.computeInstrLatency(&MI);
+    for (const MachineOperand &MO : MI.defs())
+      if (MO.getReg().isVirtual())
+        ReadyAt[MO.getReg()] = Start + Latency;
+  }
+}
+
 bool MipsR5900FPUAccChain::optimizeBasicBlock(MachineBasicBlock &MBB) {
   // A loop that keeps a sum in ACC (MipsR5900LoopAcc): ACC is live through
   // the block.
@@ -279,6 +327,8 @@ bool MipsR5900FPUAccChain::optimizeBasicBlock(MachineBasicBlock &MBB) {
         return S->isLiveIn(Mips::FPU_ACC);
       }))
     return false;
+
+  computeReadyAt(MBB);
 
   // The roots of the sums: the adds and subtracts, last first, so that the
   // largest sum is taken before its parts.

@@ -61,3 +61,53 @@ define void @scale(ptr noalias %o, ptr noalias %p, i32 %s) {
   store i32 %z, ptr %o2
   ret void
 }
+
+; Two sums of products, each accumulated in HI and LO: the second one moves
+; to HI1 and LO1 (MULT1, MADD1), so the two run in parallel.
+define void @two_sums(ptr noalias %p, i32 %s, ptr noalias %r) {
+; CHECK-LABEL: two_sums:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    sll $1, $4, 0
+; CHECK-NEXT:    sll $5, $5, 0
+; CHECK-NEXT:    lw $2, 0($1)
+; CHECK-NEXT:    lw $3, 4($1)
+; CHECK-NEXT:    lw $4, 8($1)
+; CHECK-NEXT:    lw $7, 12($1)
+; CHECK-NEXT:    mult $zero, $2, $5
+; CHECK-NEXT:    mult1 $zero, $3, $5
+; CHECK-NEXT:    sll $3, $6, 0
+; CHECK-NEXT:    lw $8, 16($1)
+; CHECK-NEXT:    lw $1, 20($1)
+; CHECK-NEXT:    madd $zero, $4, $5
+; CHECK-NEXT:    madd1 $zero, $7, $5
+; CHECK-NEXT:    madd $2, $8, $5
+; CHECK-NEXT:    madd1 $1, $1, $5
+; CHECK-NEXT:    sw $2, 0($3)
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sw $1, 4($3)
+  %p1 = getelementptr i8, ptr %p, i32 4
+  %p2 = getelementptr i8, ptr %p, i32 8
+  %p3 = getelementptr i8, ptr %p, i32 12
+  %p4 = getelementptr i8, ptr %p, i32 16
+  %p5 = getelementptr i8, ptr %p, i32 20
+  %a0 = load i32, ptr %p
+  %b0 = load i32, ptr %p1
+  %a1 = load i32, ptr %p2
+  %b1 = load i32, ptr %p3
+  %a2 = load i32, ptr %p4
+  %b2 = load i32, ptr %p5
+  %ma0 = mul i32 %a0, %s
+  %ma1 = mul i32 %a1, %s
+  %ma2 = mul i32 %a2, %s
+  %mb0 = mul i32 %b0, %s
+  %mb1 = mul i32 %b1, %s
+  %mb2 = mul i32 %b2, %s
+  %sa1 = add i32 %ma0, %ma1
+  %sa = add i32 %sa1, %ma2
+  %sb1 = add i32 %mb0, %mb1
+  %sb = add i32 %sb1, %mb2
+  store i32 %sa, ptr %r
+  %r1 = getelementptr i8, ptr %r, i32 4
+  store i32 %sb, ptr %r1
+  ret void
+}

@@ -10,10 +10,13 @@
 ; is the loop counter for modulo variable expansion, which unrolls the kernel
 ; instead of copying the values that live longer than an iteration (VMOVE
 ; would take the COP2 issue slot). The ACC chains are values of their own,
-; so the iterations of a matrix times vector overlap.
+; so the iterations of a matrix times vector overlap. A prefetch has no order
+; among the loads and stores, so a store can go into a later stage than the
+; prefetch of its array.
 
 ; REMARK: Schedule found with Initiation Interval: 6, MaxStageCount: 2
-; REMARK: Schedule found with Initiation Interval: 4, MaxStageCount: 3
+; REMARK: Schedule found with Initiation Interval: 4, MaxStageCount: 4
+; REMARK: Schedule found with Initiation Interval: 4, MaxStageCount: 4
 
 define void @mxv(ptr %m, ptr noalias %in, ptr noalias %out, i32 %n) {
 ; CHECK-LABEL: mxv:
@@ -32,68 +35,92 @@ define void @mxv(ptr %m, ptr noalias %in, ptr noalias %out, i32 %n) {
 ; CHECK-NEXT:    addu $2, $6, $1
 ; CHECK-NEXT:    addiu $1, $6, 16
 ; CHECK-NEXT:    subu $1, $2, $1
-; CHECK-NEXT:    addiu $1, $1, -64
+; CHECK-NEXT:    addiu $1, $1, -80
 ; CHECK-NEXT:    blez $1, .LBB0_6
 ; CHECK-NEXT:    sll $4, $5, 0
 ; CHECK-NEXT:  # %bb.2: # %loop
 ; CHECK-NEXT:    lqc2 $vf5, 0($4)
 ; CHECK-NEXT:    addiu $1, $4, 16
-; CHECK-NEXT:    lqc2 $vf6, 0($1)
+; CHECK-NEXT:    pref 0, 160($4)
 ; CHECK-NEXT:    addiu $5, $6, 16
 ; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf5
 ; CHECK-NEXT:    addiu $4, $1, 16
 ; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf5
 ; CHECK-NEXT:    addiu $3, $5, 16
+; CHECK-NEXT:    pref 0, 160($6)
 ; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf5
+; CHECK-NEXT:    lqc2 $vf6, 0($1)
 ; CHECK-NEXT:    vmaddw.xyzw $vf5, $vf4, $vf5
 ; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf6
+; CHECK-NEXT:    pref 0, 160($1)
 ; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf6
-; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf6
-; CHECK-NEXT:    vmaddw.xyzw $vf6, $vf4, $vf6
+; CHECK-NEXT:    pref 0, 160($5)
 ; CHECK-NEXT:  .LBB0_3: # %loop
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    lqc2 $vf7, 0($4)
+; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf6
 ; CHECK-NEXT:    addiu $1, $4, 16
-; CHECK-NEXT:    sqc2 $vf5, 0($6)
-; CHECK-NEXT:    addiu $6, $3, 16
+; CHECK-NEXT:    lqc2 $vf7, 0($4)
+; CHECK-NEXT:    vmaddw.xyzw $vf6, $vf4, $vf6
+; CHECK-NEXT:    pref 0, 160($4)
 ; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf7
+; CHECK-NEXT:    pref 0, 160($3)
+; CHECK-NEXT:    sqc2 $vf5, 0($6)
+; CHECK-NEXT:    addiu $4, $3, 16
 ; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf7
+; CHECK-NEXT:    addiu $6, $4, 16
 ; CHECK-NEXT:    lqc2 $vf5, 0($1)
-; CHECK-NEXT:    addiu $1, $1, 16
 ; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf7
+; CHECK-NEXT:    pref 0, 160($1)
+; CHECK-NEXT:    addiu $1, $1, 16
 ; CHECK-NEXT:    vmaddw.xyzw $vf7, $vf4, $vf7
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf5
+; CHECK-NEXT:    pref 0, 160($4)
 ; CHECK-NEXT:    sqc2 $vf6, 0($5)
 ; CHECK-NEXT:    addiu $5, $6, 16
-; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf5
 ; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf5
-; CHECK-NEXT:    lqc2 $vf6, 0($1)
+; CHECK-NEXT:    lqc2 $vf8, 0($1)
 ; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf5
-; CHECK-NEXT:    vmaddw.xyzw $vf5, $vf4, $vf5
-; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf6
-; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf6
-; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf6
-; CHECK-NEXT:    vmaddw.xyzw $vf6, $vf4, $vf6
+; CHECK-NEXT:    pref 0, 160($1)
+; CHECK-NEXT:    vmaddw.xyzw $vf9, $vf4, $vf5
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf8
+; CHECK-NEXT:    pref 0, 160($6)
+; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf8
+; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf8
 ; CHECK-NEXT:    sqc2 $vf7, 0($3)
 ; CHECK-NEXT:    addiu $3, $5, 16
-; CHECK-NEXT:    subu $4, $2, $3
-; CHECK-NEXT:    addiu $7, $4, -32
-; CHECK-NEXT:    bgtz $7, .LBB0_3
+; CHECK-NEXT:    vmaddw.xyzw $vf5, $vf4, $vf8
+; CHECK-NEXT:    subu $7, $2, $3
+; CHECK-NEXT:    lqc2 $vf6, 0($1)
+; CHECK-NEXT:    addiu $7, $7, -48
+; CHECK-NEXT:    pref 0, 160($1)
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf6
+; CHECK-NEXT:    pref 0, 160($5)
+; CHECK-NEXT:    sqc2 $vf9, 0($4)
 ; CHECK-NEXT:    addiu $4, $1, 16
+; CHECK-NEXT:    bgtz $7, .LBB0_3
+; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf6
 ; CHECK-NEXT:  # %bb.4: # %loop
+; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf6
 ; CHECK-NEXT:    subu $1, $2, $3
+; CHECK-NEXT:    vmaddw.xyzw $vf6, $vf4, $vf6
 ; CHECK-NEXT:    sqc2 $vf5, 0($6)
 ; CHECK-NEXT:    blez $1, .LBB0_8
 ; CHECK-NEXT:    sqc2 $vf6, 0($5)
 ; CHECK-NEXT:  # %bb.5: # %loop
 ; CHECK-NEXT:    j .LBB0_7
 ; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_6:
 ; CHECK-NEXT:    move $3, $6
 ; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_7: # %loop
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    lqc2 $vf5, 0($4)
+; CHECK-NEXT:    pref 0, 160($3)
 ; CHECK-NEXT:    vmulax.xyzw $acc, $vf1, $vf5
+; CHECK-NEXT:    pref 0, 160($4)
 ; CHECK-NEXT:    vmadday.xyzw $acc, $vf2, $vf5
 ; CHECK-NEXT:    vmaddaz.xyzw $acc, $vf3, $vf5
 ; CHECK-NEXT:    vmaddw.xyzw $vf5, $vf4, $vf5
@@ -102,6 +129,7 @@ define void @mxv(ptr %m, ptr noalias %in, ptr noalias %out, i32 %n) {
 ; CHECK-NEXT:    addiu $3, $3, 16
 ; CHECK-NEXT:    bne $3, $2, .LBB0_7
 ; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_8: # %exit
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -144,45 +172,146 @@ exit:
 define void @scale_add(ptr noalias %in, ptr noalias %out, <4 x float> %k, <4 x float> %c, i32 %n) {
 ; CHECK-LABEL: scale_add:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    sll $2, $6, 0
-; CHECK-NEXT:    blez $2, .LBB1_8
+; CHECK-NEXT:    sll $6, $6, 0
+; CHECK-NEXT:    blez $6, .LBB1_17
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:  # %bb.1: # %loop.preheader
-; CHECK-NEXT:    sll $5, $5, 0
-; CHECK-NEXT:    sll $1, $2, 4
-; CHECK-NEXT:    addu $2, $5, $1
-; CHECK-NEXT:    addiu $1, $5, 16
-; CHECK-NEXT:    subu $1, $2, $1
+; CHECK-NEXT:    addiu $1, $6, -1
+; CHECK-NEXT:    sll $2, $5, 0
+; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    daddiu $1, $1, 1
+; CHECK-NEXT:    sltiu $1, $1, 257
+; CHECK-NEXT:    bnez $1, .LBB1_7
+; CHECK-NEXT:    sll $3, $4, 0
+; CHECK-NEXT:  # %bb.2: # %loop.ph
+; CHECK-NEXT:    sll $1, $6, 4
+; CHECK-NEXT:    addu $4, $2, $1
+; CHECK-NEXT:    addiu $1, $2, 16
+; CHECK-NEXT:    subu $1, $4, $1
+; CHECK-NEXT:    addiu $1, $1, -128
+; CHECK-NEXT:    blez $1, .LBB1_12
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.3: # %loop
+; CHECK-NEXT:    lqc2 $vf1, 0($3)
+; CHECK-NEXT:    addiu $1, $3, 16
+; CHECK-NEXT:    pref 0, 384($2)
+; CHECK-NEXT:    addiu $6, $2, 16
+; CHECK-NEXT:    pref 0, 384($3)
+; CHECK-NEXT:    addiu $7, $6, 16
+; CHECK-NEXT:    lqc2 $vf2, 0($1)
+; CHECK-NEXT:    addiu $8, $7, 16
+; CHECK-NEXT:    pref 0, 384($6)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    vmul.xyzw $vf3, $vf2, $vf12
+; CHECK-NEXT:    addiu $5, $8, 16
+; CHECK-NEXT:    lqc2 $vf2, 0($1)
+; CHECK-NEXT:    pref 0, 384($7)
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    lqc2 $vf4, 0($1)
+; CHECK-NEXT:    addiu $3, $1, 16
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
+; CHECK-NEXT:    pref 0, 384($8)
+; CHECK-NEXT:    vmul.xyzw $vf2, $vf2, $vf12
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    vadd.xyzw $vf3, $vf3, $vf13
+; CHECK-NEXT:    vmul.xyzw $vf4, $vf4, $vf12
+; CHECK-NEXT:  .LBB1_4: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    sqc2 $vf1, 0($2)
+; CHECK-NEXT:    addiu $1, $3, 16
+; CHECK-NEXT:    lqc2 $vf1, 0($3)
+; CHECK-NEXT:    addiu $2, $5, 16
+; CHECK-NEXT:    vadd.xyzw $vf2, $vf2, $vf13
+; CHECK-NEXT:    pref 0, 384($5)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 384($3)
+; CHECK-NEXT:    vadd.xyzw $vf4, $vf4, $vf13
+; CHECK-NEXT:    sqc2 $vf3, 0($6)
+; CHECK-NEXT:    addiu $6, $2, 16
+; CHECK-NEXT:    lqc2 $vf3, 0($1)
+; CHECK-NEXT:    pref 0, 384($2)
+; CHECK-NEXT:    vadd.xyzw $vf5, $vf1, $vf13
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf2, 0($7)
+; CHECK-NEXT:    addiu $7, $6, 16
+; CHECK-NEXT:    lqc2 $vf2, 0($1)
+; CHECK-NEXT:    pref 0, 384($6)
+; CHECK-NEXT:    vmul.xyzw $vf3, $vf3, $vf12
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf4, 0($8)
+; CHECK-NEXT:    addiu $8, $7, 16
+; CHECK-NEXT:    vmul.xyzw $vf6, $vf2, $vf12
+; CHECK-NEXT:    lqc2 $vf2, 0($1)
+; CHECK-NEXT:    pref 0, 384($7)
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf3, $vf13
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf5, 0($5)
+; CHECK-NEXT:    addiu $5, $8, 16
+; CHECK-NEXT:    lqc2 $vf4, 0($1)
+; CHECK-NEXT:    subu $3, $4, $5
+; CHECK-NEXT:    vmul.xyzw $vf2, $vf2, $vf12
+; CHECK-NEXT:    addiu $9, $3, -64
+; CHECK-NEXT:    vadd.xyzw $vf3, $vf6, $vf13
+; CHECK-NEXT:    addiu $3, $1, 16
+; CHECK-NEXT:    vmul.xyzw $vf4, $vf4, $vf12
+; CHECK-NEXT:    pref 0, 384($8)
+; CHECK-NEXT:    bgtz $9, .LBB1_4
+; CHECK-NEXT:    pref 0, 384($1)
+; CHECK-NEXT:  # %bb.5: # %loop
+; CHECK-NEXT:    vadd.xyzw $vf2, $vf2, $vf13
+; CHECK-NEXT:    subu $1, $4, $5
+; CHECK-NEXT:    vadd.xyzw $vf4, $vf4, $vf13
+; CHECK-NEXT:    sqc2 $vf1, 0($2)
+; CHECK-NEXT:    sqc2 $vf3, 0($6)
+; CHECK-NEXT:    sqc2 $vf2, 0($7)
+; CHECK-NEXT:    blez $1, .LBB1_17
+; CHECK-NEXT:    sqc2 $vf4, 0($8)
+; CHECK-NEXT:  # %bb.6: # %loop
+; CHECK-NEXT:    j .LBB1_13
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB1_7: # %loop.ph.noprefetch
+; CHECK-NEXT:    sll $1, $6, 4
+; CHECK-NEXT:    addu $4, $2, $1
+; CHECK-NEXT:    addiu $1, $2, 16
+; CHECK-NEXT:    subu $1, $4, $1
 ; CHECK-NEXT:    addiu $1, $1, -96
-; CHECK-NEXT:    blez $1, .LBB1_6
-; CHECK-NEXT:    sll $4, $4, 0
-; CHECK-NEXT:  # %bb.2: # %loop
-; CHECK-NEXT:    addiu $1, $4, 16
-; CHECK-NEXT:    lqc2 $vf1, 0($4)
+; CHECK-NEXT:    blez $1, .LBB1_15
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.8: # %loop.noprefetch
+; CHECK-NEXT:    addiu $1, $3, 16
+; CHECK-NEXT:    lqc2 $vf1, 0($3)
 ; CHECK-NEXT:    lqc2 $vf2, 0($1)
 ; CHECK-NEXT:    addiu $1, $1, 16
 ; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
-; CHECK-NEXT:    addiu $7, $5, 16
+; CHECK-NEXT:    addiu $7, $2, 16
 ; CHECK-NEXT:    vmul.xyzw $vf2, $vf2, $vf12
 ; CHECK-NEXT:    addiu $6, $7, 16
 ; CHECK-NEXT:    lqc2 $vf3, 0($1)
-; CHECK-NEXT:    addiu $4, $1, 16
-; CHECK-NEXT:    addiu $3, $6, 16
+; CHECK-NEXT:    addiu $3, $1, 16
+; CHECK-NEXT:    addiu $5, $6, 16
 ; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
 ; CHECK-NEXT:    vmul.xyzw $vf3, $vf3, $vf12
 ; CHECK-NEXT:    vadd.xyzw $vf2, $vf2, $vf13
-; CHECK-NEXT:  .LBB1_3: # %loop
+; CHECK-NEXT:  .LBB1_9: # %loop.noprefetch
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    lqc2 $vf4, 0($4)
-; CHECK-NEXT:    addiu $1, $4, 16
-; CHECK-NEXT:    sqc2 $vf1, 0($5)
-; CHECK-NEXT:    addiu $5, $3, 16
+; CHECK-NEXT:    lqc2 $vf4, 0($3)
+; CHECK-NEXT:    addiu $1, $3, 16
+; CHECK-NEXT:    sqc2 $vf1, 0($2)
+; CHECK-NEXT:    addiu $2, $5, 16
 ; CHECK-NEXT:    vmul.xyzw $vf1, $vf4, $vf12
 ; CHECK-NEXT:    vadd.xyzw $vf3, $vf3, $vf13
 ; CHECK-NEXT:    lqc2 $vf4, 0($1)
 ; CHECK-NEXT:    addiu $1, $1, 16
 ; CHECK-NEXT:    sqc2 $vf2, 0($7)
-; CHECK-NEXT:    addiu $7, $5, 16
+; CHECK-NEXT:    addiu $7, $2, 16
 ; CHECK-NEXT:    vmul.xyzw $vf2, $vf4, $vf12
 ; CHECK-NEXT:    vadd.xyzw $vf4, $vf1, $vf13
 ; CHECK-NEXT:    lqc2 $vf1, 0($1)
@@ -192,38 +321,59 @@ define void @scale_add(ptr noalias %in, ptr noalias %out, <4 x float> %k, <4 x f
 ; CHECK-NEXT:    vmul.xyzw $vf5, $vf1, $vf12
 ; CHECK-NEXT:    vadd.xyzw $vf1, $vf2, $vf13
 ; CHECK-NEXT:    lqc2 $vf2, 0($1)
-; CHECK-NEXT:    sqc2 $vf4, 0($3)
-; CHECK-NEXT:    addiu $3, $6, 16
+; CHECK-NEXT:    sqc2 $vf4, 0($5)
+; CHECK-NEXT:    addiu $5, $6, 16
 ; CHECK-NEXT:    vmul.xyzw $vf3, $vf2, $vf12
-; CHECK-NEXT:    subu $4, $2, $3
+; CHECK-NEXT:    subu $3, $4, $5
 ; CHECK-NEXT:    vadd.xyzw $vf2, $vf5, $vf13
-; CHECK-NEXT:    addiu $8, $4, -48
-; CHECK-NEXT:    bgtz $8, .LBB1_3
-; CHECK-NEXT:    addiu $4, $1, 16
-; CHECK-NEXT:  # %bb.4: # %loop
+; CHECK-NEXT:    addiu $8, $3, -48
+; CHECK-NEXT:    bgtz $8, .LBB1_9
+; CHECK-NEXT:    addiu $3, $1, 16
+; CHECK-NEXT:  # %bb.10: # %loop.noprefetch
 ; CHECK-NEXT:    vadd.xyzw $vf3, $vf3, $vf13
-; CHECK-NEXT:    subu $1, $2, $3
-; CHECK-NEXT:    sqc2 $vf1, 0($5)
+; CHECK-NEXT:    subu $1, $4, $5
+; CHECK-NEXT:    sqc2 $vf1, 0($2)
 ; CHECK-NEXT:    sqc2 $vf2, 0($7)
-; CHECK-NEXT:    blez $1, .LBB1_8
+; CHECK-NEXT:    blez $1, .LBB1_17
 ; CHECK-NEXT:    sqc2 $vf3, 0($6)
-; CHECK-NEXT:  # %bb.5: # %loop
-; CHECK-NEXT:    j .LBB1_7
+; CHECK-NEXT:  # %bb.11: # %loop.noprefetch
+; CHECK-NEXT:    j .LBB1_16
 ; CHECK-NEXT:    nop
-; CHECK-NEXT:  .LBB1_6:
-; CHECK-NEXT:    move $3, $5
 ; CHECK-NEXT:    .p2align 3
-; CHECK-NEXT:  .LBB1_7: # %loop
+; CHECK-NEXT:  .LBB1_12:
+; CHECK-NEXT:    move $5, $2
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB1_13: # %loop
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
-; CHECK-NEXT:    lqc2 $vf1, 0($4)
+; CHECK-NEXT:    lqc2 $vf1, 0($3)
+; CHECK-NEXT:    pref 0, 384($5)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 384($3)
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    sqc2 $vf1, 0($5)
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    bne $5, $4, .LBB1_13
+; CHECK-NEXT:    addiu $3, $3, 16
+; CHECK-NEXT:  # %bb.14: # %loop
+; CHECK-NEXT:    j .LBB1_17
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB1_15:
+; CHECK-NEXT:    move $5, $2
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB1_16: # %loop.noprefetch
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lqc2 $vf1, 0($3)
 ; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
 ; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
 ; CHECK-NEXT:    nop
-; CHECK-NEXT:    sqc2 $vf1, 0($3)
+; CHECK-NEXT:    sqc2 $vf1, 0($5)
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    bne $5, $4, .LBB1_16
 ; CHECK-NEXT:    addiu $3, $3, 16
-; CHECK-NEXT:    bne $3, $2, .LBB1_7
-; CHECK-NEXT:    addiu $4, $4, 16
-; CHECK-NEXT:  .LBB1_8: # %exit
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB1_17: # %exit
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
 entry:
@@ -237,6 +387,152 @@ loop:
   %m = fmul fast <4 x float> %v, %k
   %r = fadd fast <4 x float> %m, %c
   %pout = getelementptr inbounds <4 x float>, ptr %out, i32 %i
+  store <4 x float> %r, ptr %pout, align 16
+  %i.next = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i.next, %n
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+; scale_add with prefetches of its own, of the input and the output.
+define void @scale_add_prefetch(ptr noalias %in, ptr noalias %out, <4 x float> %k, <4 x float> %c, i32 %n) {
+; CHECK-LABEL: scale_add_prefetch:
+; CHECK:       # %bb.0: # %entry
+; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    blez $2, .LBB2_8
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.1: # %loop.preheader
+; CHECK-NEXT:    sll $1, $5, 0
+; CHECK-NEXT:    addiu $3, $1, 256
+; CHECK-NEXT:    sll $1, $2, 4
+; CHECK-NEXT:    addu $2, $3, $1
+; CHECK-NEXT:    addiu $1, $3, 16
+; CHECK-NEXT:    subu $1, $2, $1
+; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:    addiu $1, $1, -128
+; CHECK-NEXT:    blez $1, .LBB2_6
+; CHECK-NEXT:    addiu $6, $4, 256
+; CHECK-NEXT:  # %bb.2: # %loop
+; CHECK-NEXT:    lqc2 $vf1, -256($6)
+; CHECK-NEXT:    pref 0, 0($3)
+; CHECK-NEXT:    addiu $1, $6, 16
+; CHECK-NEXT:    addiu $5, $3, 16
+; CHECK-NEXT:    pref 0, 0($6)
+; CHECK-NEXT:    lqc2 $vf2, -256($1)
+; CHECK-NEXT:    addiu $7, $5, 16
+; CHECK-NEXT:    pref 0, 0($5)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    vmul.xyzw $vf3, $vf2, $vf12
+; CHECK-NEXT:    addiu $8, $7, 16
+; CHECK-NEXT:    lqc2 $vf2, -256($1)
+; CHECK-NEXT:    addiu $4, $8, 16
+; CHECK-NEXT:    pref 0, 0($7)
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    lqc2 $vf4, -256($1)
+; CHECK-NEXT:    addiu $6, $1, 16
+; CHECK-NEXT:    vmul.xyzw $vf2, $vf2, $vf12
+; CHECK-NEXT:    pref 0, 0($8)
+; CHECK-NEXT:    vadd.xyzw $vf3, $vf3, $vf13
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    vmul.xyzw $vf4, $vf4, $vf12
+; CHECK-NEXT:  .LBB2_3: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    sqc2 $vf1, -256($3)
+; CHECK-NEXT:    addiu $1, $6, 16
+; CHECK-NEXT:    lqc2 $vf1, -256($6)
+; CHECK-NEXT:    addiu $3, $4, 16
+; CHECK-NEXT:    vadd.xyzw $vf2, $vf2, $vf13
+; CHECK-NEXT:    pref 0, 0($4)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 0($6)
+; CHECK-NEXT:    vadd.xyzw $vf4, $vf4, $vf13
+; CHECK-NEXT:    sqc2 $vf3, -256($5)
+; CHECK-NEXT:    addiu $5, $3, 16
+; CHECK-NEXT:    lqc2 $vf3, -256($1)
+; CHECK-NEXT:    pref 0, 0($3)
+; CHECK-NEXT:    vadd.xyzw $vf5, $vf1, $vf13
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf2, -256($7)
+; CHECK-NEXT:    addiu $7, $5, 16
+; CHECK-NEXT:    lqc2 $vf2, -256($1)
+; CHECK-NEXT:    pref 0, 0($5)
+; CHECK-NEXT:    vmul.xyzw $vf3, $vf3, $vf12
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf4, -256($8)
+; CHECK-NEXT:    addiu $8, $7, 16
+; CHECK-NEXT:    vmul.xyzw $vf6, $vf2, $vf12
+; CHECK-NEXT:    lqc2 $vf2, -256($1)
+; CHECK-NEXT:    pref 0, 0($7)
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf3, $vf13
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:    addiu $1, $1, 16
+; CHECK-NEXT:    sqc2 $vf5, -256($4)
+; CHECK-NEXT:    addiu $4, $8, 16
+; CHECK-NEXT:    lqc2 $vf4, -256($1)
+; CHECK-NEXT:    subu $6, $2, $4
+; CHECK-NEXT:    vmul.xyzw $vf2, $vf2, $vf12
+; CHECK-NEXT:    addiu $9, $6, -64
+; CHECK-NEXT:    vadd.xyzw $vf3, $vf6, $vf13
+; CHECK-NEXT:    addiu $6, $1, 16
+; CHECK-NEXT:    vmul.xyzw $vf4, $vf4, $vf12
+; CHECK-NEXT:    pref 0, 0($8)
+; CHECK-NEXT:    bgtz $9, .LBB2_3
+; CHECK-NEXT:    pref 0, 0($1)
+; CHECK-NEXT:  # %bb.4: # %loop
+; CHECK-NEXT:    vadd.xyzw $vf2, $vf2, $vf13
+; CHECK-NEXT:    subu $1, $2, $4
+; CHECK-NEXT:    vadd.xyzw $vf4, $vf4, $vf13
+; CHECK-NEXT:    sqc2 $vf1, -256($3)
+; CHECK-NEXT:    sqc2 $vf3, -256($5)
+; CHECK-NEXT:    sqc2 $vf2, -256($7)
+; CHECK-NEXT:    blez $1, .LBB2_8
+; CHECK-NEXT:    sqc2 $vf4, -256($8)
+; CHECK-NEXT:  # %bb.5: # %loop
+; CHECK-NEXT:    j .LBB2_7
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB2_6:
+; CHECK-NEXT:    move $4, $3
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB2_7: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lqc2 $vf1, -256($6)
+; CHECK-NEXT:    pref 0, 0($4)
+; CHECK-NEXT:    vmul.xyzw $vf1, $vf1, $vf12
+; CHECK-NEXT:    pref 0, 0($6)
+; CHECK-NEXT:    vadd.xyzw $vf1, $vf1, $vf13
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    sqc2 $vf1, -256($4)
+; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    bne $4, $2, .LBB2_7
+; CHECK-NEXT:    addiu $6, $6, 16
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB2_8: # %exit
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+entry:
+  %empty = icmp slt i32 %n, 1
+  br i1 %empty, label %exit, label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %pin = getelementptr inbounds <4 x float>, ptr %in, i32 %i
+  %pin.ahead = getelementptr inbounds i8, ptr %pin, i32 256
+  call void @llvm.prefetch.p0(ptr %pin.ahead, i32 0, i32 3, i32 1)
+  %v = load <4 x float>, ptr %pin, align 16
+  %m = fmul fast <4 x float> %v, %k
+  %r = fadd fast <4 x float> %m, %c
+  %pout = getelementptr inbounds <4 x float>, ptr %out, i32 %i
+  %pout.ahead = getelementptr inbounds i8, ptr %pout, i32 256
+  call void @llvm.prefetch.p0(ptr %pout.ahead, i32 1, i32 3, i32 1)
   store <4 x float> %r, ptr %pout, align 16
   %i.next = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %i.next, %n

@@ -932,6 +932,17 @@ unsigned TargetTransformInfo::getMaxPrefetchIterationsAhead() const {
   return TTIImpl->getMaxPrefetchIterationsAhead();
 }
 
+unsigned TargetTransformInfo::getPrefetchIterationsAhead(
+    const Loop *L, ScalarEvolution &SE, unsigned LoopSize) const {
+  return TTIImpl->getPrefetchIterationsAhead(L, SE, LoopSize);
+}
+
+uint64_t
+TargetTransformInfo::getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
+                                             unsigned NumPrefetches) const {
+  return TTIImpl->getPrefetchMinFootprint(L, SE, NumPrefetches);
+}
+
 bool TargetTransformInfo::enableWritePrefetching() const {
   return TTIImpl->enableWritePrefetching();
 }

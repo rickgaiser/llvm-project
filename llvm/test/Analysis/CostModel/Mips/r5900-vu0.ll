@@ -78,12 +78,12 @@ define void @intrinsics(<4 x float> %a, <4 x float> %b) {
 define void @memory(ptr %p) {
 ; VU0-LABEL: 'memory'
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: %l16 = load <4 x float>, ptr %p, align 16
-; VU0-NEXT:  Cost Model: Found an estimated cost of 10 for instruction: %l8 = load <4 x float>, ptr %p, align 8
-; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: %l4 = load <4 x float>, ptr %p, align 4
+; VU0-NEXT:  Cost Model: Found an estimated cost of 16 for instruction: %l8 = load <4 x float>, ptr %p, align 8
+; VU0-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: %l4 = load <4 x float>, ptr %p, align 4
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 18 for instruction: %l2 = load <2 x float>, ptr %p, align 8
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: store <4 x float> %l16, ptr %p, align 16
-; VU0-NEXT:  Cost Model: Found an estimated cost of 10 for instruction: store <4 x float> %l16, ptr %p, align 8
-; VU0-NEXT:  Cost Model: Found an estimated cost of 14 for instruction: store <4 x float> %l16, ptr %p, align 4
+; VU0-NEXT:  Cost Model: Found an estimated cost of 16 for instruction: store <4 x float> %l16, ptr %p, align 8
+; VU0-NEXT:  Cost Model: Found an estimated cost of 20 for instruction: store <4 x float> %l16, ptr %p, align 4
 ; VU0-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
 ; NOVU0-LABEL: 'memory'

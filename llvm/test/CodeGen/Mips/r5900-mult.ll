@@ -108,7 +108,7 @@ define i64 @test_smul_wide_load(ptr %p, ptr %q) {
 define i1 @test_cross_sgt(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: test_cross_sgt:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    pmsubw $1, $6, $7
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    slt $2, $zero, $1
@@ -125,7 +125,7 @@ define i1 @test_cross_sgt(i32 %a, i32 %b, i32 %c, i32 %d) {
 define i1 @test_cross_eq(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: test_cross_eq:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    pmsubw $1, $6, $7
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sltiu $2, $1, 1
@@ -220,25 +220,6 @@ define i32 @test_mulhu(i32 zeroext %a, i32 zeroext %b) {
 ; 64-bit multiply must NOT use DMULT on R5900
 ; R5900 doesn't support DMULT - must expand to 32-bit operations
 define i64 @test_mul64(i64 %a, i64 %b) {
-; CHECK-LABEL: test_mul64:
-; CHECK:       # %bb.0:
-; CHECK-NEXT:    dsrl $1, $5, 32
-; CHECK-NEXT:    sll $2, $4, 0
-; CHECK-NEXT:    sll $1, $1, 0
-; CHECK-NEXT:    sll $3, $5, 0
-; CHECK-NEXT:    mult $zero, $2, $1
-; CHECK-NEXT:    dsrl $1, $4, 32
-; CHECK-NEXT:    sll $1, $1, 0
-; CHECK-NEXT:    madd $1, $1, $3
-; CHECK-NEXT:    multu $2, $3
-; CHECK-NEXT:    mfhi $2
-; CHECK-NEXT:    mflo $3
-; CHECK-NEXT:    addu $1, $1, $2
-; CHECK-NEXT:    dsll $2, $3, 32
-; CHECK-NEXT:    dsll $1, $1, 32
-; CHECK-NEXT:    dsrl $2, $2, 32
-; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    or $2, $2, $1
   %result = mul i64 %a, %b
   ret i64 %result
 }

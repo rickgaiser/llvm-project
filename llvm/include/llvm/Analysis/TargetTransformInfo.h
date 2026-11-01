@@ -1538,6 +1538,21 @@ public:
   /// prefetching is performed.
   LLVM_ABI unsigned getMaxPrefetchIterationsAhead() const;
 
+  /// \return The number of iterations of \p L, of \p LoopSize instructions,
+  /// that its prefetches lead its accesses by. The default is the prefetch
+  /// distance divided by the loop size, at least one.
+  LLVM_ABI unsigned getPrefetchIterationsAhead(const Loop *L,
+                                               ScalarEvolution &SE,
+                                               unsigned LoopSize) const;
+
+  /// \return The number of bytes that \p L must access before adding
+  /// \p NumPrefetches software prefetches to each of its iterations is worth
+  /// their cost: 0 if they always are (the default), UINT64_MAX if they never
+  /// are. If the trip count is not a constant, a loop that may access fewer
+  /// bytes is versioned on it.
+  LLVM_ABI uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
+                                            unsigned NumPrefetches) const;
+
   /// \return True if prefetching should also be done for writes.
   LLVM_ABI bool enableWritePrefetching() const;
 

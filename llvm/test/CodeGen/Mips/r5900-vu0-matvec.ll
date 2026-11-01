@@ -4,6 +4,7 @@
 
 @verts = global [64 x <4 x float>] zeroinitializer, align 16
 @out = global [64 x [4 x i32]] zeroinitializer, align 16
+@geom_mem = external global [65536 x i8], align 64
 
 ; 4 rows times all 4 lanes of the vector.
 define void @mxv4(ptr noalias %m, ptr noalias %in, ptr noalias %out, i32 %n) {
@@ -771,3 +772,860 @@ loop:
 exit:
   ret void
 }
+
+; Outside a loop: a 16-byte aligned 4x4 row-major matrix times a vector, the
+; result of each row stored before the next row's entries are loaded. The
+; columns are the rows loaded as vectors and transposed.
+define void @mxv_function(ptr noalias align 16 %m, ptr noalias align 16 %v, ptr noalias align 16 %r) {
+; CHECK-LABEL: define void @mxv_function(
+; CHECK-SAME: ptr noalias align 16 [[M:%.*]], ptr noalias align 16 [[V:%.*]], ptr noalias align 16 [[R:%.*]]) #[[ATTR0]] {
+; CHECK-NEXT:    [[TMP1:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 0
+; CHECK-NEXT:    [[MATVEC_ROW:%.*]] = load <4 x float>, ptr [[TMP1]], align 16
+; CHECK-NEXT:    [[TMP2:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 16
+; CHECK-NEXT:    [[MATVEC_ROW1:%.*]] = load <4 x float>, ptr [[TMP2]], align 16
+; CHECK-NEXT:    [[TMP3:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 32
+; CHECK-NEXT:    [[MATVEC_ROW2:%.*]] = load <4 x float>, ptr [[TMP3]], align 16
+; CHECK-NEXT:    [[TMP4:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 48
+; CHECK-NEXT:    [[MATVEC_ROW3:%.*]] = load <4 x float>, ptr [[TMP4]], align 16
+; CHECK-NEXT:    [[TMP5:%.*]] = shufflevector <4 x float> [[MATVEC_ROW]], <4 x float> [[MATVEC_ROW1]], <4 x i32> <i32 0, i32 4, i32 1, i32 5>
+; CHECK-NEXT:    [[TMP6:%.*]] = shufflevector <4 x float> [[MATVEC_ROW]], <4 x float> [[MATVEC_ROW1]], <4 x i32> <i32 2, i32 6, i32 3, i32 7>
+; CHECK-NEXT:    [[TMP7:%.*]] = shufflevector <4 x float> [[MATVEC_ROW2]], <4 x float> [[MATVEC_ROW3]], <4 x i32> <i32 0, i32 4, i32 1, i32 5>
+; CHECK-NEXT:    [[TMP8:%.*]] = shufflevector <4 x float> [[MATVEC_ROW2]], <4 x float> [[MATVEC_ROW3]], <4 x i32> <i32 2, i32 6, i32 3, i32 7>
+; CHECK-NEXT:    [[TMP9:%.*]] = shufflevector <4 x float> [[TMP5]], <4 x float> [[TMP7]], <4 x i32> <i32 0, i32 1, i32 4, i32 5>
+; CHECK-NEXT:    [[TMP10:%.*]] = shufflevector <4 x float> [[TMP5]], <4 x float> [[TMP7]], <4 x i32> <i32 2, i32 3, i32 6, i32 7>
+; CHECK-NEXT:    [[TMP11:%.*]] = shufflevector <4 x float> [[TMP6]], <4 x float> [[TMP8]], <4 x i32> <i32 0, i32 1, i32 4, i32 5>
+; CHECK-NEXT:    [[TMP12:%.*]] = shufflevector <4 x float> [[TMP6]], <4 x float> [[TMP8]], <4 x i32> <i32 2, i32 3, i32 6, i32 7>
+; CHECK-NEXT:    [[MATVEC_V:%.*]] = load <4 x float>, ptr [[V]], align 16
+; CHECK-NEXT:    [[TMP13:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP14:%.*]] = fmul fast <4 x float> [[TMP9]], [[TMP13]]
+; CHECK-NEXT:    [[TMP15:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
+; CHECK-NEXT:    [[TMP16:%.*]] = fmul fast <4 x float> [[TMP10]], [[TMP15]]
+; CHECK-NEXT:    [[TMP17:%.*]] = fadd fast <4 x float> [[TMP14]], [[TMP16]]
+; CHECK-NEXT:    [[TMP18:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+; CHECK-NEXT:    [[TMP19:%.*]] = fmul fast <4 x float> [[TMP11]], [[TMP18]]
+; CHECK-NEXT:    [[TMP20:%.*]] = fadd fast <4 x float> [[TMP17]], [[TMP19]]
+; CHECK-NEXT:    [[TMP21:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> <i32 3, i32 3, i32 3, i32 3>
+; CHECK-NEXT:    [[TMP22:%.*]] = fmul fast <4 x float> [[TMP12]], [[TMP21]]
+; CHECK-NEXT:    [[TMP23:%.*]] = fadd fast <4 x float> [[TMP20]], [[TMP22]]
+; CHECK-NEXT:    [[TMP24:%.*]] = extractelement <4 x float> [[TMP23]], i64 0
+; CHECK-NEXT:    [[TMP25:%.*]] = extractelement <4 x float> [[TMP23]], i64 1
+; CHECK-NEXT:    [[TMP26:%.*]] = extractelement <4 x float> [[TMP23]], i64 2
+; CHECK-NEXT:    [[TMP27:%.*]] = extractelement <4 x float> [[TMP23]], i64 3
+; CHECK-NEXT:    [[PR0:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 0
+; CHECK-NEXT:    store float [[TMP24]], ptr [[PR0]], align 4
+; CHECK-NEXT:    [[PR1:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 4
+; CHECK-NEXT:    store float [[TMP25]], ptr [[PR1]], align 4
+; CHECK-NEXT:    [[PR2:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 8
+; CHECK-NEXT:    store float [[TMP26]], ptr [[PR2]], align 4
+; CHECK-NEXT:    [[PR3:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 12
+; CHECK-NEXT:    store float [[TMP27]], ptr [[PR3]], align 4
+; CHECK-NEXT:    ret void
+;
+; NOVU0-LABEL: define void @mxv_function(
+; NOVU0-SAME: ptr noalias align 16 [[M:%.*]], ptr noalias align 16 [[V:%.*]], ptr noalias align 16 [[R:%.*]]) #[[ATTR0]] {
+; NOVU0-NEXT:    [[PV0:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 0
+; NOVU0-NEXT:    [[V0:%.*]] = load float, ptr [[PV0]], align 4
+; NOVU0-NEXT:    [[PV1:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 4
+; NOVU0-NEXT:    [[V1:%.*]] = load float, ptr [[PV1]], align 4
+; NOVU0-NEXT:    [[PV2:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 8
+; NOVU0-NEXT:    [[V2:%.*]] = load float, ptr [[PV2]], align 4
+; NOVU0-NEXT:    [[PV3:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 12
+; NOVU0-NEXT:    [[V3:%.*]] = load float, ptr [[PV3]], align 4
+; NOVU0-NEXT:    [[PM00:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 0
+; NOVU0-NEXT:    [[M00:%.*]] = load float, ptr [[PM00]], align 4
+; NOVU0-NEXT:    [[P00:%.*]] = fmul fast float [[M00]], [[V0]]
+; NOVU0-NEXT:    [[PM01:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 4
+; NOVU0-NEXT:    [[M01:%.*]] = load float, ptr [[PM01]], align 4
+; NOVU0-NEXT:    [[P01:%.*]] = fmul fast float [[M01]], [[V1]]
+; NOVU0-NEXT:    [[PM02:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 8
+; NOVU0-NEXT:    [[M02:%.*]] = load float, ptr [[PM02]], align 4
+; NOVU0-NEXT:    [[P02:%.*]] = fmul fast float [[M02]], [[V2]]
+; NOVU0-NEXT:    [[PM03:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 12
+; NOVU0-NEXT:    [[M03:%.*]] = load float, ptr [[PM03]], align 4
+; NOVU0-NEXT:    [[P03:%.*]] = fmul fast float [[M03]], [[V3]]
+; NOVU0-NEXT:    [[S0A:%.*]] = fadd fast float [[P01]], [[P00]]
+; NOVU0-NEXT:    [[S0B:%.*]] = fadd fast float [[P02]], [[S0A]]
+; NOVU0-NEXT:    [[S0:%.*]] = fadd fast float [[P03]], [[S0B]]
+; NOVU0-NEXT:    [[PR0:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 0
+; NOVU0-NEXT:    store float [[S0]], ptr [[PR0]], align 4
+; NOVU0-NEXT:    [[PM10:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 16
+; NOVU0-NEXT:    [[M10:%.*]] = load float, ptr [[PM10]], align 4
+; NOVU0-NEXT:    [[P10:%.*]] = fmul fast float [[M10]], [[V0]]
+; NOVU0-NEXT:    [[PM11:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 20
+; NOVU0-NEXT:    [[M11:%.*]] = load float, ptr [[PM11]], align 4
+; NOVU0-NEXT:    [[P11:%.*]] = fmul fast float [[M11]], [[V1]]
+; NOVU0-NEXT:    [[PM12:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 24
+; NOVU0-NEXT:    [[M12:%.*]] = load float, ptr [[PM12]], align 4
+; NOVU0-NEXT:    [[P12:%.*]] = fmul fast float [[M12]], [[V2]]
+; NOVU0-NEXT:    [[PM13:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 28
+; NOVU0-NEXT:    [[M13:%.*]] = load float, ptr [[PM13]], align 4
+; NOVU0-NEXT:    [[P13:%.*]] = fmul fast float [[M13]], [[V3]]
+; NOVU0-NEXT:    [[S1A:%.*]] = fadd fast float [[P11]], [[P10]]
+; NOVU0-NEXT:    [[S1B:%.*]] = fadd fast float [[P12]], [[S1A]]
+; NOVU0-NEXT:    [[S1:%.*]] = fadd fast float [[P13]], [[S1B]]
+; NOVU0-NEXT:    [[PR1:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 4
+; NOVU0-NEXT:    store float [[S1]], ptr [[PR1]], align 4
+; NOVU0-NEXT:    [[PM20:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 32
+; NOVU0-NEXT:    [[M20:%.*]] = load float, ptr [[PM20]], align 4
+; NOVU0-NEXT:    [[P20:%.*]] = fmul fast float [[M20]], [[V0]]
+; NOVU0-NEXT:    [[PM21:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 36
+; NOVU0-NEXT:    [[M21:%.*]] = load float, ptr [[PM21]], align 4
+; NOVU0-NEXT:    [[P21:%.*]] = fmul fast float [[M21]], [[V1]]
+; NOVU0-NEXT:    [[PM22:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 40
+; NOVU0-NEXT:    [[M22:%.*]] = load float, ptr [[PM22]], align 4
+; NOVU0-NEXT:    [[P22:%.*]] = fmul fast float [[M22]], [[V2]]
+; NOVU0-NEXT:    [[PM23:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 44
+; NOVU0-NEXT:    [[M23:%.*]] = load float, ptr [[PM23]], align 4
+; NOVU0-NEXT:    [[P23:%.*]] = fmul fast float [[M23]], [[V3]]
+; NOVU0-NEXT:    [[S2A:%.*]] = fadd fast float [[P21]], [[P20]]
+; NOVU0-NEXT:    [[S2B:%.*]] = fadd fast float [[P22]], [[S2A]]
+; NOVU0-NEXT:    [[S2:%.*]] = fadd fast float [[P23]], [[S2B]]
+; NOVU0-NEXT:    [[PR2:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 8
+; NOVU0-NEXT:    store float [[S2]], ptr [[PR2]], align 4
+; NOVU0-NEXT:    [[PM30:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 48
+; NOVU0-NEXT:    [[M30:%.*]] = load float, ptr [[PM30]], align 4
+; NOVU0-NEXT:    [[P30:%.*]] = fmul fast float [[M30]], [[V0]]
+; NOVU0-NEXT:    [[PM31:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 52
+; NOVU0-NEXT:    [[M31:%.*]] = load float, ptr [[PM31]], align 4
+; NOVU0-NEXT:    [[P31:%.*]] = fmul fast float [[M31]], [[V1]]
+; NOVU0-NEXT:    [[PM32:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 56
+; NOVU0-NEXT:    [[M32:%.*]] = load float, ptr [[PM32]], align 4
+; NOVU0-NEXT:    [[P32:%.*]] = fmul fast float [[M32]], [[V2]]
+; NOVU0-NEXT:    [[PM33:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 60
+; NOVU0-NEXT:    [[M33:%.*]] = load float, ptr [[PM33]], align 4
+; NOVU0-NEXT:    [[P33:%.*]] = fmul fast float [[M33]], [[V3]]
+; NOVU0-NEXT:    [[S3A:%.*]] = fadd fast float [[P31]], [[P30]]
+; NOVU0-NEXT:    [[S3B:%.*]] = fadd fast float [[P32]], [[S3A]]
+; NOVU0-NEXT:    [[S3:%.*]] = fadd fast float [[P33]], [[S3B]]
+; NOVU0-NEXT:    [[PR3:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 12
+; NOVU0-NEXT:    store float [[S3]], ptr [[PR3]], align 4
+; NOVU0-NEXT:    ret void
+;
+  %pv0 = getelementptr inbounds i8, ptr %v, i32 0
+  %v0 = load float, ptr %pv0, align 4
+  %pv1 = getelementptr inbounds i8, ptr %v, i32 4
+  %v1 = load float, ptr %pv1, align 4
+  %pv2 = getelementptr inbounds i8, ptr %v, i32 8
+  %v2 = load float, ptr %pv2, align 4
+  %pv3 = getelementptr inbounds i8, ptr %v, i32 12
+  %v3 = load float, ptr %pv3, align 4
+  %pm00 = getelementptr inbounds i8, ptr %m, i32 0
+  %m00 = load float, ptr %pm00, align 4
+  %p00 = fmul fast float %m00, %v0
+  %pm01 = getelementptr inbounds i8, ptr %m, i32 4
+  %m01 = load float, ptr %pm01, align 4
+  %p01 = fmul fast float %m01, %v1
+  %pm02 = getelementptr inbounds i8, ptr %m, i32 8
+  %m02 = load float, ptr %pm02, align 4
+  %p02 = fmul fast float %m02, %v2
+  %pm03 = getelementptr inbounds i8, ptr %m, i32 12
+  %m03 = load float, ptr %pm03, align 4
+  %p03 = fmul fast float %m03, %v3
+  %s0a = fadd fast float %p01, %p00
+  %s0b = fadd fast float %p02, %s0a
+  %s0 = fadd fast float %p03, %s0b
+  %pr0 = getelementptr inbounds i8, ptr %r, i32 0
+  store float %s0, ptr %pr0, align 4
+  %pm10 = getelementptr inbounds i8, ptr %m, i32 16
+  %m10 = load float, ptr %pm10, align 4
+  %p10 = fmul fast float %m10, %v0
+  %pm11 = getelementptr inbounds i8, ptr %m, i32 20
+  %m11 = load float, ptr %pm11, align 4
+  %p11 = fmul fast float %m11, %v1
+  %pm12 = getelementptr inbounds i8, ptr %m, i32 24
+  %m12 = load float, ptr %pm12, align 4
+  %p12 = fmul fast float %m12, %v2
+  %pm13 = getelementptr inbounds i8, ptr %m, i32 28
+  %m13 = load float, ptr %pm13, align 4
+  %p13 = fmul fast float %m13, %v3
+  %s1a = fadd fast float %p11, %p10
+  %s1b = fadd fast float %p12, %s1a
+  %s1 = fadd fast float %p13, %s1b
+  %pr1 = getelementptr inbounds i8, ptr %r, i32 4
+  store float %s1, ptr %pr1, align 4
+  %pm20 = getelementptr inbounds i8, ptr %m, i32 32
+  %m20 = load float, ptr %pm20, align 4
+  %p20 = fmul fast float %m20, %v0
+  %pm21 = getelementptr inbounds i8, ptr %m, i32 36
+  %m21 = load float, ptr %pm21, align 4
+  %p21 = fmul fast float %m21, %v1
+  %pm22 = getelementptr inbounds i8, ptr %m, i32 40
+  %m22 = load float, ptr %pm22, align 4
+  %p22 = fmul fast float %m22, %v2
+  %pm23 = getelementptr inbounds i8, ptr %m, i32 44
+  %m23 = load float, ptr %pm23, align 4
+  %p23 = fmul fast float %m23, %v3
+  %s2a = fadd fast float %p21, %p20
+  %s2b = fadd fast float %p22, %s2a
+  %s2 = fadd fast float %p23, %s2b
+  %pr2 = getelementptr inbounds i8, ptr %r, i32 8
+  store float %s2, ptr %pr2, align 4
+  %pm30 = getelementptr inbounds i8, ptr %m, i32 48
+  %m30 = load float, ptr %pm30, align 4
+  %p30 = fmul fast float %m30, %v0
+  %pm31 = getelementptr inbounds i8, ptr %m, i32 52
+  %m31 = load float, ptr %pm31, align 4
+  %p31 = fmul fast float %m31, %v1
+  %pm32 = getelementptr inbounds i8, ptr %m, i32 56
+  %m32 = load float, ptr %pm32, align 4
+  %p32 = fmul fast float %m32, %v2
+  %pm33 = getelementptr inbounds i8, ptr %m, i32 60
+  %m33 = load float, ptr %pm33, align 4
+  %p33 = fmul fast float %m33, %v3
+  %s3a = fadd fast float %p31, %p30
+  %s3b = fadd fast float %p32, %s3a
+  %s3 = fadd fast float %p33, %s3b
+  %pr3 = getelementptr inbounds i8, ptr %r, i32 12
+  store float %s3, ptr %pr3, align 4
+  ret void
+}
+
+; The same with pointers that may alias: a store of a row may change the
+; matrix, so the rows stay scalar.
+define void @mxv_function_alias(ptr align 16 %m, ptr align 16 %v, ptr align 16 %r) {
+; CHECK-LABEL: define void @mxv_function_alias(
+; CHECK-SAME: ptr align 16 [[M:%.*]], ptr align 16 [[V:%.*]], ptr align 16 [[R:%.*]]) #[[ATTR0]] {
+; CHECK-NEXT:    [[PV0:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 0
+; CHECK-NEXT:    [[V0:%.*]] = load float, ptr [[PV0]], align 4
+; CHECK-NEXT:    [[PV1:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 4
+; CHECK-NEXT:    [[V1:%.*]] = load float, ptr [[PV1]], align 4
+; CHECK-NEXT:    [[PV2:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 8
+; CHECK-NEXT:    [[V2:%.*]] = load float, ptr [[PV2]], align 4
+; CHECK-NEXT:    [[PV3:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 12
+; CHECK-NEXT:    [[V3:%.*]] = load float, ptr [[PV3]], align 4
+; CHECK-NEXT:    [[PM00:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 0
+; CHECK-NEXT:    [[M00:%.*]] = load float, ptr [[PM00]], align 4
+; CHECK-NEXT:    [[P00:%.*]] = fmul fast float [[M00]], [[V0]]
+; CHECK-NEXT:    [[PM01:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 4
+; CHECK-NEXT:    [[M01:%.*]] = load float, ptr [[PM01]], align 4
+; CHECK-NEXT:    [[P01:%.*]] = fmul fast float [[M01]], [[V1]]
+; CHECK-NEXT:    [[PM02:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 8
+; CHECK-NEXT:    [[M02:%.*]] = load float, ptr [[PM02]], align 4
+; CHECK-NEXT:    [[P02:%.*]] = fmul fast float [[M02]], [[V2]]
+; CHECK-NEXT:    [[PM03:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 12
+; CHECK-NEXT:    [[M03:%.*]] = load float, ptr [[PM03]], align 4
+; CHECK-NEXT:    [[P03:%.*]] = fmul fast float [[M03]], [[V3]]
+; CHECK-NEXT:    [[S0A:%.*]] = fadd fast float [[P01]], [[P00]]
+; CHECK-NEXT:    [[S0B:%.*]] = fadd fast float [[P02]], [[S0A]]
+; CHECK-NEXT:    [[S0:%.*]] = fadd fast float [[P03]], [[S0B]]
+; CHECK-NEXT:    [[PR0:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 0
+; CHECK-NEXT:    store float [[S0]], ptr [[PR0]], align 4
+; CHECK-NEXT:    [[PM10:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 16
+; CHECK-NEXT:    [[M10:%.*]] = load float, ptr [[PM10]], align 4
+; CHECK-NEXT:    [[P10:%.*]] = fmul fast float [[M10]], [[V0]]
+; CHECK-NEXT:    [[PM11:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 20
+; CHECK-NEXT:    [[M11:%.*]] = load float, ptr [[PM11]], align 4
+; CHECK-NEXT:    [[P11:%.*]] = fmul fast float [[M11]], [[V1]]
+; CHECK-NEXT:    [[PM12:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 24
+; CHECK-NEXT:    [[M12:%.*]] = load float, ptr [[PM12]], align 4
+; CHECK-NEXT:    [[P12:%.*]] = fmul fast float [[M12]], [[V2]]
+; CHECK-NEXT:    [[PM13:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 28
+; CHECK-NEXT:    [[M13:%.*]] = load float, ptr [[PM13]], align 4
+; CHECK-NEXT:    [[P13:%.*]] = fmul fast float [[M13]], [[V3]]
+; CHECK-NEXT:    [[S1A:%.*]] = fadd fast float [[P11]], [[P10]]
+; CHECK-NEXT:    [[S1B:%.*]] = fadd fast float [[P12]], [[S1A]]
+; CHECK-NEXT:    [[S1:%.*]] = fadd fast float [[P13]], [[S1B]]
+; CHECK-NEXT:    [[PR1:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 4
+; CHECK-NEXT:    store float [[S1]], ptr [[PR1]], align 4
+; CHECK-NEXT:    [[PM20:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 32
+; CHECK-NEXT:    [[M20:%.*]] = load float, ptr [[PM20]], align 4
+; CHECK-NEXT:    [[P20:%.*]] = fmul fast float [[M20]], [[V0]]
+; CHECK-NEXT:    [[PM21:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 36
+; CHECK-NEXT:    [[M21:%.*]] = load float, ptr [[PM21]], align 4
+; CHECK-NEXT:    [[P21:%.*]] = fmul fast float [[M21]], [[V1]]
+; CHECK-NEXT:    [[PM22:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 40
+; CHECK-NEXT:    [[M22:%.*]] = load float, ptr [[PM22]], align 4
+; CHECK-NEXT:    [[P22:%.*]] = fmul fast float [[M22]], [[V2]]
+; CHECK-NEXT:    [[PM23:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 44
+; CHECK-NEXT:    [[M23:%.*]] = load float, ptr [[PM23]], align 4
+; CHECK-NEXT:    [[P23:%.*]] = fmul fast float [[M23]], [[V3]]
+; CHECK-NEXT:    [[S2A:%.*]] = fadd fast float [[P21]], [[P20]]
+; CHECK-NEXT:    [[S2B:%.*]] = fadd fast float [[P22]], [[S2A]]
+; CHECK-NEXT:    [[S2:%.*]] = fadd fast float [[P23]], [[S2B]]
+; CHECK-NEXT:    [[PR2:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 8
+; CHECK-NEXT:    store float [[S2]], ptr [[PR2]], align 4
+; CHECK-NEXT:    [[PM30:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 48
+; CHECK-NEXT:    [[M30:%.*]] = load float, ptr [[PM30]], align 4
+; CHECK-NEXT:    [[P30:%.*]] = fmul fast float [[M30]], [[V0]]
+; CHECK-NEXT:    [[PM31:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 52
+; CHECK-NEXT:    [[M31:%.*]] = load float, ptr [[PM31]], align 4
+; CHECK-NEXT:    [[P31:%.*]] = fmul fast float [[M31]], [[V1]]
+; CHECK-NEXT:    [[PM32:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 56
+; CHECK-NEXT:    [[M32:%.*]] = load float, ptr [[PM32]], align 4
+; CHECK-NEXT:    [[P32:%.*]] = fmul fast float [[M32]], [[V2]]
+; CHECK-NEXT:    [[PM33:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 60
+; CHECK-NEXT:    [[M33:%.*]] = load float, ptr [[PM33]], align 4
+; CHECK-NEXT:    [[P33:%.*]] = fmul fast float [[M33]], [[V3]]
+; CHECK-NEXT:    [[S3A:%.*]] = fadd fast float [[P31]], [[P30]]
+; CHECK-NEXT:    [[S3B:%.*]] = fadd fast float [[P32]], [[S3A]]
+; CHECK-NEXT:    [[S3:%.*]] = fadd fast float [[P33]], [[S3B]]
+; CHECK-NEXT:    [[PR3:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 12
+; CHECK-NEXT:    store float [[S3]], ptr [[PR3]], align 4
+; CHECK-NEXT:    ret void
+;
+; NOVU0-LABEL: define void @mxv_function_alias(
+; NOVU0-SAME: ptr align 16 [[M:%.*]], ptr align 16 [[V:%.*]], ptr align 16 [[R:%.*]]) #[[ATTR0]] {
+; NOVU0-NEXT:    [[PV0:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 0
+; NOVU0-NEXT:    [[V0:%.*]] = load float, ptr [[PV0]], align 4
+; NOVU0-NEXT:    [[PV1:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 4
+; NOVU0-NEXT:    [[V1:%.*]] = load float, ptr [[PV1]], align 4
+; NOVU0-NEXT:    [[PV2:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 8
+; NOVU0-NEXT:    [[V2:%.*]] = load float, ptr [[PV2]], align 4
+; NOVU0-NEXT:    [[PV3:%.*]] = getelementptr inbounds i8, ptr [[V]], i32 12
+; NOVU0-NEXT:    [[V3:%.*]] = load float, ptr [[PV3]], align 4
+; NOVU0-NEXT:    [[PM00:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 0
+; NOVU0-NEXT:    [[M00:%.*]] = load float, ptr [[PM00]], align 4
+; NOVU0-NEXT:    [[P00:%.*]] = fmul fast float [[M00]], [[V0]]
+; NOVU0-NEXT:    [[PM01:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 4
+; NOVU0-NEXT:    [[M01:%.*]] = load float, ptr [[PM01]], align 4
+; NOVU0-NEXT:    [[P01:%.*]] = fmul fast float [[M01]], [[V1]]
+; NOVU0-NEXT:    [[PM02:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 8
+; NOVU0-NEXT:    [[M02:%.*]] = load float, ptr [[PM02]], align 4
+; NOVU0-NEXT:    [[P02:%.*]] = fmul fast float [[M02]], [[V2]]
+; NOVU0-NEXT:    [[PM03:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 12
+; NOVU0-NEXT:    [[M03:%.*]] = load float, ptr [[PM03]], align 4
+; NOVU0-NEXT:    [[P03:%.*]] = fmul fast float [[M03]], [[V3]]
+; NOVU0-NEXT:    [[S0A:%.*]] = fadd fast float [[P01]], [[P00]]
+; NOVU0-NEXT:    [[S0B:%.*]] = fadd fast float [[P02]], [[S0A]]
+; NOVU0-NEXT:    [[S0:%.*]] = fadd fast float [[P03]], [[S0B]]
+; NOVU0-NEXT:    [[PR0:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 0
+; NOVU0-NEXT:    store float [[S0]], ptr [[PR0]], align 4
+; NOVU0-NEXT:    [[PM10:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 16
+; NOVU0-NEXT:    [[M10:%.*]] = load float, ptr [[PM10]], align 4
+; NOVU0-NEXT:    [[P10:%.*]] = fmul fast float [[M10]], [[V0]]
+; NOVU0-NEXT:    [[PM11:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 20
+; NOVU0-NEXT:    [[M11:%.*]] = load float, ptr [[PM11]], align 4
+; NOVU0-NEXT:    [[P11:%.*]] = fmul fast float [[M11]], [[V1]]
+; NOVU0-NEXT:    [[PM12:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 24
+; NOVU0-NEXT:    [[M12:%.*]] = load float, ptr [[PM12]], align 4
+; NOVU0-NEXT:    [[P12:%.*]] = fmul fast float [[M12]], [[V2]]
+; NOVU0-NEXT:    [[PM13:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 28
+; NOVU0-NEXT:    [[M13:%.*]] = load float, ptr [[PM13]], align 4
+; NOVU0-NEXT:    [[P13:%.*]] = fmul fast float [[M13]], [[V3]]
+; NOVU0-NEXT:    [[S1A:%.*]] = fadd fast float [[P11]], [[P10]]
+; NOVU0-NEXT:    [[S1B:%.*]] = fadd fast float [[P12]], [[S1A]]
+; NOVU0-NEXT:    [[S1:%.*]] = fadd fast float [[P13]], [[S1B]]
+; NOVU0-NEXT:    [[PR1:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 4
+; NOVU0-NEXT:    store float [[S1]], ptr [[PR1]], align 4
+; NOVU0-NEXT:    [[PM20:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 32
+; NOVU0-NEXT:    [[M20:%.*]] = load float, ptr [[PM20]], align 4
+; NOVU0-NEXT:    [[P20:%.*]] = fmul fast float [[M20]], [[V0]]
+; NOVU0-NEXT:    [[PM21:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 36
+; NOVU0-NEXT:    [[M21:%.*]] = load float, ptr [[PM21]], align 4
+; NOVU0-NEXT:    [[P21:%.*]] = fmul fast float [[M21]], [[V1]]
+; NOVU0-NEXT:    [[PM22:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 40
+; NOVU0-NEXT:    [[M22:%.*]] = load float, ptr [[PM22]], align 4
+; NOVU0-NEXT:    [[P22:%.*]] = fmul fast float [[M22]], [[V2]]
+; NOVU0-NEXT:    [[PM23:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 44
+; NOVU0-NEXT:    [[M23:%.*]] = load float, ptr [[PM23]], align 4
+; NOVU0-NEXT:    [[P23:%.*]] = fmul fast float [[M23]], [[V3]]
+; NOVU0-NEXT:    [[S2A:%.*]] = fadd fast float [[P21]], [[P20]]
+; NOVU0-NEXT:    [[S2B:%.*]] = fadd fast float [[P22]], [[S2A]]
+; NOVU0-NEXT:    [[S2:%.*]] = fadd fast float [[P23]], [[S2B]]
+; NOVU0-NEXT:    [[PR2:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 8
+; NOVU0-NEXT:    store float [[S2]], ptr [[PR2]], align 4
+; NOVU0-NEXT:    [[PM30:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 48
+; NOVU0-NEXT:    [[M30:%.*]] = load float, ptr [[PM30]], align 4
+; NOVU0-NEXT:    [[P30:%.*]] = fmul fast float [[M30]], [[V0]]
+; NOVU0-NEXT:    [[PM31:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 52
+; NOVU0-NEXT:    [[M31:%.*]] = load float, ptr [[PM31]], align 4
+; NOVU0-NEXT:    [[P31:%.*]] = fmul fast float [[M31]], [[V1]]
+; NOVU0-NEXT:    [[PM32:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 56
+; NOVU0-NEXT:    [[M32:%.*]] = load float, ptr [[PM32]], align 4
+; NOVU0-NEXT:    [[P32:%.*]] = fmul fast float [[M32]], [[V2]]
+; NOVU0-NEXT:    [[PM33:%.*]] = getelementptr inbounds i8, ptr [[M]], i32 60
+; NOVU0-NEXT:    [[M33:%.*]] = load float, ptr [[PM33]], align 4
+; NOVU0-NEXT:    [[P33:%.*]] = fmul fast float [[M33]], [[V3]]
+; NOVU0-NEXT:    [[S3A:%.*]] = fadd fast float [[P31]], [[P30]]
+; NOVU0-NEXT:    [[S3B:%.*]] = fadd fast float [[P32]], [[S3A]]
+; NOVU0-NEXT:    [[S3:%.*]] = fadd fast float [[P33]], [[S3B]]
+; NOVU0-NEXT:    [[PR3:%.*]] = getelementptr inbounds i8, ptr [[R]], i32 12
+; NOVU0-NEXT:    store float [[S3]], ptr [[PR3]], align 4
+; NOVU0-NEXT:    ret void
+;
+  %pv0 = getelementptr inbounds i8, ptr %v, i32 0
+  %v0 = load float, ptr %pv0, align 4
+  %pv1 = getelementptr inbounds i8, ptr %v, i32 4
+  %v1 = load float, ptr %pv1, align 4
+  %pv2 = getelementptr inbounds i8, ptr %v, i32 8
+  %v2 = load float, ptr %pv2, align 4
+  %pv3 = getelementptr inbounds i8, ptr %v, i32 12
+  %v3 = load float, ptr %pv3, align 4
+  %pm00 = getelementptr inbounds i8, ptr %m, i32 0
+  %m00 = load float, ptr %pm00, align 4
+  %p00 = fmul fast float %m00, %v0
+  %pm01 = getelementptr inbounds i8, ptr %m, i32 4
+  %m01 = load float, ptr %pm01, align 4
+  %p01 = fmul fast float %m01, %v1
+  %pm02 = getelementptr inbounds i8, ptr %m, i32 8
+  %m02 = load float, ptr %pm02, align 4
+  %p02 = fmul fast float %m02, %v2
+  %pm03 = getelementptr inbounds i8, ptr %m, i32 12
+  %m03 = load float, ptr %pm03, align 4
+  %p03 = fmul fast float %m03, %v3
+  %s0a = fadd fast float %p01, %p00
+  %s0b = fadd fast float %p02, %s0a
+  %s0 = fadd fast float %p03, %s0b
+  %pr0 = getelementptr inbounds i8, ptr %r, i32 0
+  store float %s0, ptr %pr0, align 4
+  %pm10 = getelementptr inbounds i8, ptr %m, i32 16
+  %m10 = load float, ptr %pm10, align 4
+  %p10 = fmul fast float %m10, %v0
+  %pm11 = getelementptr inbounds i8, ptr %m, i32 20
+  %m11 = load float, ptr %pm11, align 4
+  %p11 = fmul fast float %m11, %v1
+  %pm12 = getelementptr inbounds i8, ptr %m, i32 24
+  %m12 = load float, ptr %pm12, align 4
+  %p12 = fmul fast float %m12, %v2
+  %pm13 = getelementptr inbounds i8, ptr %m, i32 28
+  %m13 = load float, ptr %pm13, align 4
+  %p13 = fmul fast float %m13, %v3
+  %s1a = fadd fast float %p11, %p10
+  %s1b = fadd fast float %p12, %s1a
+  %s1 = fadd fast float %p13, %s1b
+  %pr1 = getelementptr inbounds i8, ptr %r, i32 4
+  store float %s1, ptr %pr1, align 4
+  %pm20 = getelementptr inbounds i8, ptr %m, i32 32
+  %m20 = load float, ptr %pm20, align 4
+  %p20 = fmul fast float %m20, %v0
+  %pm21 = getelementptr inbounds i8, ptr %m, i32 36
+  %m21 = load float, ptr %pm21, align 4
+  %p21 = fmul fast float %m21, %v1
+  %pm22 = getelementptr inbounds i8, ptr %m, i32 40
+  %m22 = load float, ptr %pm22, align 4
+  %p22 = fmul fast float %m22, %v2
+  %pm23 = getelementptr inbounds i8, ptr %m, i32 44
+  %m23 = load float, ptr %pm23, align 4
+  %p23 = fmul fast float %m23, %v3
+  %s2a = fadd fast float %p21, %p20
+  %s2b = fadd fast float %p22, %s2a
+  %s2 = fadd fast float %p23, %s2b
+  %pr2 = getelementptr inbounds i8, ptr %r, i32 8
+  store float %s2, ptr %pr2, align 4
+  %pm30 = getelementptr inbounds i8, ptr %m, i32 48
+  %m30 = load float, ptr %pm30, align 4
+  %p30 = fmul fast float %m30, %v0
+  %pm31 = getelementptr inbounds i8, ptr %m, i32 52
+  %m31 = load float, ptr %pm31, align 4
+  %p31 = fmul fast float %m31, %v1
+  %pm32 = getelementptr inbounds i8, ptr %m, i32 56
+  %m32 = load float, ptr %pm32, align 4
+  %p32 = fmul fast float %m32, %v2
+  %pm33 = getelementptr inbounds i8, ptr %m, i32 60
+  %m33 = load float, ptr %pm33, align 4
+  %p33 = fmul fast float %m33, %v3
+  %s3a = fadd fast float %p31, %p30
+  %s3b = fadd fast float %p32, %s3a
+  %s3 = fadd fast float %p33, %s3b
+  %pr3 = getelementptr inbounds i8, ptr %r, i32 12
+  store float %s3, ptr %pr3, align 4
+  ret void
+}
+
+; Diffuse lighting written with scalars (the bench's lighting): each light
+; adds to the color only for d > 0, a block of its own. The sums are made
+; with max(d, 0) without the branches (also without VU0, for MAX.S); then
+; the 3 dots are one matrix times the normal, max with 0 a lane-wise
+; operation, the colors a second matrix times that vector plus the ambient,
+; and min, the scale by 128 and the conversion (below 2^31: signed) lane-wise.
+define i32 @lighting_cond() {
+; CHECK-LABEL: define i32 @lighting_cond(
+; CHECK-SAME: ) #[[ATTR0]] {
+; CHECK-NEXT:    br label %[[BB3:.*]]
+; CHECK:       [[BB1:.*]]:
+; CHECK-NEXT:    [[TMP2:%.*]] = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+; CHECK-NEXT:    ret i32 [[TMP2]]
+; CHECK:       [[BB3]]:
+; CHECK-NEXT:    [[TMP4:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP36:%.*]], %[[BB3]] ]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 [[TMP4]]
+; CHECK-NEXT:    [[MATVEC_V:%.*]] = load <4 x float>, ptr [[TMP5]], align 16
+; CHECK-NEXT:    [[TMP6:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP7:%.*]] = fmul fast <4 x float> <float 5.000000e-01, float -7.500000e-01, float 0.000000e+00, float 0.000000e+00>, [[TMP6]]
+; CHECK-NEXT:    [[TMP8:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
+; CHECK-NEXT:    [[TMP9:%.*]] = fmul fast <4 x float> <float 5.000000e-01, float 2.500000e-01, float -5.000000e-01, float 0.000000e+00>, [[TMP8]]
+; CHECK-NEXT:    [[TMP10:%.*]] = fadd fast <4 x float> [[TMP7]], [[TMP9]]
+; CHECK-NEXT:    [[TMP11:%.*]] = shufflevector <4 x float> [[MATVEC_V]], <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+; CHECK-NEXT:    [[TMP12:%.*]] = fmul fast <4 x float> <float -5.000000e-01, float 0.000000e+00, float 7.500000e-01, float 0.000000e+00>, [[TMP11]]
+; CHECK-NEXT:    [[TMP13:%.*]] = fadd fast <4 x float> [[TMP10]], [[TMP12]]
+; CHECK-NEXT:    [[TMP14:%.*]] = call fast <4 x float> @llvm.maxnum.v4f32(<4 x float> [[TMP13]], <4 x float> zeroinitializer)
+; CHECK-NEXT:    [[TMP15:%.*]] = shufflevector <4 x float> [[TMP14]], <4 x float> poison, <4 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP16:%.*]] = fmul fast <4 x float> <float 5.000000e-01, float 3.750000e-01, float 2.500000e-01, float 0.000000e+00>, [[TMP15]]
+; CHECK-NEXT:    [[TMP17:%.*]] = shufflevector <4 x float> [[TMP14]], <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
+; CHECK-NEXT:    [[TMP18:%.*]] = fmul fast <4 x float> <float 1.250000e-01, float 2.500000e-01, float 5.000000e-01, float 0.000000e+00>, [[TMP17]]
+; CHECK-NEXT:    [[TMP19:%.*]] = fadd fast <4 x float> [[TMP16]], [[TMP18]]
+; CHECK-NEXT:    [[TMP20:%.*]] = shufflevector <4 x float> [[TMP14]], <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+; CHECK-NEXT:    [[TMP21:%.*]] = fmul fast <4 x float> <float 2.500000e-01, float 2.500000e-01, float 1.250000e-01, float 0.000000e+00>, [[TMP20]]
+; CHECK-NEXT:    [[TMP22:%.*]] = fadd fast <4 x float> [[TMP19]], [[TMP21]]
+; CHECK-NEXT:    [[TMP23:%.*]] = fadd fast <4 x float> [[TMP22]], <float 1.250000e-01, float 1.250000e-01, float 1.250000e-01, float 0.000000e+00>
+; CHECK-NEXT:    [[TMP24:%.*]] = call fast <4 x float> @llvm.minnum.v4f32(<4 x float> [[TMP23]], <4 x float> splat (float 1.000000e+00))
+; CHECK-NEXT:    [[TMP25:%.*]] = fmul fast <4 x float> [[TMP24]], splat (float 1.280000e+02)
+; CHECK-NEXT:    [[TMP26:%.*]] = fptosi <4 x float> [[TMP25]] to <4 x i32>
+; CHECK-NEXT:    [[TMP27:%.*]] = extractelement <4 x i32> [[TMP26]], i64 0
+; CHECK-NEXT:    [[TMP28:%.*]] = extractelement <4 x i32> [[TMP26]], i64 1
+; CHECK-NEXT:    [[TMP29:%.*]] = extractelement <4 x i32> [[TMP26]], i64 2
+; CHECK-NEXT:    [[TMP30:%.*]] = shl i32 [[TMP28]], 8
+; CHECK-NEXT:    [[TMP31:%.*]] = shl i32 [[TMP29]], 16
+; CHECK-NEXT:    [[TMP32:%.*]] = or i32 [[TMP30]], [[TMP27]]
+; CHECK-NEXT:    [[TMP33:%.*]] = or i32 [[TMP32]], [[TMP31]]
+; CHECK-NEXT:    [[TMP34:%.*]] = or i32 [[TMP33]], -2147483648
+; CHECK-NEXT:    [[TMP35:%.*]] = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 [[TMP4]]
+; CHECK-NEXT:    store i32 [[TMP34]], ptr [[TMP35]], align 4
+; CHECK-NEXT:    [[TMP36]] = add nuw nsw i32 [[TMP4]], 1
+; CHECK-NEXT:    [[TMP37:%.*]] = icmp eq i32 [[TMP36]], 512
+; CHECK-NEXT:    br i1 [[TMP37]], label %[[BB1]], label %[[BB3]]
+;
+; NOVU0-LABEL: define i32 @lighting_cond(
+; NOVU0-SAME: ) #[[ATTR0]] {
+; NOVU0-NEXT:    br label %[[BB3:.*]]
+; NOVU0:       [[BB1:.*]]:
+; NOVU0-NEXT:    [[TMP2:%.*]] = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+; NOVU0-NEXT:    ret i32 [[TMP2]]
+; NOVU0:       [[BB3]]:
+; NOVU0-NEXT:    [[TMP4:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP53:%.*]], %[[BB3]] ]
+; NOVU0-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 [[TMP4]]
+; NOVU0-NEXT:    [[TMP6:%.*]] = load float, ptr [[TMP5]], align 16
+; NOVU0-NEXT:    [[TMP7:%.*]] = getelementptr inbounds nuw i8, ptr [[TMP5]], i32 4
+; NOVU0-NEXT:    [[TMP8:%.*]] = load float, ptr [[TMP7]], align 4
+; NOVU0-NEXT:    [[TMP9:%.*]] = getelementptr inbounds nuw i8, ptr [[TMP5]], i32 8
+; NOVU0-NEXT:    [[TMP10:%.*]] = load float, ptr [[TMP9]], align 8
+; NOVU0-NEXT:    [[TMP11:%.*]] = fadd fast float [[TMP8]], [[TMP6]]
+; NOVU0-NEXT:    [[TMP12:%.*]] = fmul fast float [[TMP11]], 5.000000e-01
+; NOVU0-NEXT:    [[TMP13:%.*]] = fmul fast float [[TMP10]], -5.000000e-01
+; NOVU0-NEXT:    [[TMP14:%.*]] = fadd fast float [[TMP12]], [[TMP13]]
+; NOVU0-NEXT:    [[DPOS:%.*]] = call nnan ninf nsz float @llvm.maxnum.f32(float [[TMP14]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP15:%.*]] = fmul fast float [[DPOS]], 5.000000e-01
+; NOVU0-NEXT:    [[TMP16:%.*]] = fadd fast float [[TMP15]], 1.250000e-01
+; NOVU0-NEXT:    [[TMP17:%.*]] = fmul fast float [[DPOS]], 3.750000e-01
+; NOVU0-NEXT:    [[TMP18:%.*]] = fadd fast float [[TMP17]], 1.250000e-01
+; NOVU0-NEXT:    [[TMP19:%.*]] = fmul fast float [[DPOS]], 2.500000e-01
+; NOVU0-NEXT:    [[TMP20:%.*]] = fadd fast float [[TMP19]], 1.250000e-01
+; NOVU0-NEXT:    [[TMP21:%.*]] = fmul fast float [[TMP6]], -7.500000e-01
+; NOVU0-NEXT:    [[TMP22:%.*]] = fmul fast float [[TMP8]], 2.500000e-01
+; NOVU0-NEXT:    [[TMP23:%.*]] = fadd fast float [[TMP22]], [[TMP21]]
+; NOVU0-NEXT:    [[DPOS1:%.*]] = call nnan ninf nsz float @llvm.maxnum.f32(float [[TMP23]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP24:%.*]] = fmul fast float [[DPOS1]], 1.250000e-01
+; NOVU0-NEXT:    [[TMP25:%.*]] = fadd fast float [[TMP24]], [[TMP16]]
+; NOVU0-NEXT:    [[TMP26:%.*]] = fmul fast float [[DPOS1]], 2.500000e-01
+; NOVU0-NEXT:    [[TMP27:%.*]] = fadd fast float [[TMP26]], [[TMP18]]
+; NOVU0-NEXT:    [[TMP28:%.*]] = fmul fast float [[DPOS1]], 5.000000e-01
+; NOVU0-NEXT:    [[TMP29:%.*]] = fadd fast float [[TMP28]], [[TMP20]]
+; NOVU0-NEXT:    [[TMP30:%.*]] = fmul fast float [[TMP8]], -5.000000e-01
+; NOVU0-NEXT:    [[TMP31:%.*]] = fmul fast float [[TMP10]], 7.500000e-01
+; NOVU0-NEXT:    [[TMP32:%.*]] = fadd fast float [[TMP30]], [[TMP31]]
+; NOVU0-NEXT:    [[DPOS2:%.*]] = call nnan ninf nsz float @llvm.maxnum.f32(float [[TMP32]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP33:%.*]] = fmul fast float [[DPOS2]], 2.500000e-01
+; NOVU0-NEXT:    [[TMP34:%.*]] = fadd fast float [[TMP33]], [[TMP25]]
+; NOVU0-NEXT:    [[TMP35:%.*]] = fadd fast float [[TMP33]], [[TMP27]]
+; NOVU0-NEXT:    [[TMP36:%.*]] = fmul fast float [[DPOS2]], 1.250000e-01
+; NOVU0-NEXT:    [[TMP37:%.*]] = fadd fast float [[TMP36]], [[TMP29]]
+; NOVU0-NEXT:    [[TMP38:%.*]] = tail call nnan ninf nsz float @llvm.minnum.f32(float [[TMP34]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP39:%.*]] = tail call nnan ninf nsz float @llvm.minnum.f32(float [[TMP35]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP40:%.*]] = tail call nnan ninf nsz float @llvm.minnum.f32(float [[TMP37]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP41:%.*]] = fmul fast float [[TMP38]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP42:%.*]] = fptoui float [[TMP41]] to i32
+; NOVU0-NEXT:    [[TMP43:%.*]] = fmul fast float [[TMP39]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP44:%.*]] = fptoui float [[TMP43]] to i32
+; NOVU0-NEXT:    [[TMP45:%.*]] = shl i32 [[TMP44]], 8
+; NOVU0-NEXT:    [[TMP46:%.*]] = fmul fast float [[TMP40]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP47:%.*]] = fptoui float [[TMP46]] to i32
+; NOVU0-NEXT:    [[TMP48:%.*]] = shl i32 [[TMP47]], 16
+; NOVU0-NEXT:    [[TMP49:%.*]] = or i32 [[TMP45]], [[TMP42]]
+; NOVU0-NEXT:    [[TMP50:%.*]] = or i32 [[TMP49]], [[TMP48]]
+; NOVU0-NEXT:    [[TMP51:%.*]] = or i32 [[TMP50]], -2147483648
+; NOVU0-NEXT:    [[TMP52:%.*]] = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 [[TMP4]]
+; NOVU0-NEXT:    store i32 [[TMP51]], ptr [[TMP52]], align 4
+; NOVU0-NEXT:    [[TMP53]] = add nuw nsw i32 [[TMP4]], 1
+; NOVU0-NEXT:    [[TMP54:%.*]] = icmp eq i32 [[TMP53]], 512
+; NOVU0-NEXT:    br i1 [[TMP54]], label %[[BB1]], label %[[BB3]]
+;
+  br label %3
+
+; The same with vector types (lighting_v4sf): the dots are lanes of n * dir,
+; and the light without an intensity multiply is multiplied by 1.
+1:                                                ; preds = %52
+  %2 = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+  ret i32 %2
+
+3:                                                ; preds = %0, %52
+  %4 = phi i32 [ 0, %0 ], [ %71, %52 ]
+  %5 = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 %4
+  %6 = load float, ptr %5, align 16
+  %7 = getelementptr inbounds nuw i8, ptr %5, i32 4
+  %8 = load float, ptr %7, align 4
+  %9 = getelementptr inbounds nuw i8, ptr %5, i32 8
+  %10 = load float, ptr %9, align 8
+  %11 = fadd fast float %8, %6
+  %12 = fmul fast float %11, 5.000000e-01
+  %13 = fmul fast float %10, -5.000000e-01
+  %14 = fadd fast float %12, %13
+  %15 = fcmp fast ogt float %14, 0.000000e+00
+  br i1 %15, label %16, label %23
+
+16:                                               ; preds = %3
+  %17 = fmul fast float %14, 5.000000e-01
+  %18 = fadd fast float %17, 1.250000e-01
+  %19 = fmul fast float %14, 3.750000e-01
+  %20 = fadd fast float %19, 1.250000e-01
+  %21 = fmul fast float %14, 2.500000e-01
+  %22 = fadd fast float %21, 1.250000e-01
+  br label %23
+
+23:                                               ; preds = %16, %3
+  %24 = phi nsz float [ %18, %16 ], [ 1.250000e-01, %3 ]
+  %25 = phi nsz float [ %20, %16 ], [ 1.250000e-01, %3 ]
+  %26 = phi nsz float [ %22, %16 ], [ 1.250000e-01, %3 ]
+  %27 = fmul fast float %6, -7.500000e-01
+  %28 = fmul fast float %8, 2.500000e-01
+  %29 = fadd fast float %28, %27
+  %30 = fcmp fast ogt float %29, 0.000000e+00
+  br i1 %30, label %31, label %38
+
+31:                                               ; preds = %23
+  %32 = fmul fast float %29, 1.250000e-01
+  %33 = fadd fast float %32, %24
+  %34 = fmul fast float %29, 2.500000e-01
+  %35 = fadd fast float %34, %25
+  %36 = fmul fast float %29, 5.000000e-01
+  %37 = fadd fast float %36, %26
+  br label %38
+
+38:                                               ; preds = %31, %23
+  %39 = phi nsz float [ %33, %31 ], [ %24, %23 ]
+  %40 = phi nsz float [ %35, %31 ], [ %25, %23 ]
+  %41 = phi nsz float [ %37, %31 ], [ %26, %23 ]
+  %42 = fmul fast float %8, -5.000000e-01
+  %43 = fmul fast float %10, 7.500000e-01
+  %44 = fadd fast float %42, %43
+  %45 = fcmp fast ogt float %44, 0.000000e+00
+  br i1 %45, label %46, label %52
+
+46:                                               ; preds = %38
+  %47 = fmul fast float %44, 2.500000e-01
+  %48 = fadd fast float %47, %39
+  %49 = fadd fast float %47, %40
+  %50 = fmul fast float %44, 1.250000e-01
+  %51 = fadd fast float %50, %41
+  br label %52
+
+52:                                               ; preds = %46, %38
+  %53 = phi nsz float [ %48, %46 ], [ %39, %38 ]
+  %54 = phi nsz float [ %49, %46 ], [ %40, %38 ]
+  %55 = phi nsz float [ %51, %46 ], [ %41, %38 ]
+  %56 = tail call nnan ninf nsz float @llvm.minnum.f32(float %53, float 1.000000e+00)
+  %57 = tail call nnan ninf nsz float @llvm.minnum.f32(float %54, float 1.000000e+00)
+  %58 = tail call nnan ninf nsz float @llvm.minnum.f32(float %55, float 1.000000e+00)
+  %59 = fmul fast float %56, 1.280000e+02
+  %60 = fptoui float %59 to i32
+  %61 = fmul fast float %57, 1.280000e+02
+  %62 = fptoui float %61 to i32
+  %63 = shl i32 %62, 8
+  %64 = fmul fast float %58, 1.280000e+02
+  %65 = fptoui float %64 to i32
+  %66 = shl i32 %65, 16
+  %67 = or i32 %63, %60
+  %68 = or i32 %67, %66
+  %69 = or i32 %68, -2147483648
+  %70 = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 %4
+  store i32 %69, ptr %70, align 4
+  %71 = add nuw nsw i32 %4, 1
+  %72 = icmp eq i32 %71, 512
+  br i1 %72, label %1, label %3
+}
+
+define i32 @lighting_lanes() {
+; CHECK-LABEL: define i32 @lighting_lanes(
+; CHECK-SAME: ) #[[ATTR0]] {
+; CHECK-NEXT:    br label %[[BB3:.*]]
+; CHECK:       [[BB1:.*]]:
+; CHECK-NEXT:    [[TMP2:%.*]] = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+; CHECK-NEXT:    ret i32 [[TMP2]]
+; CHECK:       [[BB3]]:
+; CHECK-NEXT:    [[TMP4:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP50:%.*]], %[[BB3]] ]
+; CHECK-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 [[TMP4]]
+; CHECK-NEXT:    [[TMP6:%.*]] = load <4 x float>, ptr [[TMP5]], align 16
+; CHECK-NEXT:    [[TMP7:%.*]] = shufflevector <4 x float> [[TMP6]], <4 x float> poison, <4 x i32> zeroinitializer
+; CHECK-NEXT:    [[TMP8:%.*]] = fmul fast <4 x float> <float 5.000000e-01, float -7.500000e-01, float 0.000000e+00, float 0.000000e+00>, [[TMP7]]
+; CHECK-NEXT:    [[TMP9:%.*]] = shufflevector <4 x float> [[TMP6]], <4 x float> poison, <4 x i32> <i32 1, i32 1, i32 1, i32 1>
+; CHECK-NEXT:    [[TMP10:%.*]] = fmul fast <4 x float> <float 5.000000e-01, float 2.500000e-01, float -5.000000e-01, float 0.000000e+00>, [[TMP9]]
+; CHECK-NEXT:    [[TMP11:%.*]] = fadd fast <4 x float> [[TMP8]], [[TMP10]]
+; CHECK-NEXT:    [[TMP12:%.*]] = shufflevector <4 x float> [[TMP6]], <4 x float> poison, <4 x i32> <i32 2, i32 2, i32 2, i32 2>
+; CHECK-NEXT:    [[TMP13:%.*]] = fmul fast <4 x float> <float -5.000000e-01, float 0.000000e+00, float 7.500000e-01, float 0.000000e+00>, [[TMP12]]
+; CHECK-NEXT:    [[TMP14:%.*]] = fadd fast <4 x float> [[TMP11]], [[TMP13]]
+; CHECK-NEXT:    [[TMP15:%.*]] = call fast <4 x float> @llvm.maxnum.v4f32(<4 x float> [[TMP14]], <4 x float> zeroinitializer)
+; CHECK-NEXT:    [[TMP16:%.*]] = fmul fast <4 x float> [[TMP15]], <float 1.000000e+00, float 5.000000e-01, float 7.500000e-01, float 1.000000e+00>
+; CHECK-NEXT:    [[TMP17:%.*]] = extractelement <4 x float> [[TMP16]], i64 0
+; CHECK-NEXT:    [[TMP18:%.*]] = extractelement <4 x float> [[TMP16]], i64 1
+; CHECK-NEXT:    [[TMP19:%.*]] = extractelement <4 x float> [[TMP16]], i64 2
+; CHECK-NEXT:    [[TMP20:%.*]] = insertelement <4 x float> poison, float [[TMP17]], i64 0
+; CHECK-NEXT:    [[TMP21:%.*]] = shufflevector <4 x float> [[TMP20]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; CHECK-NEXT:    [[TMP22:%.*]] = fmul fast <4 x float> [[TMP21]], <float 5.000000e-01, float 3.750000e-01, float 2.500000e-01, float poison>
+; CHECK-NEXT:    [[TMP23:%.*]] = fadd fast <4 x float> [[TMP22]], <float 1.250000e-01, float 1.250000e-01, float 1.250000e-01, float poison>
+; CHECK-NEXT:    [[TMP24:%.*]] = insertelement <4 x float> poison, float [[TMP18]], i64 0
+; CHECK-NEXT:    [[TMP25:%.*]] = shufflevector <4 x float> [[TMP24]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; CHECK-NEXT:    [[TMP26:%.*]] = fmul fast <4 x float> [[TMP25]], <float 1.250000e-01, float 2.500000e-01, float 5.000000e-01, float poison>
+; CHECK-NEXT:    [[TMP27:%.*]] = fadd fast <4 x float> [[TMP26]], [[TMP23]]
+; CHECK-NEXT:    [[TMP28:%.*]] = insertelement <4 x float> poison, float [[TMP19]], i64 0
+; CHECK-NEXT:    [[TMP29:%.*]] = shufflevector <4 x float> [[TMP28]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; CHECK-NEXT:    [[TMP30:%.*]] = fmul fast <4 x float> [[TMP29]], <float 2.500000e-01, float 2.500000e-01, float 1.250000e-01, float poison>
+; CHECK-NEXT:    [[TMP31:%.*]] = fadd fast <4 x float> [[TMP30]], [[TMP27]]
+; CHECK-NEXT:    [[TMP32:%.*]] = extractelement <4 x float> [[TMP31]], i64 0
+; CHECK-NEXT:    [[TMP33:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP32]], float 1.000000e+00)
+; CHECK-NEXT:    [[TMP34:%.*]] = fmul fast float [[TMP33]], 1.280000e+02
+; CHECK-NEXT:    [[TMP35:%.*]] = fptoui float [[TMP34]] to i32
+; CHECK-NEXT:    [[TMP36:%.*]] = extractelement <4 x float> [[TMP31]], i64 1
+; CHECK-NEXT:    [[TMP37:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP36]], float 1.000000e+00)
+; CHECK-NEXT:    [[TMP38:%.*]] = fmul fast float [[TMP37]], 1.280000e+02
+; CHECK-NEXT:    [[TMP39:%.*]] = fptoui float [[TMP38]] to i32
+; CHECK-NEXT:    [[TMP40:%.*]] = shl i32 [[TMP39]], 8
+; CHECK-NEXT:    [[TMP41:%.*]] = extractelement <4 x float> [[TMP31]], i64 2
+; CHECK-NEXT:    [[TMP42:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP41]], float 1.000000e+00)
+; CHECK-NEXT:    [[TMP43:%.*]] = fmul fast float [[TMP42]], 1.280000e+02
+; CHECK-NEXT:    [[TMP44:%.*]] = fptoui float [[TMP43]] to i32
+; CHECK-NEXT:    [[TMP45:%.*]] = shl i32 [[TMP44]], 16
+; CHECK-NEXT:    [[TMP46:%.*]] = or i32 [[TMP40]], [[TMP35]]
+; CHECK-NEXT:    [[TMP47:%.*]] = or i32 [[TMP46]], [[TMP45]]
+; CHECK-NEXT:    [[TMP48:%.*]] = or i32 [[TMP47]], -2147483648
+; CHECK-NEXT:    [[TMP49:%.*]] = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 [[TMP4]]
+; CHECK-NEXT:    store i32 [[TMP48]], ptr [[TMP49]], align 4
+; CHECK-NEXT:    [[TMP50]] = add nuw nsw i32 [[TMP4]], 1
+; CHECK-NEXT:    [[TMP51:%.*]] = icmp eq i32 [[TMP50]], 512
+; CHECK-NEXT:    br i1 [[TMP51]], label %[[BB1]], label %[[BB3]]
+;
+; NOVU0-LABEL: define i32 @lighting_lanes(
+; NOVU0-SAME: ) #[[ATTR0]] {
+; NOVU0-NEXT:    br label %[[BB3:.*]]
+; NOVU0:       [[BB1:.*]]:
+; NOVU0-NEXT:    [[TMP2:%.*]] = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+; NOVU0-NEXT:    ret i32 [[TMP2]]
+; NOVU0:       [[BB3]]:
+; NOVU0-NEXT:    [[TMP4:%.*]] = phi i32 [ 0, [[TMP0:%.*]] ], [ [[TMP60:%.*]], %[[BB3]] ]
+; NOVU0-NEXT:    [[TMP5:%.*]] = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 [[TMP4]]
+; NOVU0-NEXT:    [[TMP6:%.*]] = load <4 x float>, ptr [[TMP5]], align 16
+; NOVU0-NEXT:    [[TMP7:%.*]] = fmul fast <4 x float> [[TMP6]], <float 5.000000e-01, float 5.000000e-01, float -5.000000e-01, float poison>
+; NOVU0-NEXT:    [[TMP8:%.*]] = extractelement <4 x float> [[TMP7]], i64 0
+; NOVU0-NEXT:    [[TMP9:%.*]] = extractelement <4 x float> [[TMP7]], i64 1
+; NOVU0-NEXT:    [[TMP10:%.*]] = fadd fast float [[TMP8]], [[TMP9]]
+; NOVU0-NEXT:    [[TMP11:%.*]] = extractelement <4 x float> [[TMP7]], i64 2
+; NOVU0-NEXT:    [[TMP12:%.*]] = fadd fast float [[TMP10]], [[TMP11]]
+; NOVU0-NEXT:    [[TMP13:%.*]] = tail call fast float @llvm.maxnum.f32(float [[TMP12]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP14:%.*]] = insertelement <4 x float> poison, float [[TMP13]], i64 0
+; NOVU0-NEXT:    [[TMP15:%.*]] = shufflevector <4 x float> [[TMP14]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; NOVU0-NEXT:    [[TMP16:%.*]] = fmul fast <4 x float> [[TMP15]], <float 5.000000e-01, float 3.750000e-01, float 2.500000e-01, float poison>
+; NOVU0-NEXT:    [[TMP17:%.*]] = fadd fast <4 x float> [[TMP16]], <float 1.250000e-01, float 1.250000e-01, float 1.250000e-01, float poison>
+; NOVU0-NEXT:    [[TMP18:%.*]] = fmul fast <4 x float> [[TMP6]], <float -7.500000e-01, float 2.500000e-01, float 0.000000e+00, float poison>
+; NOVU0-NEXT:    [[TMP19:%.*]] = extractelement <4 x float> [[TMP18]], i64 0
+; NOVU0-NEXT:    [[TMP20:%.*]] = extractelement <4 x float> [[TMP18]], i64 1
+; NOVU0-NEXT:    [[TMP21:%.*]] = fadd fast float [[TMP19]], [[TMP20]]
+; NOVU0-NEXT:    [[TMP22:%.*]] = extractelement <4 x float> [[TMP18]], i64 2
+; NOVU0-NEXT:    [[TMP23:%.*]] = fadd fast float [[TMP21]], [[TMP22]]
+; NOVU0-NEXT:    [[TMP24:%.*]] = tail call fast float @llvm.maxnum.f32(float [[TMP23]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP25:%.*]] = fmul fast float [[TMP24]], 5.000000e-01
+; NOVU0-NEXT:    [[TMP26:%.*]] = insertelement <4 x float> poison, float [[TMP25]], i64 0
+; NOVU0-NEXT:    [[TMP27:%.*]] = shufflevector <4 x float> [[TMP26]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; NOVU0-NEXT:    [[TMP28:%.*]] = fmul fast <4 x float> [[TMP27]], <float 1.250000e-01, float 2.500000e-01, float 5.000000e-01, float poison>
+; NOVU0-NEXT:    [[TMP29:%.*]] = fadd fast <4 x float> [[TMP28]], [[TMP17]]
+; NOVU0-NEXT:    [[TMP30:%.*]] = fmul fast <4 x float> [[TMP6]], <float 0.000000e+00, float -5.000000e-01, float 7.500000e-01, float poison>
+; NOVU0-NEXT:    [[TMP31:%.*]] = extractelement <4 x float> [[TMP30]], i64 0
+; NOVU0-NEXT:    [[TMP32:%.*]] = extractelement <4 x float> [[TMP30]], i64 1
+; NOVU0-NEXT:    [[TMP33:%.*]] = fadd fast float [[TMP31]], [[TMP32]]
+; NOVU0-NEXT:    [[TMP34:%.*]] = extractelement <4 x float> [[TMP30]], i64 2
+; NOVU0-NEXT:    [[TMP35:%.*]] = fadd fast float [[TMP33]], [[TMP34]]
+; NOVU0-NEXT:    [[TMP36:%.*]] = tail call fast float @llvm.maxnum.f32(float [[TMP35]], float 0.000000e+00)
+; NOVU0-NEXT:    [[TMP37:%.*]] = fmul fast float [[TMP36]], 7.500000e-01
+; NOVU0-NEXT:    [[TMP38:%.*]] = insertelement <4 x float> poison, float [[TMP37]], i64 0
+; NOVU0-NEXT:    [[TMP39:%.*]] = shufflevector <4 x float> [[TMP38]], <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+; NOVU0-NEXT:    [[TMP40:%.*]] = fmul fast <4 x float> [[TMP39]], <float 2.500000e-01, float 2.500000e-01, float 1.250000e-01, float poison>
+; NOVU0-NEXT:    [[TMP41:%.*]] = fadd fast <4 x float> [[TMP40]], [[TMP29]]
+; NOVU0-NEXT:    [[TMP42:%.*]] = extractelement <4 x float> [[TMP41]], i64 0
+; NOVU0-NEXT:    [[TMP43:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP42]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP44:%.*]] = fmul fast float [[TMP43]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP45:%.*]] = fptoui float [[TMP44]] to i32
+; NOVU0-NEXT:    [[TMP46:%.*]] = extractelement <4 x float> [[TMP41]], i64 1
+; NOVU0-NEXT:    [[TMP47:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP46]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP48:%.*]] = fmul fast float [[TMP47]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP49:%.*]] = fptoui float [[TMP48]] to i32
+; NOVU0-NEXT:    [[TMP50:%.*]] = shl i32 [[TMP49]], 8
+; NOVU0-NEXT:    [[TMP51:%.*]] = extractelement <4 x float> [[TMP41]], i64 2
+; NOVU0-NEXT:    [[TMP52:%.*]] = tail call fast float @llvm.minnum.f32(float [[TMP51]], float 1.000000e+00)
+; NOVU0-NEXT:    [[TMP53:%.*]] = fmul fast float [[TMP52]], 1.280000e+02
+; NOVU0-NEXT:    [[TMP54:%.*]] = fptoui float [[TMP53]] to i32
+; NOVU0-NEXT:    [[TMP55:%.*]] = shl i32 [[TMP54]], 16
+; NOVU0-NEXT:    [[TMP56:%.*]] = or i32 [[TMP50]], [[TMP45]]
+; NOVU0-NEXT:    [[TMP57:%.*]] = or i32 [[TMP56]], [[TMP55]]
+; NOVU0-NEXT:    [[TMP58:%.*]] = or i32 [[TMP57]], -2147483648
+; NOVU0-NEXT:    [[TMP59:%.*]] = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 [[TMP4]]
+; NOVU0-NEXT:    store i32 [[TMP58]], ptr [[TMP59]], align 4
+; NOVU0-NEXT:    [[TMP60]] = add nuw nsw i32 [[TMP4]], 1
+; NOVU0-NEXT:    [[TMP61:%.*]] = icmp eq i32 [[TMP60]], 512
+; NOVU0-NEXT:    br i1 [[TMP61]], label %[[BB1]], label %[[BB3]]
+;
+  br label %3
+
+1:                                                ; preds = %3
+  %2 = call i32 @app_hash(ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 2048)
+  ret i32 %2
+
+3:                                                ; preds = %0, %3
+  %4 = phi i32 [ 0, %0 ], [ %60, %3 ]
+  %5 = getelementptr inbounds nuw [16 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 9216), i32 %4
+  %6 = load <4 x float>, ptr %5, align 16
+  %7 = fmul fast <4 x float> %6, <float 5.000000e-01, float 5.000000e-01, float -5.000000e-01, float poison>
+  %8 = extractelement <4 x float> %7, i64 0
+  %9 = extractelement <4 x float> %7, i64 1
+  %10 = fadd fast float %8, %9
+  %11 = extractelement <4 x float> %7, i64 2
+  %12 = fadd fast float %10, %11
+  %13 = tail call fast float @llvm.maxnum.f32(float %12, float 0.000000e+00)
+  %14 = insertelement <4 x float> poison, float %13, i64 0
+  %15 = shufflevector <4 x float> %14, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+  %16 = fmul fast <4 x float> %15, <float 5.000000e-01, float 3.750000e-01, float 2.500000e-01, float poison>
+  %17 = fadd fast <4 x float> %16, <float 1.250000e-01, float 1.250000e-01, float 1.250000e-01, float poison>
+  %18 = fmul fast <4 x float> %6, <float -7.500000e-01, float 2.500000e-01, float 0.000000e+00, float poison>
+  %19 = extractelement <4 x float> %18, i64 0
+  %20 = extractelement <4 x float> %18, i64 1
+  %21 = fadd fast float %19, %20
+  %22 = extractelement <4 x float> %18, i64 2
+  %23 = fadd fast float %21, %22
+  %24 = tail call fast float @llvm.maxnum.f32(float %23, float 0.000000e+00)
+  %25 = fmul fast float %24, 5.000000e-01
+  %26 = insertelement <4 x float> poison, float %25, i64 0
+  %27 = shufflevector <4 x float> %26, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+  %28 = fmul fast <4 x float> %27, <float 1.250000e-01, float 2.500000e-01, float 5.000000e-01, float poison>
+  %29 = fadd fast <4 x float> %28, %17
+  %30 = fmul fast <4 x float> %6, <float 0.000000e+00, float -5.000000e-01, float 7.500000e-01, float poison>
+  %31 = extractelement <4 x float> %30, i64 0
+  %32 = extractelement <4 x float> %30, i64 1
+  %33 = fadd fast float %31, %32
+  %34 = extractelement <4 x float> %30, i64 2
+  %35 = fadd fast float %33, %34
+  %36 = tail call fast float @llvm.maxnum.f32(float %35, float 0.000000e+00)
+  %37 = fmul fast float %36, 7.500000e-01
+  %38 = insertelement <4 x float> poison, float %37, i64 0
+  %39 = shufflevector <4 x float> %38, <4 x float> poison, <4 x i32> <i32 0, i32 0, i32 0, i32 poison>
+  %40 = fmul fast <4 x float> %39, <float 2.500000e-01, float 2.500000e-01, float 1.250000e-01, float poison>
+  %41 = fadd fast <4 x float> %40, %29
+  %42 = extractelement <4 x float> %41, i64 0
+  %43 = tail call fast float @llvm.minnum.f32(float %42, float 1.000000e+00)
+  %44 = fmul fast float %43, 1.280000e+02
+  %45 = fptoui float %44 to i32
+  %46 = extractelement <4 x float> %41, i64 1
+  %47 = tail call fast float @llvm.minnum.f32(float %46, float 1.000000e+00)
+  %48 = fmul fast float %47, 1.280000e+02
+  %49 = fptoui float %48 to i32
+  %50 = shl i32 %49, 8
+  %51 = extractelement <4 x float> %41, i64 2
+  %52 = tail call fast float @llvm.minnum.f32(float %51, float 1.000000e+00)
+  %53 = fmul fast float %52, 1.280000e+02
+  %54 = fptoui float %53 to i32
+  %55 = shl i32 %54, 16
+  %56 = or i32 %50, %45
+  %57 = or i32 %56, %55
+  %58 = or i32 %57, -2147483648
+  %59 = getelementptr inbounds nuw [4 x i8], ptr getelementptr inbounds nuw (i8, ptr @geom_mem, i32 56320), i32 %4
+  store i32 %58, ptr %59, align 4
+  %60 = add nuw nsw i32 %4, 1
+  %61 = icmp eq i32 %60, 512
+  br i1 %61, label %1, label %3
+}
+
+declare i32 @app_hash(ptr, i32)

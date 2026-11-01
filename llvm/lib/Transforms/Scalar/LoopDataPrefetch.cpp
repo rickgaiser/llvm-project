@@ -25,10 +25,15 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 
 #define DEBUG_TYPE "loop-data-prefetch"
 
@@ -50,7 +55,8 @@ public:
   bool run();
 
 private:
-  bool runOnLoop(Loop *L);
+  bool runOnLoop(Loop *L, bool Versioned = false);
+  bool versionOnFootprint(Loop *L, uint64_t BytesPerIter, uint64_t MinBytes);
 
   /// Check if the stride of the accesses is large enough to
   /// warrant a prefetch.
@@ -194,6 +200,84 @@ bool LoopDataPrefetchLegacyPass::runOnFunction(Function &F) {
   return LDP.run();
 }
 
+/// Version \p L on its trip count: the loop continues in L if it accesses more
+/// than \p MinBytes, \p BytesPerIter per iteration, and in a copy of it
+/// otherwise. Returns false if the trip count can not be computed on entry.
+bool LoopDataPrefetch::versionOnFootprint(Loop *L, uint64_t BytesPerIter,
+                                          uint64_t MinBytes) {
+  BasicBlock *Preheader = L->getLoopPreheader();
+  BasicBlock *Exit = L->getUniqueExitBlock();
+  BasicBlock *Exiting = L->getExitingBlock();
+  if (!L->isInnermost() || !Preheader || !Exit || !Exiting)
+    return false;
+  const SCEV *BTC = SE->getBackedgeTakenCount(L);
+  if (isa<SCEVCouldNotCompute>(BTC))
+    return false;
+  LLVMContext &Ctx = Preheader->getContext();
+  Type *I64 = Type::getInt64Ty(Ctx);
+  if (BTC->getType()->getScalarSizeInBits() > 64)
+    return false;
+  const SCEV *TripCount =
+      SE->getAddExpr(SE->getZeroExtendExpr(BTC, I64), SE->getOne(I64));
+  SCEVExpander Expander(*SE, "prefetch.check");
+  if (!Expander.isSafeToExpand(TripCount))
+    return false;
+
+  // The check, in the old preheader; the loop gets a new one.
+  BasicBlock *CheckBB = Preheader;
+  BasicBlock *NewPreheader =
+      SplitBlock(CheckBB, CheckBB->getTerminator(), DT, LI, nullptr,
+                 L->getHeader()->getName() + ".ph");
+  IRBuilder<> Builder(CheckBB->getTerminator());
+  Value *Count =
+      Expander.expandCodeFor(TripCount, I64, CheckBB->getTerminator());
+  // TripCount * BytesPerIter > MinBytes, without overflow.
+  Value *Big = Builder.CreateICmpUGT(
+      Count, ConstantInt::get(I64, MinBytes / BytesPerIter), "prefetch.big");
+
+  // The copy without prefetches.
+  ValueToValueMapTy VMap;
+  SmallVector<BasicBlock *, 8> Blocks;
+  Loop *Plain = cloneLoopWithPreheader(NewPreheader, CheckBB, L, VMap,
+                                       ".noprefetch", LI, DT, Blocks);
+  remapInstructionsInBlocks(Blocks, VMap);
+  Instruction *OldTerm = CheckBB->getTerminator();
+  Builder.SetInsertPoint(OldTerm);
+  Builder.CreateCondBr(Big, NewPreheader, Plain->getLoopPreheader());
+  OldTerm->eraseFromParent();
+  DT->changeImmediateDominator(Exit, CheckBB);
+
+  // The exit is reached from both loops.
+  auto *PlainExiting = cast<BasicBlock>(VMap[Exiting]);
+  for (PHINode &PN : Exit->phis()) {
+    Value *V = PN.getIncomingValueForBlock(Exiting);
+    Value *Mapped = VMap.lookup(V);
+    PN.addIncoming(Mapped ? Mapped : V, PlainExiting);
+  }
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      SmallVector<Use *, 4> Outside;
+      for (Use &U : I.uses()) {
+        auto *UI = cast<Instruction>(U.getUser());
+        if (!L->contains(UI) && !Plain->contains(UI) &&
+            !(isa<PHINode>(UI) && UI->getParent() == Exit))
+          Outside.push_back(&U);
+      }
+      if (Outside.empty())
+        continue;
+      PHINode *PN = PHINode::Create(I.getType(), 2, I.getName() + ".pf",
+                                    Exit->getFirstNonPHIIt());
+      PN->addIncoming(&I, Exiting);
+      PN->addIncoming(VMap[&I], PlainExiting);
+      for (Use *U : Outside)
+        U->set(PN);
+    }
+  formDedicatedExitBlocks(L, DT, LI, nullptr, false);
+  formDedicatedExitBlocks(Plain, DT, LI, nullptr, false);
+  SE->forgetLoop(L);
+  return true;
+}
+
 bool LoopDataPrefetch::run() {
   // If PrefetchDistance is not set, don't run the pass.  This gives an
   // opportunity for targets to run this pass for selected subtargets only
@@ -206,9 +290,13 @@ bool LoopDataPrefetch::run() {
 
   bool MadeChange = false;
 
+  // Versioning adds loops: visit the ones there are now.
+  SmallVector<Loop *, 16> Loops;
   for (Loop *I : *LI)
     for (Loop *L : depth_first(I))
-      MadeChange |= runOnLoop(L);
+      Loops.push_back(L);
+  for (Loop *L : Loops)
+    MadeChange |= runOnLoop(L);
 
   return MadeChange;
 }
@@ -255,7 +343,7 @@ struct Prefetch {
   }
 };
 
-bool LoopDataPrefetch::runOnLoop(Loop *L) {
+bool LoopDataPrefetch::runOnLoop(Loop *L, bool Versioned) {
   bool MadeChange = false;
 
   // Only prefetch in the inner-most loop
@@ -293,9 +381,9 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
   if (!LoopSize)
     LoopSize = 1;
 
-  unsigned ItersAhead = getPrefetchDistance() / LoopSize;
-  if (!ItersAhead)
-    ItersAhead = 1;
+  unsigned ItersAhead = Opts.prefetch_distance
+                            ? std::max(1u, *Opts.prefetch_distance / LoopSize)
+                            : TTI->getPrefetchIterationsAhead(L, *SE, LoopSize);
 
   if (ItersAhead > getMaxPrefetchIterationsAhead())
     return MadeChange;
@@ -307,6 +395,9 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
   unsigned NumMemAccesses = 0;
   unsigned NumStridedMemAccesses = 0;
   SmallVector<Prefetch, 16> Prefetches;
+  // The strided stores that are not prefetched: they count to the bytes the
+  // loop accesses.
+  SmallVector<const SCEVAddRecExpr *, 8> OtherStores;
   for (const auto BB : L->blocks())
     for (auto &I : *BB) {
       Value *PtrValue;
@@ -316,7 +407,13 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
         MemI = LMemI;
         PtrValue = LMemI->getPointerOperand();
       } else if (StoreInst *SMemI = dyn_cast<StoreInst>(&I)) {
-        if (!doPrefetchWrites()) continue;
+        if (!doPrefetchWrites()) {
+          if (!L->isLoopInvariant(SMemI->getPointerOperand()))
+            if (const auto *AR = dyn_cast<SCEVAddRecExpr>(
+                    SE->getSCEV(SMemI->getPointerOperand())))
+              OtherStores.push_back(AR);
+          continue;
+        }
         MemI = SMemI;
         PtrValue = SMemI->getPointerOperand();
       } else continue;
@@ -368,11 +465,48 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
              << "a minimum stride of " << TargetMinStride << ", "
              << (HasCall ? "calls" : "no calls") << ".\n");
 
+  // The bytes an iteration accesses: the step of each group of accesses within
+  // a cache line of each other.
+  uint64_t BytesPerIter = 0;
+  SmallVector<const SCEVAddRecExpr *, 16> Groups;
+  for (const Prefetch &P : Prefetches)
+    Groups.push_back(P.LSCEVAddRec);
+  for (const SCEVAddRecExpr *AR : OtherStores)
+    if (none_of(Groups, [&](const SCEVAddRecExpr *G) {
+          const auto *D = dyn_cast<SCEVConstant>(SE->getMinusSCEV(AR, G));
+          return D && std::abs(D->getValue()->getSExtValue()) <
+                          int64_t(TTI->getCacheLineSize());
+        }))
+      Groups.push_back(AR);
+  for (const SCEVAddRecExpr *AR : Groups)
+    if (const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(*SE)))
+      BytesPerIter += Step->getAPInt().abs().getLimitedValue();
+
+  // Only the accesses whose stride is large enough to warrant a prefetch.
+  llvm::erase_if(Prefetches, [&](const Prefetch &P) {
+    return !isStrideLargeEnough(P.LSCEVAddRec, TargetMinStride);
+  });
+  if (Prefetches.empty())
+    return MadeChange;
+
+  // Prefetches that pay only if the loop accesses enough memory: decide on a
+  // constant trip count, or version the loop on its trip count.
+  uint64_t MinBytes =
+      Versioned ? 0 : TTI->getPrefetchMinFootprint(L, *SE, Prefetches.size());
+  if (MinBytes == UINT64_MAX)
+    return MadeChange;
+  if (MinBytes) {
+    if (unsigned TripCount = SE->getSmallConstantTripCount(L)) {
+      if (uint64_t(TripCount) * BytesPerIter <= MinBytes)
+        return MadeChange;
+    } else {
+      if (!BytesPerIter || !versionOnFootprint(L, BytesPerIter, MinBytes))
+        return MadeChange;
+      return runOnLoop(L, /*Versioned=*/true) || true;
+    }
+  }
+
   for (auto &P : Prefetches) {
-    // Check if the stride of the accesses is large enough to warrant a
-    // prefetch.
-    if (!isStrideLargeEnough(P.LSCEVAddRec, TargetMinStride))
-      continue;
 
     BasicBlock *BB = P.InsertPt->getParent();
     SCEVExpander SCEVE(*SE, "prefaddr");

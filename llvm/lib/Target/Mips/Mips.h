@@ -57,6 +57,9 @@ FunctionPass *createMipsR5900Mult1Pass();
 FunctionPass *createMipsR5900FPUAccChainPass();
 FunctionPass *createMipsR5900LoopAccPass();
 FunctionPass *createMipsR5900IssuePass(bool KeepSCEVAA = false);
+FunctionPass *createMipsR5900SAHazardPass();
+FunctionPass *createMipsR5900SARedundantPass();
+FunctionPass *createMipsR5900DeadDefsPass();
 
 InstructionSelector *
 createMipsInstructionSelector(const MipsTargetMachine &, const MipsSubtarget &,

@@ -18,6 +18,9 @@ namespace llvm {
 /// during post-RA scheduling.
 std::unique_ptr<ScheduleDAGMutation> createMipsLoadOrderDAGMutation();
 
+/// Remove the memory order dependencies of prefetches.
+std::unique_ptr<ScheduleDAGMutation> createMipsUnorderedPrefetchDAGMutation();
+
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_MIPS_MIPSDAGMUTATIONS_H

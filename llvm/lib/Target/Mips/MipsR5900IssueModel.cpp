@@ -186,7 +186,14 @@ unsigned MipsR5900IssueModel::getIssueCycle(const MachineInstr &MI) const {
   // not issue with it, even if the latency allows it.
   if (Pair && Cycle == Slot0Cycle && dependsOn(MI, *Slot0MI))
     ++Cycle;
-  return getResourceCycle(MI, Cycle, Pair);
+  Cycle = getResourceCycle(MI, Cycle, Pair);
+  // A write of SA within 3 instructions after a read of it waits for the
+  // nops before it.
+  unsigned Opc = MI.getOpcode();
+  if ((Opc == Mips::MTSAB || Opc == Mips::MTSAH || Opc == Mips::MTSA) &&
+      SinceSARead < 3)
+    Cycle += 3 - SinceSARead;
+  return Cycle;
 }
 
 bool MipsR5900IssueModel::wouldPair(const MachineInstr &MI) const {
@@ -222,6 +229,11 @@ unsigned MipsR5900IssueModel::issue(const MachineInstr &MI) {
       for (MCRegUnit Unit : TRI->regunits(MO.getReg()))
         Defs[static_cast<unsigned>(Unit)] = {&MI, I, Cycle};
   }
+
+  if (MI.getOpcode() == Mips::QFSRV || MI.getOpcode() == Mips::MFSA)
+    SinceSARead = 0;
+  else if (SinceSARead < 3)
+    ++SinceSARead;
 
   NextBlockCycle = Cycle + 1;
   if (Slot == 0) {

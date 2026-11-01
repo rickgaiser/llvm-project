@@ -295,41 +295,128 @@ exit:
 define void @vu0_dot(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; CHECK-LABEL: vu0_dot:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    lui $1, %hi(.LCPI4_0)
 ; CHECK-NEXT:    sll $3, $7, 0
-; CHECK-NEXT:    lqc2 $vf1, %lo(.LCPI4_0)($1)
 ; CHECK-NEXT:    sll $2, $6, 0
+; CHECK-NEXT:    addiu $1, $3, -1
 ; CHECK-NEXT:    sll $5, $5, 0
+; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    daddiu $1, $1, 1
+; CHECK-NEXT:    sltiu $1, $1, 257
+; CHECK-NEXT:    bnez $1, .LBB4_4
 ; CHECK-NEXT:    sll $4, $4, 0
+; CHECK-NEXT:  # %bb.1: # %loop.ph
+; CHECK-NEXT:    lui $1, %hi(.LCPI4_0)
+; CHECK-NEXT:    lqc2 $vf1, %lo(.LCPI4_0)($1)
 ; CHECK-NEXT:    vmulaw.xyzw $acc, $vf1, $vf0
 ; CHECK-NEXT:    .p2align 3
-; CHECK-NEXT:  .LBB4_1: # %loop
+; CHECK-NEXT:  .LBB4_2: # %loop
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lqc2 $vf1, 0($4)
+; CHECK-NEXT:    addiu $3, $3, -1
+; CHECK-NEXT:    lqc2 $vf2, 0($5)
+; CHECK-NEXT:    pref 0, 384($4)
+; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    vmadda.xyzw $acc, $vf1, $vf2
+; CHECK-NEXT:    pref 0, 384($5)
+; CHECK-NEXT:    bnez $3, .LBB4_2
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:  # %bb.3:
+; CHECK-NEXT:    vmsubx.xyzw $vf1, $vf0, $vf0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    sqc2 $vf1, 0($2)
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB4_4: # %loop.ph.noprefetch
+; CHECK-NEXT:    lui $1, %hi(.LCPI4_0)
+; CHECK-NEXT:    lqc2 $vf1, %lo(.LCPI4_0)($1)
+; CHECK-NEXT:    vmulaw.xyzw $acc, $vf1, $vf0
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB4_5: # %loop.noprefetch
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
 ; CHECK-NEXT:    lqc2 $vf1, 0($4)
 ; CHECK-NEXT:    addiu $3, $3, -1
 ; CHECK-NEXT:    lqc2 $vf2, 0($5)
 ; CHECK-NEXT:    addiu $5, $5, 16
 ; CHECK-NEXT:    addiu $4, $4, 16
-; CHECK-NEXT:    bnez $3, .LBB4_1
+; CHECK-NEXT:    bnez $3, .LBB4_5
 ; CHECK-NEXT:    vmadda.xyzw $acc, $vf1, $vf2
-; CHECK-NEXT:  # %bb.2: # %exit
+; CHECK-NEXT:  # %bb.6:
 ; CHECK-NEXT:    vmsubx.xyzw $vf1, $vf0, $vf0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sqc2 $vf1, 0($2)
 ;
 ; OFF-LABEL: vu0_dot:
 ; OFF:       # %bb.0: # %entry
-; OFF-NEXT:    lui $1, %hi(.LCPI4_0)
 ; OFF-NEXT:    sll $3, $7, 0
+; OFF-NEXT:    sll $2, $6, 0
+; OFF-NEXT:    addiu $1, $3, -1
+; OFF-NEXT:    sll $5, $5, 0
+; OFF-NEXT:    dsll $1, $1, 32
+; OFF-NEXT:    dsrl $1, $1, 32
+; OFF-NEXT:    daddiu $1, $1, 1
+; OFF-NEXT:    sltiu $1, $1, 257
+; OFF-NEXT:    bnez $1, .LBB4_7
+; OFF-NEXT:    sll $4, $4, 0
+; OFF-NEXT:  # %bb.1: # %loop.ph
+; OFF-NEXT:    lui $1, %hi(.LCPI4_0)
 ; OFF-NEXT:    lqc2 $vf1, %lo(.LCPI4_0)($1)
 ; OFF-NEXT:    addiu $1, $3, -1
 ; OFF-NEXT:    subu $1, $1, $zero
-; OFF-NEXT:    sll $2, $6, 0
-; OFF-NEXT:    sll $5, $5, 0
+; OFF-NEXT:    addiu $1, $1, -1
+; OFF-NEXT:    blez $1, .LBB4_5
+; OFF-NEXT:    nop
+; OFF-NEXT:  # %bb.2: # %loop
+; OFF-NEXT:    lqc2 $vf2, 0($4)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    lqc2 $vf3, 0($5)
+; OFF-NEXT:    pref 0, 384($4)
+; OFF-NEXT:    addiu $4, $4, 16
+; OFF-NEXT:    vmul.xyzw $vf2, $vf2, $vf3
+; OFF-NEXT:    pref 0, 384($5)
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:  .LBB4_3: # %loop
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lqc2 $vf3, 0($4)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    lqc2 $vf4, 0($5)
+; OFF-NEXT:    subu $1, $3, $zero
+; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
+; OFF-NEXT:    vmul.xyzw $vf2, $vf3, $vf4
+; OFF-NEXT:    pref 0, 384($4)
+; OFF-NEXT:    addiu $4, $4, 16
+; OFF-NEXT:    pref 0, 384($5)
+; OFF-NEXT:    bgtz $1, .LBB4_3
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:  # %bb.4: # %loop
+; OFF-NEXT:    subu $1, $3, $zero
+; OFF-NEXT:    blez $1, .LBB4_12
+; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB4_5: # %loop
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lqc2 $vf2, 0($4)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    lqc2 $vf3, 0($5)
+; OFF-NEXT:    pref 0, 384($4)
+; OFF-NEXT:    addiu $4, $4, 16
+; OFF-NEXT:    vmul.xyzw $vf2, $vf2, $vf3
+; OFF-NEXT:    pref 0, 384($5)
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    bnez $3, .LBB4_5
+; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
+; OFF-NEXT:  # %bb.6: # %loop
+; OFF-NEXT:    j .LBB4_12
+; OFF-NEXT:    nop
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB4_7: # %loop.ph.noprefetch
+; OFF-NEXT:    lui $1, %hi(.LCPI4_0)
+; OFF-NEXT:    lqc2 $vf1, %lo(.LCPI4_0)($1)
+; OFF-NEXT:    addiu $1, $3, -1
+; OFF-NEXT:    subu $1, $1, $zero
 ; OFF-NEXT:    addiu $1, $1, -3
-; OFF-NEXT:    blez $1, .LBB4_4
-; OFF-NEXT:    sll $4, $4, 0
-; OFF-NEXT:  # %bb.1: # %loop
+; OFF-NEXT:    blez $1, .LBB4_11
+; OFF-NEXT:    nop
+; OFF-NEXT:  # %bb.8: # %loop.noprefetch
 ; OFF-NEXT:    lqc2 $vf2, 0($5)
 ; OFF-NEXT:    addiu $1, $5, 16
 ; OFF-NEXT:    lqc2 $vf3, 0($4)
@@ -342,7 +429,7 @@ define void @vu0_dot(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; OFF-NEXT:    addiu $4, $4, 16
 ; OFF-NEXT:    vmul.xyzw $vf3, $vf5, $vf4
 ; OFF-NEXT:    addiu $3, $3, -1
-; OFF-NEXT:  .LBB4_2: # %loop
+; OFF-NEXT:  .LBB4_9: # %loop.noprefetch
 ; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
 ; OFF-NEXT:    lqc2 $vf4, 0($5)
 ; OFF-NEXT:    addiu $1, $5, 16
@@ -359,15 +446,15 @@ define void @vu0_dot(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf3
 ; OFF-NEXT:    addiu $5, $1, 16
 ; OFF-NEXT:    vmul.xyzw $vf3, $vf5, $vf4
-; OFF-NEXT:    bgtz $6, .LBB4_2
+; OFF-NEXT:    bgtz $6, .LBB4_9
 ; OFF-NEXT:    addiu $4, $4, 16
-; OFF-NEXT:  # %bb.3: # %loop
+; OFF-NEXT:  # %bb.10: # %loop.noprefetch
 ; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
 ; OFF-NEXT:    subu $1, $3, $zero
-; OFF-NEXT:    blez $1, .LBB4_5
+; OFF-NEXT:    blez $1, .LBB4_12
 ; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf3
 ; OFF-NEXT:    .p2align 3
-; OFF-NEXT:  .LBB4_4: # %loop
+; OFF-NEXT:  .LBB4_11: # %loop.noprefetch
 ; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
 ; OFF-NEXT:    lqc2 $vf2, 0($4)
 ; OFF-NEXT:    addiu $3, $3, -1
@@ -375,9 +462,10 @@ define void @vu0_dot(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; OFF-NEXT:    addiu $5, $5, 16
 ; OFF-NEXT:    addiu $4, $4, 16
 ; OFF-NEXT:    vmul.xyzw $vf2, $vf2, $vf3
-; OFF-NEXT:    bnez $3, .LBB4_4
+; OFF-NEXT:    bnez $3, .LBB4_11
 ; OFF-NEXT:    vadd.xyzw $vf1, $vf1, $vf2
-; OFF-NEXT:  .LBB4_5: # %exit
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB4_12: # %exit
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    sqc2 $vf1, 0($2)
 entry:
@@ -417,11 +505,13 @@ define void @vu0_chain(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; CHECK-NEXT:    lqc2 $vf1, 0($4)
 ; CHECK-NEXT:    addiu $3, $3, -1
 ; CHECK-NEXT:    lqc2 $vf2, 0($5)
-; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    pref 0, 320($4)
 ; CHECK-NEXT:    addiu $4, $4, 16
 ; CHECK-NEXT:    vmadda.xyzw $acc, $vf1, $vf2
-; CHECK-NEXT:    bnez $3, .LBB5_1
 ; CHECK-NEXT:    vmadda.xyzw $acc, $vf2, $vf2
+; CHECK-NEXT:    pref 0, 320($5)
+; CHECK-NEXT:    bnez $3, .LBB5_1
+; CHECK-NEXT:    addiu $5, $5, 16
 ; CHECK-NEXT:  # %bb.2: # %exit
 ; CHECK-NEXT:    vmsubx.xyzw $vf1, $vf0, $vf0
 ; CHECK-NEXT:    jr $ra
@@ -436,29 +526,44 @@ define void @vu0_chain(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; OFF-NEXT:    subu $1, $1, $zero
 ; OFF-NEXT:    sll $2, $6, 0
 ; OFF-NEXT:    sll $5, $5, 0
-; OFF-NEXT:    addiu $1, $1, -1
+; OFF-NEXT:    addiu $1, $1, -2
 ; OFF-NEXT:    blez $1, .LBB5_4
 ; OFF-NEXT:    sll $4, $4, 0
 ; OFF-NEXT:  # %bb.1: # %loop
 ; OFF-NEXT:    lqc2 $vf2, 0($4)
 ; OFF-NEXT:    addiu $3, $3, -1
 ; OFF-NEXT:    lqc2 $vf3, 0($5)
-; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    pref 0, 320($4)
 ; OFF-NEXT:    addiu $4, $4, 16
 ; OFF-NEXT:    vmula.xyzw $acc, $vf2, $vf3
+; OFF-NEXT:    pref 0, 320($5)
+; OFF-NEXT:    addiu $5, $5, 16
 ; OFF-NEXT:    vmadda.xyzw $acc, $vf3, $vf3
 ; OFF-NEXT:  .LBB5_2: # %loop
 ; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
 ; OFF-NEXT:    lqc2 $vf2, 0($4)
+; OFF-NEXT:    addiu $1, $4, 16
+; OFF-NEXT:    lqc2 $vf3, 0($5)
+; OFF-NEXT:    addiu $3, $3, -1
+; OFF-NEXT:    vmaddw.xyzw $vf1, $vf1, $vf0
+; OFF-NEXT:    pref 0, 320($4)
+; OFF-NEXT:    vmula.xyzw $acc, $vf2, $vf3
+; OFF-NEXT:    pref 0, 320($5)
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    vmadda.xyzw $acc, $vf3, $vf3
+; OFF-NEXT:    lqc2 $vf2, 0($1)
 ; OFF-NEXT:    addiu $3, $3, -1
 ; OFF-NEXT:    lqc2 $vf3, 0($5)
-; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    subu $6, $3, $zero
 ; OFF-NEXT:    vmaddw.xyzw $vf1, $vf1, $vf0
-; OFF-NEXT:    subu $1, $3, $zero
+; OFF-NEXT:    addiu $4, $1, 16
 ; OFF-NEXT:    vmula.xyzw $acc, $vf2, $vf3
-; OFF-NEXT:    addiu $4, $4, 16
-; OFF-NEXT:    bgtz $1, .LBB5_2
+; OFF-NEXT:    pref 0, 320($1)
+; OFF-NEXT:    addiu $1, $6, -1
 ; OFF-NEXT:    vmadda.xyzw $acc, $vf3, $vf3
+; OFF-NEXT:    pref 0, 320($5)
+; OFF-NEXT:    bgtz $1, .LBB5_2
+; OFF-NEXT:    addiu $5, $5, 16
 ; OFF-NEXT:  # %bb.3: # %loop
 ; OFF-NEXT:    subu $1, $3, $zero
 ; OFF-NEXT:    blez $1, .LBB5_5
@@ -469,12 +574,14 @@ define void @vu0_chain(ptr %a, ptr %b, ptr %out, i32 %n) {
 ; OFF-NEXT:    lqc2 $vf2, 0($4)
 ; OFF-NEXT:    addiu $3, $3, -1
 ; OFF-NEXT:    lqc2 $vf3, 0($5)
-; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    pref 0, 320($4)
 ; OFF-NEXT:    addiu $4, $4, 16
 ; OFF-NEXT:    vmula.xyzw $acc, $vf2, $vf3
+; OFF-NEXT:    pref 0, 320($5)
 ; OFF-NEXT:    vmadda.xyzw $acc, $vf3, $vf3
-; OFF-NEXT:    bnez $3, .LBB5_4
 ; OFF-NEXT:    vmaddw.xyzw $vf1, $vf1, $vf0
+; OFF-NEXT:    bnez $3, .LBB5_4
+; OFF-NEXT:    addiu $5, $5, 16
 ; OFF-NEXT:  .LBB5_5: # %exit
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    sqc2 $vf1, 0($2)
@@ -504,11 +611,17 @@ exit:
 define <8 x i32> @mmi_dot(ptr %a, ptr %b, i32 %n) {
 ; CHECK-LABEL: mmi_dot:
 ; CHECK:       # %bb.0: # %entry
-; CHECK-NEXT:    sll $2, $4, 0
 ; CHECK-NEXT:    sll $3, $7, 0
+; CHECK-NEXT:    sll $2, $4, 0
+; CHECK-NEXT:    addiu $1, $3, -1
 ; CHECK-NEXT:    sll $4, $6, 0
+; CHECK-NEXT:    dsll $1, $1, 32
 ; CHECK-NEXT:    sll $5, $5, 0
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    daddiu $1, $1, 1
+; CHECK-NEXT:    sltiu $1, $1, 257
 ; CHECK-NEXT:    pmtlo $zero
+; CHECK-NEXT:    bnez $1, .LBB6_3
 ; CHECK-NEXT:    pmthi $zero
 ; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB6_1: # %loop
@@ -516,47 +629,95 @@ define <8 x i32> @mmi_dot(ptr %a, ptr %b, i32 %n) {
 ; CHECK-NEXT:    lq $1, 0($5)
 ; CHECK-NEXT:    addiu $3, $3, -1
 ; CHECK-NEXT:    lq $6, 0($4)
-; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    pref 0, 240($5)
 ; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    pmaddh $zero, $1, $6
+; CHECK-NEXT:    pref 0, 240($4)
 ; CHECK-NEXT:    bnez $3, .LBB6_1
-; CHECK-NEXT:    pmaddh $1, $1, $6
-; CHECK-NEXT:  # %bb.2: # %exit
+; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:  # %bb.2:
 ; CHECK-NEXT:    pmflo $1
-; CHECK-NEXT:    pmfhi $3
-; CHECK-NEXT:    pcpyld $4, $3, $1
-; CHECK-NEXT:    sq $4, 0($2)
-; CHECK-NEXT:    pcpyud $1, $1, $3
+; CHECK-NEXT:    pmfhi $4
+; CHECK-NEXT:    pcpyld $3, $4, $1
+; CHECK-NEXT:    j .LBB6_5
+; CHECK-NEXT:    pcpyud $4, $1, $4
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB6_3: # %loop.noprefetch
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lq $1, 0($5)
+; CHECK-NEXT:    addiu $3, $3, -1
+; CHECK-NEXT:    lq $6, 0($4)
+; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    pmaddh $zero, $1, $6
+; CHECK-NEXT:    bnez $3, .LBB6_3
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:  # %bb.4:
+; CHECK-NEXT:    pmflo $1
+; CHECK-NEXT:    pmfhi $4
+; CHECK-NEXT:    pcpyld $3, $4, $1
+; CHECK-NEXT:    pcpyud $4, $1, $4
+; CHECK-NEXT:  .LBB6_5: # %exit
+; CHECK-NEXT:    sq $3, 0($2)
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    sq $1, 16($2)
+; CHECK-NEXT:    sq $4, 16($2)
 ;
 ; OFF-LABEL: mmi_dot:
 ; OFF:       # %bb.0: # %entry
-; OFF-NEXT:    por $2, $zero, $zero
-; OFF-NEXT:    sll $4, $4, 0
-; OFF-NEXT:    sll $7, $7, 0
-; OFF-NEXT:    por $3, $zero, $zero
-; OFF-NEXT:    sll $6, $6, 0
+; OFF-NEXT:    sll $2, $7, 0
+; OFF-NEXT:    sll $3, $4, 0
+; OFF-NEXT:    addiu $1, $2, -1
+; OFF-NEXT:    sll $4, $6, 0
+; OFF-NEXT:    dsll $1, $1, 32
 ; OFF-NEXT:    sll $5, $5, 0
+; OFF-NEXT:    dsrl $1, $1, 32
+; OFF-NEXT:    daddiu $1, $1, 1
+; OFF-NEXT:    sltiu $1, $1, 257
+; OFF-NEXT:    por $6, $zero, $zero
+; OFF-NEXT:    bnez $1, .LBB6_3
+; OFF-NEXT:    por $7, $zero, $zero
 ; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB6_1: # %loop
 ; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
 ; OFF-NEXT:    lq $1, 0($5)
-; OFF-NEXT:    addiu $7, $7, -1
-; OFF-NEXT:    lq $8, 0($6)
-; OFF-NEXT:    addiu $6, $6, 16
+; OFF-NEXT:    addiu $2, $2, -1
+; OFF-NEXT:    lq $8, 0($4)
+; OFF-NEXT:    pref 0, 240($5)
 ; OFF-NEXT:    addiu $5, $5, 16
-; OFF-NEXT:    pmulth $1, $1, $8
+; OFF-NEXT:    pmulth $zero, $1, $8
+; OFF-NEXT:    pref 0, 240($4)
+; OFF-NEXT:    addiu $4, $4, 16
 ; OFF-NEXT:    pmflo $1
 ; OFF-NEXT:    pmfhi $8
 ; OFF-NEXT:    pcpyld $9, $8, $1
 ; OFF-NEXT:    pcpyud $1, $1, $8
-; OFF-NEXT:    paddw $3, $3, $1
-; OFF-NEXT:    bnez $7, .LBB6_1
-; OFF-NEXT:    paddw $2, $2, $9
-; OFF-NEXT:  # %bb.2: # %exit
-; OFF-NEXT:    sq $2, 0($4)
+; OFF-NEXT:    paddw $7, $7, $1
+; OFF-NEXT:    bnez $2, .LBB6_1
+; OFF-NEXT:    paddw $6, $6, $9
+; OFF-NEXT:  # %bb.2: # %loop
+; OFF-NEXT:    j .LBB6_4
+; OFF-NEXT:    nop
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB6_3: # %loop.noprefetch
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lq $1, 0($5)
+; OFF-NEXT:    addiu $2, $2, -1
+; OFF-NEXT:    lq $8, 0($4)
+; OFF-NEXT:    addiu $4, $4, 16
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    pmulth $zero, $1, $8
+; OFF-NEXT:    pmflo $1
+; OFF-NEXT:    pmfhi $8
+; OFF-NEXT:    pcpyld $9, $8, $1
+; OFF-NEXT:    pcpyud $1, $1, $8
+; OFF-NEXT:    paddw $7, $7, $1
+; OFF-NEXT:    bnez $2, .LBB6_3
+; OFF-NEXT:    paddw $6, $6, $9
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB6_4: # %exit
+; OFF-NEXT:    sq $6, 0($3)
 ; OFF-NEXT:    jr $ra
-; OFF-NEXT:    sq $3, 16($4)
+; OFF-NEXT:    sq $7, 16($3)
 entry:
   br label %loop
 loop:
@@ -595,10 +756,9 @@ define i32 @int_dot(ptr %a, ptr %b, i32 %n) {
 ; CHECK-NEXT:    addiu $2, $2, -1
 ; CHECK-NEXT:    lw $5, 0($3)
 ; CHECK-NEXT:    addiu $3, $3, 4
-; CHECK-NEXT:    addiu $4, $4, 4
 ; CHECK-NEXT:    madd $zero, $1, $5
 ; CHECK-NEXT:    bnez $2, .LBB7_1
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    addiu $4, $4, 4
 ; CHECK-NEXT:  # %bb.2: # %exit
 ; CHECK-NEXT:    mflo $2
 ; CHECK-NEXT:    jr $ra

@@ -17,6 +17,7 @@ define float @uitofp_i32(i32 %x) {
 ; CHECK-NEXT:    mtc1 $2, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    cvt.s.w $f0, $f0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_2:
 ; CHECK-NEXT:    srl $1, $2, 1
 ; CHECK-NEXT:    andi $2, $2, 1

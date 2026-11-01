@@ -25,11 +25,10 @@ define i32 @test_chain_madd(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    sll $2, $4, 0
 ; CHECK-NEXT:    mult $zero, $2, $1
-; CHECK-NEXT:    sll $1, $7, 0
 ; CHECK-NEXT:    sll $2, $6, 0
-; CHECK-NEXT:    madd $2, $2, $1
+; CHECK-NEXT:    sll $1, $7, 0
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    madd $2, $2, $1
   %mul1 = mul i32 %a, %b
   %mul2 = mul i32 %c, %d
   %add = add i32 %mul1, %mul2
@@ -43,11 +42,10 @@ define i32 @test_chain_madd_commuted(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-NEXT:    sll $1, $7, 0
 ; CHECK-NEXT:    sll $2, $6, 0
 ; CHECK-NEXT:    mult $zero, $2, $1
-; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    sll $2, $4, 0
-; CHECK-NEXT:    madd $2, $2, $1
+; CHECK-NEXT:    sll $1, $5, 0
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    madd $2, $2, $1
   %mul1 = mul i32 %a, %b
   %mul2 = mul i32 %c, %d
   %add = add i32 %mul2, %mul1
@@ -66,9 +64,8 @@ define i32 @test_triple_madd(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
 ; CHECK-NEXT:    madd $zero, $2, $1
 ; CHECK-NEXT:    sll $1, $9, 0
 ; CHECK-NEXT:    sll $2, $8, 0
-; CHECK-NEXT:    madd $2, $2, $1
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    madd $2, $2, $1
   %mul1 = mul i32 %a, %b
   %mul2 = mul i32 %c, %d
   %mul3 = mul i32 %e, %f
@@ -90,7 +87,7 @@ define i32 @test_triple_madd(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
 define i64 @test_madd64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: test_madd64_chain:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmaddw $2, $6, $7
   %a_ext = sext i32 %a to i64
@@ -107,7 +104,7 @@ define i64 @test_madd64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 define i64 @test_maddu64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: test_maddu64_chain:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultuw $1, $4, $5
+; CHECK-NEXT:    pmultuw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmadduw $2, $6, $7
   %a_ext = zext i32 %a to i64
@@ -125,8 +122,8 @@ define i64 @test_maddu64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 define i64 @test_madd64_triple(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
 ; CHECK-LABEL: test_madd64_triple:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
-; CHECK-NEXT:    pmaddw $1, $6, $7
+; CHECK-NEXT:    pmultw $zero, $4, $5
+; CHECK-NEXT:    pmaddw $zero, $6, $7
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmaddw $2, $8, $9
   %a_ext = sext i32 %a to i64
@@ -174,7 +171,7 @@ define i64 @test_madd_with_acc(i32 %a, i32 %b, i64 %acc) {
 define i64 @test_msub64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: test_msub64_chain:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmsubw $2, $6, $7
   %a_ext = sext i32 %a to i64
@@ -192,8 +189,8 @@ define i64 @test_msub64_chain(i32 %a, i32 %b, i32 %c, i32 %d) {
 define i64 @test_madd_msub64_mixed(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %f) {
 ; CHECK-LABEL: test_madd_msub64_mixed:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
-; CHECK-NEXT:    pmaddw $1, $6, $7
+; CHECK-NEXT:    pmultw $zero, $4, $5
+; CHECK-NEXT:    pmaddw $zero, $6, $7
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmsubw $2, $8, $9
   %a_ext = sext i32 %a to i64
@@ -214,7 +211,7 @@ define i64 @test_madd_msub64_mixed(i32 %a, i32 %b, i32 %c, i32 %d, i32 %e, i32 %
 define i64 @test_cross_product(i32 %x1, i32 %y2, i32 %x2, i32 %y1) {
 ; CHECK-LABEL: test_cross_product:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmsubw $2, $6, $7
   %x1_ext = sext i32 %x1 to i64
@@ -231,7 +228,7 @@ define i64 @test_cross_product(i32 %x1, i32 %y2, i32 %x2, i32 %y1) {
 define i64 @madd_twice(i32 %a, i32 %b) {
 ; CHECK-LABEL: madd_twice:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmaddw $2, $4, $5
   %ea = sext i32 %a to i64
@@ -245,8 +242,8 @@ define i64 @madd_twice(i32 %a, i32 %b) {
 define i64 @madd_shared(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-LABEL: madd_shared:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    pmultw $1, $4, $5
-; CHECK-NEXT:    pmaddw $1, $4, $5
+; CHECK-NEXT:    pmultw $zero, $4, $5
+; CHECK-NEXT:    pmaddw $zero, $4, $5
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    pmaddw $2, $6, $7
   %ea = sext i32 %a to i64

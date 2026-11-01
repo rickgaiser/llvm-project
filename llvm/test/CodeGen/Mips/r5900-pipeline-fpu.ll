@@ -21,16 +21,16 @@ define void @saxpy(ptr noalias %x, ptr noalias %y, float %a, i32 %n) {
 ; CHECK-NEXT:  # %bb.1: # %loop
 ; CHECK-NEXT:    lwc1 $f0, 0($3)
 ; CHECK-NEXT:    addiu $1, $3, 4
-; CHECK-NEXT:    lwc1 $f1, 0($5)
+; CHECK-NEXT:    lwc1 $f2, 0($5)
 ; CHECK-NEXT:    addiu $6, $5, 4
 ; CHECK-NEXT:    mul.s $f0, $f0, $f14
 ; CHECK-NEXT:    addiu $2, $2, -1
-; CHECK-NEXT:    lwc1 $f2, 0($1)
+; CHECK-NEXT:    lwc1 $f1, 0($1)
 ; CHECK-NEXT:    addiu $3, $1, 4
 ; CHECK-NEXT:    addiu $2, $2, -1
 ; CHECK-NEXT:    addiu $4, $6, 4
-; CHECK-NEXT:    add.s $f0, $f0, $f1
-; CHECK-NEXT:    mul.s $f1, $f2, $f14
+; CHECK-NEXT:    mul.s $f1, $f1, $f14
+; CHECK-NEXT:    add.s $f0, $f0, $f2
 ; CHECK-NEXT:    lwc1 $f2, 0($6)
 ; CHECK-NEXT:  .LBB0_2: # %loop
 ; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
@@ -38,23 +38,23 @@ define void @saxpy(ptr noalias %x, ptr noalias %y, float %a, i32 %n) {
 ; CHECK-NEXT:    addiu $1, $3, 4
 ; CHECK-NEXT:    add.s $f1, $f1, $f2
 ; CHECK-NEXT:    addiu $2, $2, -1
-; CHECK-NEXT:    mul.s $f2, $f3, $f14
-; CHECK-NEXT:    addiu $2, $2, -1
-; CHECK-NEXT:    lwc1 $f3, 0($4)
+; CHECK-NEXT:    lwc1 $f2, 0($4)
 ; CHECK-NEXT:    addiu $2, $2, -1
 ; CHECK-NEXT:    swc1 $f0, 0($5)
 ; CHECK-NEXT:    addiu $5, $4, 4
 ; CHECK-NEXT:    lwc1 $f0, 0($1)
 ; CHECK-NEXT:    addiu $1, $1, 4
-; CHECK-NEXT:    add.s $f3, $f2, $f3
-; CHECK-NEXT:    addiu $3, $1, 4
+; CHECK-NEXT:    mul.s $f3, $f3, $f14
+; CHECK-NEXT:    addiu $2, $2, -1
 ; CHECK-NEXT:    mul.s $f0, $f0, $f14
-; CHECK-NEXT:    lwc1 $f2, 0($5)
+; CHECK-NEXT:    addiu $3, $1, 4
+; CHECK-NEXT:    lwc1 $f4, 0($5)
 ; CHECK-NEXT:    swc1 $f1, 0($6)
 ; CHECK-NEXT:    addiu $6, $5, 4
+; CHECK-NEXT:    add.s $f3, $f3, $f2
 ; CHECK-NEXT:    lwc1 $f1, 0($1)
 ; CHECK-NEXT:    subu $1, $2, $zero
-; CHECK-NEXT:    add.s $f0, $f0, $f2
+; CHECK-NEXT:    add.s $f0, $f0, $f4
 ; CHECK-NEXT:    addiu $1, $1, -2
 ; CHECK-NEXT:    mul.s $f1, $f1, $f14
 ; CHECK-NEXT:    lwc1 $f2, 0($6)
@@ -70,6 +70,7 @@ define void @saxpy(ptr noalias %x, ptr noalias %y, float %a, i32 %n) {
 ; CHECK-NEXT:  # %bb.4: # %loop
 ; CHECK-NEXT:    j .LBB0_6
 ; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_5:
 ; CHECK-NEXT:    move $4, $5
 ; CHECK-NEXT:    .p2align 3
@@ -198,7 +199,13 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; CHECK:       # %bb.0: # %entry
 ; CHECK-NEXT:    sll $2, $7, 0
 ; CHECK-NEXT:    sll $3, $6, 0
+; CHECK-NEXT:    addiu $1, $2, -1
 ; CHECK-NEXT:    sll $5, $5, 0
+; CHECK-NEXT:    dsll $1, $1, 32
+; CHECK-NEXT:    dsrl $1, $1, 32
+; CHECK-NEXT:    daddiu $1, $1, 1
+; CHECK-NEXT:    sltiu $1, $1, 129
+; CHECK-NEXT:    bnez $1, .LBB2_3
 ; CHECK-NEXT:    sll $4, $4, 0
 ; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB2_1: # %loop
@@ -206,9 +213,12 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; CHECK-NEXT:    lq $1, 0($4)
 ; CHECK-NEXT:    addiu $2, $2, -1
 ; CHECK-NEXT:    lq $6, 0($5)
-; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    pref 0, 288($4)
 ; CHECK-NEXT:    addiu $4, $4, 16
-; CHECK-NEXT:    pmulth $1, $1, $6
+; CHECK-NEXT:    pmulth $zero, $1, $6
+; CHECK-NEXT:    pref 0, 288($5)
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    pref 0, 576($3)
 ; CHECK-NEXT:    pmflo $1
 ; CHECK-NEXT:    pmfhi $6
 ; CHECK-NEXT:    pcpyld $7, $6, $1
@@ -217,7 +227,28 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; CHECK-NEXT:    sq $1, 16($3)
 ; CHECK-NEXT:    bnez $2, .LBB2_1
 ; CHECK-NEXT:    addiu $3, $3, 32
-; CHECK-NEXT:  # %bb.2: # %exit
+; CHECK-NEXT:  # %bb.2: # %loop
+; CHECK-NEXT:    j .LBB2_4
+; CHECK-NEXT:    nop
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB2_3: # %loop.noprefetch
+; CHECK-NEXT:    # =>This Inner Loop Header: Depth=1
+; CHECK-NEXT:    lq $1, 0($4)
+; CHECK-NEXT:    addiu $2, $2, -1
+; CHECK-NEXT:    lq $6, 0($5)
+; CHECK-NEXT:    addiu $5, $5, 16
+; CHECK-NEXT:    addiu $4, $4, 16
+; CHECK-NEXT:    pmulth $zero, $1, $6
+; CHECK-NEXT:    pmflo $1
+; CHECK-NEXT:    pmfhi $6
+; CHECK-NEXT:    pcpyld $7, $6, $1
+; CHECK-NEXT:    sq $7, 0($3)
+; CHECK-NEXT:    pcpyud $1, $1, $6
+; CHECK-NEXT:    sq $1, 16($3)
+; CHECK-NEXT:    bnez $2, .LBB2_3
+; CHECK-NEXT:    addiu $3, $3, 32
+; CHECK-NEXT:    .p2align 3
+; CHECK-NEXT:  .LBB2_4: # %exit
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
 ;
@@ -225,7 +256,13 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; OFF:       # %bb.0: # %entry
 ; OFF-NEXT:    sll $2, $7, 0
 ; OFF-NEXT:    sll $3, $6, 0
+; OFF-NEXT:    addiu $1, $2, -1
 ; OFF-NEXT:    sll $5, $5, 0
+; OFF-NEXT:    dsll $1, $1, 32
+; OFF-NEXT:    dsrl $1, $1, 32
+; OFF-NEXT:    daddiu $1, $1, 1
+; OFF-NEXT:    sltiu $1, $1, 129
+; OFF-NEXT:    bnez $1, .LBB2_3
 ; OFF-NEXT:    sll $4, $4, 0
 ; OFF-NEXT:    .p2align 3
 ; OFF-NEXT:  .LBB2_1: # %loop
@@ -233,9 +270,12 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; OFF-NEXT:    lq $1, 0($4)
 ; OFF-NEXT:    addiu $2, $2, -1
 ; OFF-NEXT:    lq $6, 0($5)
-; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    pref 0, 288($4)
 ; OFF-NEXT:    addiu $4, $4, 16
-; OFF-NEXT:    pmulth $1, $1, $6
+; OFF-NEXT:    pmulth $zero, $1, $6
+; OFF-NEXT:    pref 0, 288($5)
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    pref 0, 576($3)
 ; OFF-NEXT:    pmflo $1
 ; OFF-NEXT:    pmfhi $6
 ; OFF-NEXT:    pcpyld $7, $6, $1
@@ -244,7 +284,28 @@ define void @mul16(ptr noalias %a, ptr noalias %b, ptr noalias %out, i32 %n) {
 ; OFF-NEXT:    sq $1, 16($3)
 ; OFF-NEXT:    bnez $2, .LBB2_1
 ; OFF-NEXT:    addiu $3, $3, 32
-; OFF-NEXT:  # %bb.2: # %exit
+; OFF-NEXT:  # %bb.2: # %loop
+; OFF-NEXT:    j .LBB2_4
+; OFF-NEXT:    nop
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB2_3: # %loop.noprefetch
+; OFF-NEXT:    # =>This Inner Loop Header: Depth=1
+; OFF-NEXT:    lq $1, 0($4)
+; OFF-NEXT:    addiu $2, $2, -1
+; OFF-NEXT:    lq $6, 0($5)
+; OFF-NEXT:    addiu $5, $5, 16
+; OFF-NEXT:    addiu $4, $4, 16
+; OFF-NEXT:    pmulth $zero, $1, $6
+; OFF-NEXT:    pmflo $1
+; OFF-NEXT:    pmfhi $6
+; OFF-NEXT:    pcpyld $7, $6, $1
+; OFF-NEXT:    sq $7, 0($3)
+; OFF-NEXT:    pcpyud $1, $1, $6
+; OFF-NEXT:    sq $1, 16($3)
+; OFF-NEXT:    bnez $2, .LBB2_3
+; OFF-NEXT:    addiu $3, $3, 32
+; OFF-NEXT:    .p2align 3
+; OFF-NEXT:  .LBB2_4: # %exit
 ; OFF-NEXT:    jr $ra
 ; OFF-NEXT:    nop
 entry:

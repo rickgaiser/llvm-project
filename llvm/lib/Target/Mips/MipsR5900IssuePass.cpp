@@ -21,11 +21,14 @@
 
 #include "Mips.h"
 #include "MipsInstrInfo.h"
+#include "MipsMachineFunction.h"
 #include "MipsR5900IssueModel.h"
 #include "MipsSubtarget.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
+#include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
+#include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
@@ -41,6 +44,7 @@ using namespace llvm;
 
 STATISTIC(NumBlocksReordered, "Number of basic blocks reordered");
 STATISTIC(NumNopsInserted, "Number of nops inserted");
+STATISTIC(NumBlocksAligned, "Number of blocks aligned to an 8-byte block");
 
 static cl::opt<bool>
     DisableR5900Issue("disable-mips-r5900-issue", cl::init(false), cl::Hidden,
@@ -94,6 +98,8 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<MachineLoopInfoWrapperPass>();
+    AU.addRequired<MachineBlockFrequencyInfoWrapperPass>();
+    AU.addRequired<MachineBranchProbabilityInfoWrapperPass>();
     AU.addRequired<MachineOptimizationRemarkEmitterPass>();
     // The alias analysis results of the schedulers refer to the SCEV based
     // alias analysis added before instruction selection, but only use it if
@@ -354,6 +360,47 @@ bool MipsR5900Issue::runOnMachineFunction(MachineFunction &MF) {
   OptForSize = MF.getFunction().hasOptSize();
   DAG = std::make_unique<R5900IssueDAG>(MF);
   auto &ORE = getAnalysis<MachineOptimizationRemarkEmitterPass>().getORE();
+
+  // Start a block at an 8-byte block if it is reached by a branch more often
+  // than it is fallen into: a branch to the second slot of a block loses an
+  // issue slot, and the padding, at most one nop, costs one each time the
+  // block before it falls through.
+  if (!OptForSize) {
+    auto &MBFI = getAnalysis<MachineBlockFrequencyInfoWrapperPass>().getMBFI();
+    auto &MBPI =
+        getAnalysis<MachineBranchProbabilityInfoWrapperPass>().getMBPI();
+    for (auto I = std::next(MF.begin()), E = MF.end(); I != E; ++I) {
+      MachineBasicBlock &MBB = *I;
+      if (MBB.getAlignment() >= Align(8) || MBB.pred_empty())
+        continue;
+      MachineBasicBlock &LayoutPred = *std::prev(I);
+      uint64_t Freq = MBFI.getBlockFreq(&MBB).getFrequency();
+      uint64_t FallThrough =
+          LayoutPred.isSuccessor(&MBB) && LayoutPred.canFallThrough()
+              ? (MBFI.getBlockFreq(&LayoutPred) *
+                 MBPI.getEdgeProbability(&LayoutPred, &MBB))
+                    .getFrequency()
+              : 0;
+      if (Freq - std::min(Freq, FallThrough) > FallThrough) {
+        MBB.setAlignment(Align(8));
+        ++NumBlocksAligned;
+      }
+    }
+  }
+
+  // A return in the last 16 bytes of an I-cache line costs a cycle (measured:
+  // a jr $ra pair at line offset 56 always, at 48 sometimes; a taken
+  // conditional branch there does not), as its target is known late. In a
+  // function without loops that is a cycle of each call, so the function
+  // starts at a line, and the AsmPrinter places its entry in it so that its
+  // returns are not there; the padding before the entry is not executed.
+  if (!OptForSize && MLI->empty() &&
+      any_of(MF, [](const MachineBasicBlock &MBB) {
+        return MBB.isReturnBlock();
+      })) {
+    MF.setAlignment(std::max(MF.getAlignment(), Align(64)));
+    MF.getInfo<MipsFunctionInfo>()->setPlaceReturns();
+  }
 
   // The offset of each basic block in its 8-byte block, if it is known.
   std::optional<unsigned> Offset;

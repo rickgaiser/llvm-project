@@ -10,8 +10,9 @@
 # CHECK: remark: <unknown>:0:0: mult_alu_2 %bb.0, slot 0: 5 -> 5 cycles
 # CHECK: remark: <unknown>:0:0: mult_alu_3 %bb.0, slot 0: 5 -> 5 cycles
 # CHECK: remark: <unknown>:0:0: mult_zero_alu_2 %bb.0, slot 0: 4 -> 4 cycles
-# The same for a load 2 cycles after MULT1, but not 1 cycle after it.
-# CHECK: remark: <unknown>:0:0: mult1_lw_2 %bb.0, slot 0: 5 -> 5 cycles
+# The same for a load 2 cycles after MULT1, but not 1 cycle after it (which
+# the pass moves the load to).
+# CHECK: remark: <unknown>:0:0: mult1_lw_2 %bb.0, slot 0: 5 -> 4 cycles
 # CHECK: remark: <unknown>:0:0: mult1_lw_1 %bb.0, slot 0: 4 -> 4 cycles
 # Two ALU operations 2 cycles after MULT1 do not pair: one of them would need
 # pipe 1.

@@ -11,17 +11,17 @@ define i32 @fptoui(float %x) {
 ; CHECK-NEXT:    lui $1, %hi(.LCPI0_0)
 ; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI0_0)($1)
 ; CHECK-NEXT:    c.lt.s $f12, $f0
+; CHECK-NEXT:    sub.s $f1, $f12, $f0
+; CHECK-NEXT:    cvt.w.s $f0, $f12
 ; CHECK-NEXT:    bc1t .LBB0_2
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    cvt.w.s $f1, $f1
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    sub.s $f0, $f12, $f0
+; CHECK-NEXT:    mfc1 $1, $f1
 ; CHECK-NEXT:    lui $2, 32768
-; CHECK-NEXT:    cvt.w.s $f0, $f0
-; CHECK-NEXT:    mfc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    xor $2, $1, $2
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB0_2:
-; CHECK-NEXT:    cvt.w.s $f0, $f12
 ; CHECK-NEXT:    mfc1 $2, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -77,17 +77,17 @@ define i32 @fptoui_min_large(float %x) {
 ; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI3_0)($1)
 ; CHECK-NEXT:    min.s $f1, $f12, $f0
 ; CHECK-NEXT:    c.lt.s $f1, $f0
+; CHECK-NEXT:    sub.s $f2, $f1, $f0
+; CHECK-NEXT:    cvt.w.s $f0, $f1
 ; CHECK-NEXT:    bc1t .LBB3_2
-; CHECK-NEXT:    nop
+; CHECK-NEXT:    cvt.w.s $f1, $f2
 ; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    sub.s $f0, $f1, $f0
+; CHECK-NEXT:    mfc1 $1, $f1
 ; CHECK-NEXT:    lui $2, 32768
-; CHECK-NEXT:    cvt.w.s $f0, $f0
-; CHECK-NEXT:    mfc1 $1, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    xor $2, $1, $2
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB3_2:
-; CHECK-NEXT:    cvt.w.s $f0, $f1
 ; CHECK-NEXT:    mfc1 $2, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop
@@ -109,17 +109,17 @@ define i32 @fptoui_min_mul_neg(float %x) {
 ; CHECK-NEXT:    mul.s $f0, $f0, $f1
 ; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI4_2)($1)
 ; CHECK-NEXT:    c.lt.s $f0, $f1
-; CHECK-NEXT:    bc1t .LBB4_2
-; CHECK-NEXT:    nop
-; CHECK-NEXT:  # %bb.1:
-; CHECK-NEXT:    sub.s $f0, $f0, $f1
-; CHECK-NEXT:    lui $2, 32768
+; CHECK-NEXT:    sub.s $f2, $f0, $f1
 ; CHECK-NEXT:    cvt.w.s $f0, $f0
-; CHECK-NEXT:    mfc1 $1, $f0
+; CHECK-NEXT:    bc1t .LBB4_2
+; CHECK-NEXT:    cvt.w.s $f1, $f2
+; CHECK-NEXT:  # %bb.1:
+; CHECK-NEXT:    mfc1 $1, $f1
+; CHECK-NEXT:    lui $2, 32768
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    xor $2, $1, $2
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB4_2:
-; CHECK-NEXT:    cvt.w.s $f0, $f0
 ; CHECK-NEXT:    mfc1 $2, $f0
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    nop

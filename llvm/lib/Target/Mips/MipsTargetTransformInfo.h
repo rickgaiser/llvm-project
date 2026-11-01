@@ -54,9 +54,37 @@ public:
   bool isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                      const TargetTransformInfo::LSRCost &C2) const override;
 
+  /// Software prefetching (LoopDataPrefetch) on the R5900, which has no
+  /// hardware prefetcher: loops that stream through memory spend most of
+  /// their time on data cache misses.
+  unsigned getCacheLineSize() const override;
+  unsigned getPrefetchDistance() const override;
+  unsigned getMinPrefetchStride(unsigned NumMemAccesses,
+                                unsigned NumStridedMemAccesses,
+                                unsigned NumPrefetches,
+                                bool HasCall) const override;
+  bool enableWritePrefetching() const override;
+  unsigned getPrefetchIterationsAhead(const Loop *L, ScalarEvolution &SE,
+                                      unsigned LoopSize) const override;
+  uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
+                                   unsigned NumPrefetches) const override;
+
   void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                TTI::UnrollingPreferences &UP,
                                OptimizationRemarkEmitter *ORE) const override;
+  unsigned getLargestLoadStride(const Loop *L, ScalarEvolution &SE,
+                                bool FloatOnly) const;
+  unsigned getSmallestStreamStride(const Loop *L, ScalarEvolution &SE) const;
+  unsigned getNumStreams(const Loop *L, ScalarEvolution &SE,
+                         uint64_t *Bytes = nullptr) const;
+  struct LoopResources {
+    unsigned LS = 0, C1 = 0, C2 = 0, Issue = 0, FPUOps = 0, Muls = 0,
+             AccSums = 0;
+    unsigned getBound(unsigned Count, unsigned Prefetches) const;
+  };
+  LoopResources getLoopResources(const Loop *L) const;
+  unsigned getMaxUnrollCountForRegisters(const Loop *L) const;
+  unsigned getPrefetchLead(const Loop *L, ScalarEvolution &SE) const;
 
   InstructionCost getPartialReductionCost(
       unsigned Opcode, Type *InputTypeA, Type *InputTypeB, Type *AccumType,
@@ -167,8 +195,13 @@ public:
   // Maximum interleave factor for VU0/MMI.
   // VU0 has 32 VF registers, MMI uses GPR128 (32 registers).
   // Conservative factor of 2 balances register pressure vs throughput.
+  // A scalar loop (VF 1) is not interleaved: interleaving it by 2 leaves the
+  // loop too short to hide the latencies (a MULT, 4 cycles, before its store)
+  // and only the remainder is unrolled further; LoopUnroll unrolls it.
   unsigned getMaxInterleaveFactor(ElementCount VF,
                                   bool HasUnorderedReductions) const override {
+    if (ST->isR5900() && VF.isScalar())
+      return 1;
     if (ST->hasVU0() || ST->isR5900())
       return 2;
     return 1;

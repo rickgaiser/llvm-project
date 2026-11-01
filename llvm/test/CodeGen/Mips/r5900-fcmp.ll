@@ -25,6 +25,7 @@ define i32 @select_oeq(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB1_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -42,6 +43,7 @@ define i32 @select_ogt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB2_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -59,6 +61,7 @@ define i32 @select_oge(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB3_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -76,6 +79,7 @@ define i32 @select_olt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB4_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -93,6 +97,7 @@ define i32 @select_ole(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB5_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -110,6 +115,7 @@ define i32 @select_one(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB6_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -127,6 +133,7 @@ define i32 @select_ord(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB7_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -144,6 +151,7 @@ define i32 @select_ueq(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB8_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -161,6 +169,7 @@ define i32 @select_ugt(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB9_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -178,6 +187,7 @@ define i32 @select_uge(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB10_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -195,6 +205,7 @@ define i32 @select_ult(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB11_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -212,6 +223,7 @@ define i32 @select_ule(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB12_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -229,6 +241,7 @@ define i32 @select_une(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB13_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0
@@ -246,6 +259,7 @@ define i32 @select_uno(float %a, float %b, i32 %x, i32 %y) {
 ; CHECK-NEXT:  # %bb.1:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $7, 0
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB14_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    sll $2, $6, 0

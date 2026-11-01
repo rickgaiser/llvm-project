@@ -16,5 +16,7 @@
 #ifndef FUNCTION_PASS
 #define FUNCTION_PASS(NAME, CREATE_PASS)
 #endif
+FUNCTION_PASS("mips-r5900-align-version", MipsR5900AlignVersionPass(*this))
+FUNCTION_PASS("mips-r5900-realign", MipsR5900RealignPass(*this))
 FUNCTION_PASS("mips-r5900-vu0-matvec", MipsR5900VU0MatVecPass(*this))
 #undef FUNCTION_PASS

@@ -27,6 +27,7 @@ define i32 @sum(ptr %p, i32 %n) {
 ; R5900-NEXT:  # %bb.3: # %exit
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    nop
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB0_4:
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    addiu $2, $zero, 0

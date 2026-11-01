@@ -13,7 +13,7 @@ define void @arith(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w, <2 x i64> %d, <8 x 
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %and.d = and <2 x i64> %d, %d
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %add.w8 = add <8 x i32> %w8, %w8
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 34 for instruction: %mul.w = mul <4 x i32> %w, %w
-; CHECK-NEXT:  Cost Model: Found an estimated cost of 24 for instruction: %mul3.w = mul <4 x i32> %w, splat (i32 3)
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 4 for instruction: %mul3.w = mul <4 x i32> %w, splat (i32 3)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %shl.w = shl <4 x i32> %w, splat (i32 1)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %ashr.h = ashr <8 x i16> %h, splat (i16 3)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 34 for instruction: %shlv.w = shl <4 x i32> %w, %w
@@ -43,6 +43,8 @@ define void @intrinsics(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w) {
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %sadd.w = call <4 x i32> @llvm.sadd.sat.v4i32(<4 x i32> %w, <4 x i32> %w)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 2 for instruction: %uadd.b = call <16 x i8> @llvm.uadd.sat.v16i8(<16 x i8> %b, <16 x i8> %b)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 28 for instruction: %ctlz.w = call <4 x i32> @llvm.ctlz.v4i32(<4 x i32> %w, i1 false)
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 6 for instruction: %bswap.h = call <8 x i16> @llvm.bswap.v8i16(<8 x i16> %h)
+; CHECK-NEXT:  Cost Model: Found an estimated cost of 18 for instruction: %bswap.w = call <4 x i32> @llvm.bswap.v4i32(<4 x i32> %w)
 ; CHECK-NEXT:  Cost Model: Found an estimated cost of 1 for instruction: ret void
 ;
   %abs.w = call <4 x i32> @llvm.abs.v4i32(<4 x i32> %w, i1 false)
@@ -51,6 +53,8 @@ define void @intrinsics(<16 x i8> %b, <8 x i16> %h, <4 x i32> %w) {
   %sadd.w = call <4 x i32> @llvm.sadd.sat.v4i32(<4 x i32> %w, <4 x i32> %w)
   %uadd.b = call <16 x i8> @llvm.uadd.sat.v16i8(<16 x i8> %b, <16 x i8> %b)
   %ctlz.w = call <4 x i32> @llvm.ctlz.v4i32(<4 x i32> %w, i1 false)
+  %bswap.h = call <8 x i16> @llvm.bswap.v8i16(<8 x i16> %h)
+  %bswap.w = call <4 x i32> @llvm.bswap.v4i32(<4 x i32> %w)
   ret void
 }
 

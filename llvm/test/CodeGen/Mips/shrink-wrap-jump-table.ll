@@ -20,8 +20,8 @@
 ; JT:       .LBB0_2: # %return
 ; JT-NEXT:    jr $ra
 ; JT:       .LBB0_10:
-; JT-NEXT:    ld $ra, 8($sp)
-; JT-NEXT:    ld $16, 0($sp)
+; JT-DAG:     ld $ra, 8($sp)
+; JT-DAG:     ld $16, 0($sp)
 ; JT-LABEL: .LJTI0_0:
 ; JT-NEXT:    .4byte .LBB0_5
 ; JT-NEXT:    .4byte .LBB0_7
@@ -64,6 +64,7 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N32-NEXT:  .LBB0_2: # %return
 ; N32-NEXT:    jr $ra
 ; N32-NEXT:    nop
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_3: # %entry
 ; N32-NEXT:    addiu $5, $2, -2
 ; N32-NEXT:    sltiu $1, $5, 12
@@ -80,38 +81,44 @@ define zeroext i8 @jump_table_restore(i32 signext %a) nounwind {
 ; N32-NEXT:    lw $1, %lo(.LJTI0_0)($1)
 ; N32-NEXT:    jr $1
 ; N32-NEXT:    andi $16, $4, 8
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_5: # %sw.a
 ; N32-NEXT:    jal slow_a
 ; N32-NEXT:    srl $4, $3, 1
 ; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
 ; N32-NEXT:    andi $2, $1, 255
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_6: # %sw.d
 ; N32-NEXT:    jal slow_d
 ; N32-NEXT:    srl $4, $3, 1
 ; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
 ; N32-NEXT:    andi $2, $1, 255
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_7: # %sw.b
 ; N32-NEXT:    jal slow_b
 ; N32-NEXT:    srl $4, $3, 1
 ; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
 ; N32-NEXT:    andi $2, $1, 255
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_8: # %sw.c
 ; N32-NEXT:    jal slow_c
 ; N32-NEXT:    srl $4, $3, 1
 ; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    j .LBB0_10
 ; N32-NEXT:    andi $2, $1, 255
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_9: # %sw.e
 ; N32-NEXT:    jal slow_e
 ; N32-NEXT:    srl $4, $3, 1
 ; N32-NEXT:    srlv $1, $2, $16
 ; N32-NEXT:    andi $2, $1, 255
+; N32-NEXT:    .p2align 3
 ; N32-NEXT:  .LBB0_10:
-; N32-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
 ; N32-NEXT:    ld $16, 0($sp) # 8-byte Folded Reload
+; N32-NEXT:    ld $ra, 8($sp) # 8-byte Folded Reload
 ; N32-NEXT:    jr $ra
 ; N32-NEXT:    addiu $sp, $sp, 16
 ;

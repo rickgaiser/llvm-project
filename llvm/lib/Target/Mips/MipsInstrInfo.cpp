@@ -1014,6 +1014,34 @@ bool MipsInstrInfo::SafeInForbiddenSlot(const MachineInstr &MI) const {
   return (MI.getDesc().TSFlags & MipsII::IsCTI) == 0;
 }
 
+// The R5900 branches on an FP condition 6 cycles after the C.cond.S that sets
+// it (measured). The FPU arithmetic of the block runs in that time; sunk into
+// a successor it would run after the branch.
+bool MipsInstrInfo::shouldSink(const MachineInstr &MI) const {
+  if (!Subtarget.isR5900() || MI.mayLoadOrStore() || MI.getNumDefs() != 1 ||
+      !MI.getOperand(0).isReg() || !MI.getOperand(0).getReg().isVirtual())
+    return true;
+  const MachineRegisterInfo &MRI = MI.getMF()->getRegInfo();
+  if (!Mips::FGR32RegClass.hasSubClassEq(
+          MRI.getRegClass(MI.getOperand(0).getReg())))
+    return true;
+  return none_of(MI.getParent()->terminators(), [](const MachineInstr &T) {
+    return T.getOpcode() == Mips::BC1T || T.getOpcode() == Mips::BC1F;
+  });
+}
+
+bool MipsInstrInfo::isPrefetch(const MachineInstr &MI) const {
+  switch (MI.getOpcode()) {
+  case Mips::PREF:
+  case Mips::PREF_R6:
+  case Mips::PREF_MM:
+  case Mips::PREF_MMR6:
+    return true;
+  default:
+    return false;
+  }
+}
+
 bool MipsInstrInfo::SafeInFPUDelaySlot(const MachineInstr &MIInSlot,
                                        const MachineInstr &FPUMI) const {
   if (MIInSlot.isInlineAsm())

@@ -725,6 +725,15 @@ public:
     return 1;
   }
   virtual unsigned getMaxPrefetchIterationsAhead() const { return UINT_MAX; }
+  virtual unsigned getPrefetchIterationsAhead(const Loop *L,
+                                              ScalarEvolution &SE,
+                                              unsigned LoopSize) const {
+    return std::max(1u, getPrefetchDistance() / std::max(1u, LoopSize));
+  }
+  virtual uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
+                                           unsigned NumPrefetches) const {
+    return 0;
+  }
   virtual bool enableWritePrefetching() const { return false; }
   virtual bool shouldPrefetchAddressSpace(unsigned AS) const { return !AS; }
 

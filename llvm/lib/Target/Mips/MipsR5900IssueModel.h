@@ -87,6 +87,11 @@ private:
   const MachineInstr *Slot0MI = nullptr;
   unsigned Slot0Cycle = 0;
 
+  /// The instructions issued since the last one that read SA (QFSRV, MFSA),
+  /// up to 3: an MTSAB within 3 instructions after it gets nops
+  /// (MipsR5900SAHazard).
+  unsigned SinceSARead = 3;
+
   /// The resource kinds of pipe 0 and pipe 1.
   unsigned PipeKind[2] = {0, 0};
   /// The cycle in which each pipe cannot take an instruction that writes a

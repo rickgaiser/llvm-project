@@ -134,6 +134,12 @@ public:
   /// Predicate to determine if an instruction can go in a forbidden slot.
   bool SafeInForbiddenSlot(const MachineInstr &MI) const;
 
+  /// Keep the R5900 FPU arithmetic of a block that ends in an FP branch in
+  /// that block.
+  bool shouldSink(const MachineInstr &MI) const override;
+
+  bool isPrefetch(const MachineInstr &MI) const override;
+
   /// Predicate to determine if an instruction can go in an FPU delay slot.
   bool SafeInFPUDelaySlot(const MachineInstr &MIInSlot,
                           const MachineInstr &FPUMI) const;

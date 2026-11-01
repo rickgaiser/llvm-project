@@ -119,13 +119,14 @@ define float @poly_step(float %y, float %x, float %c0, float %c1, float %c2) {
 ; CHECK-NEXT:    mul.s $f0, $f13, $f13
 ; CHECK-NEXT:    lui $1, 16256
 ; CHECK-NEXT:    mtc1 $1, $f1
-; CHECK-NEXT:    mul.s $f3, $f12, $f12
+; CHECK-NEXT:    mul.s $f2, $f12, $f12
 ; CHECK-NEXT:    mula.s $f14, $f1
-; CHECK-NEXT:    mul.s $f2, $f0, $f13
+; CHECK-NEXT:    mul.s $f3, $f0, $f13
 ; CHECK-NEXT:    madda.s $f15, $f13
-; CHECK-NEXT:    madda.s $f16, $f0
+; CHECK-NEXT:    madd.s $f0, $f16, $f0
+; CHECK-NEXT:    mul.s $f1, $f2, $f3
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    madd.s $f0, $f3, $f2
+; CHECK-NEXT:    add.s $f0, $f1, $f0
 entry:
   %x2 = fmul nnan ninf float %x, %x
   %x3 = fmul nnan ninf float %x2, %x

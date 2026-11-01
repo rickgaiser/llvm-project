@@ -17,6 +17,8 @@
 #include "Mips16ISelDAGToDAG.h"
 #include "MipsDAGMutations.h"
 #include "MipsMachineFunction.h"
+#include "MipsR5900AlignVersion.h"
+#include "MipsR5900Realign.h"
 #include "MipsR5900VU0MatVec.h"
 #include "MipsSEISelDAGToDAG.h"
 #include "MipsSubtarget.h"
@@ -48,6 +50,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Transforms/Scalar.h"
 #include <optional>
 #include <string>
 
@@ -230,11 +233,22 @@ void MipsTargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
 #define GET_PASS_REGISTRY "MipsPassRegistry.def"
 #include "llvm/Passes/TargetPassRegistry.inc"
 
-  // Before the vectorizers, which do not make VU0 matrix times vector code.
+  // Before the vectorizers, which do not make VU0 matrix times vector code,
+  // and do not know that arrays passed as pointers are usually aligned.
   PB.registerVectorizerStartEPCallback(
       [this](FunctionPassManager &FPM, OptimizationLevel) {
         FPM.addPass(MipsR5900VU0MatVecPass(*this));
+        FPM.addPass(MipsR5900AlignVersionPass(*this));
       });
+  // Last, once the vector loads are final: the alignment of their pointers
+  // for the SelectionDAG.
+  PB.registerOptimizerLastEPCallback([this](ModulePassManager &MPM,
+                                            OptimizationLevel Level,
+                                            ThinOrFullLTOPhase) {
+    if (Level != OptimizationLevel::O0)
+      MPM.addPass(
+          createModuleToFunctionPassAdaptor(MipsR5900RealignPass(*this)));
+  });
 }
 
 TargetPassConfig *MipsTargetMachine::createPassConfig(PassManagerBase &PM) {
@@ -246,6 +260,11 @@ std::unique_ptr<CSEConfigBase> MipsPassConfig::getCSEConfig() const {
 }
 
 void MipsPassConfig::addIRPasses() {
+  // Software prefetching; only subtargets with a prefetch distance (the
+  // R5900) get any. Before loop strength reduction, which then computes the
+  // prefetch addresses from the induction variables of the loads and stores.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createLoopDataPrefetchPass());
   TargetPassConfig::addIRPasses();
   addPass(createAtomicExpandLegacyPass());
   if (getMipsTargetMachine().getCLOpts().os16)
@@ -278,6 +297,9 @@ void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
   if (getOptLevel() != CodeGenOptLevel::None)
     addPass(createMipsOptimizeZeroExtPass());
+  // R5900: drop the MTSABs that repeat the shift amount of the one before.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createMipsR5900SARedundantPass());
 
   // R5900: keep the sums of products that loops carry in an accumulator,
   // before the FPU ACC chains, which then leave those loops alone.
@@ -292,6 +314,9 @@ void MipsPassConfig::addPreRegAlloc() {
   // multiplier where it lowers the resource bound of a block.
   addPass(createMipsR5900Div1Pass());
   addPass(createMipsR5900Mult1Pass());
+  // R5900: the unused rd of a multiply is $zero.
+  if (getOptLevel() != CodeGenOptLevel::None)
+    addPass(createMipsR5900DeadDefsPass());
   // R5900: software pipeline VU0 loops (MipsSubtarget::
   // enableMachinePipeliner).
   if (getOptLevel() >= CodeGenOptLevel::Default)
@@ -309,11 +334,56 @@ void MipsPassConfig::addPreSched2() {
   }
 }
 
+namespace {
+/// The R5900 issues in order: an operand that is not ready stalls it, also
+/// in a region that is bound by a resource, as FPU code is by the one COP1
+/// slot. GenericScheduler only balances the resources there; this keeps it
+/// reducing the latency as well in a region of mostly FPU instructions. Not
+/// in one that is mostly loads and stores, whose time goes to the data cache:
+/// their order among the work is faster there (measured).
+class MipsR5900SchedStrategy : public GenericScheduler {
+  bool ReduceLatency = false;
+
+  static bool isFPU(const MachineInstr &MI, const MachineRegisterInfo &MRI) {
+    return any_of(MI.operands(), [&](const MachineOperand &MO) {
+      return MO.isReg() && MO.getReg().isVirtual() &&
+             Mips::FGR32RegClass.hasSubClassEq(MRI.getRegClass(MO.getReg()));
+    });
+  }
+
+public:
+  using GenericScheduler::GenericScheduler;
+
+  void initPolicy(MachineBasicBlock::iterator Begin,
+                  MachineBasicBlock::iterator End,
+                  unsigned NumRegionInstrs) override {
+    GenericScheduler::initPolicy(Begin, End, NumRegionInstrs);
+    const MachineRegisterInfo &MRI = Begin->getMF()->getRegInfo();
+    unsigned Instrs = 0, FPU = 0, MemOps = 0;
+    for (const MachineInstr &MI : make_range(Begin, End)) {
+      if (MI.isDebugOrPseudoInstr())
+        continue;
+      ++Instrs;
+      FPU += isFPU(MI, MRI);
+      MemOps += MI.mayLoadOrStore();
+    }
+    ReduceLatency = 2 * FPU >= Instrs && 2 * MemOps < Instrs;
+  }
+
+  bool tryCandidate(SchedCandidate &Cand, SchedCandidate &TryCand,
+                    SchedBoundary *Zone) const override {
+    TryCand.Policy.ReduceLatency |= ReduceLatency;
+    return GenericScheduler::tryCandidate(Cand, TryCand, Zone);
+  }
+};
+} // end anonymous namespace
+
 ScheduleDAGInstrs *
 MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
-  ScheduleDAGMILive *DAG = createSchedLive(C);
-  if (C->MF->getSubtarget<MipsSubtarget>().isR5900())
-    DAG->addMutation(createSingleRegClassOrderMutation());
+  if (!C->MF->getSubtarget<MipsSubtarget>().isR5900())
+    return createSchedLive(C);
+  ScheduleDAGMILive *DAG = createSchedLive<MipsR5900SchedStrategy>(C);
+  DAG->addMutation(createSingleRegClassOrderMutation());
   return DAG;
 }
 
@@ -360,6 +430,10 @@ void MipsPassConfig::addPreEmitPass() {
   // scheduled again once the addresses of the instructions are known.
   if (getOptLevel() != CodeGenOptLevel::None)
     addPass(createMipsR5900IssuePass(/*KeepSCEVAA=*/useSCEVAA()));
+
+  // After the last reordering: the R5900 does not allow an MTSAB within three
+  // instructions after a QFSRV.
+  addPass(createMipsR5900SAHazardPass());
 
   // This pass expands branches and takes care about the forbidden slot hazards.
   // Expanding branches may potentially create forbidden slot hazards for

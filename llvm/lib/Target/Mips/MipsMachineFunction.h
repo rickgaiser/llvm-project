@@ -81,6 +81,11 @@ public:
   void setSaveS2() { SaveS2 = true; }
   bool hasSaveS2() const { return SaveS2; }
 
+  /// R5900: the function starts at a 64-byte I-cache line, and its entry is
+  /// placed so that no return is in the last 16 bytes of a line.
+  void setPlaceReturns() { PlaceReturns = true; }
+  bool placeReturns() const { return PlaceReturns; }
+
   int getMoveF64ViaSpillFI(MachineFunction &MF, const TargetRegisterClass *RC);
 
   std::map<const char *, const Mips16HardFloatInfo::FuncSignature *>
@@ -122,6 +127,8 @@ private:
 
   // saveS2
   bool SaveS2 = false;
+
+  bool PlaceReturns = false;
 
   /// FrameIndex for expanding BuildPairF64 nodes to spill and reload when the
   /// O32 FPXX ABI is enabled. -1 is used to denote invalid index.

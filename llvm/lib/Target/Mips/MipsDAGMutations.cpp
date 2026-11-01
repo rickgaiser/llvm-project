@@ -13,6 +13,13 @@
 // allocation, where the order costs no registers. A scalarized vector
 // load is otherwise read descending.
 //
+// A prefetch only fetches a line into the cache: its order among the loads
+// and stores does not change what they read or write. The prefetch mutation
+// removes its memory order dependencies in an iteration for the software
+// pipeliner (which leaves them out between iterations itself), which could
+// otherwise not move a store into a later stage than the prefetch of the same
+// array.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MipsDAGMutations.h"
@@ -22,6 +29,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/ScheduleDAGInstrs.h"
+#include "llvm/CodeGen/TargetInstrInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
 
 using namespace llvm;
@@ -31,6 +39,11 @@ using namespace llvm;
 namespace {
 
 class MipsLoadOrderDAGMutation : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override;
+};
+
+class MipsUnorderedPrefetchDAGMutation : public ScheduleDAGMutation {
 public:
   void apply(ScheduleDAGInstrs *DAG) override;
 };
@@ -79,4 +92,31 @@ void MipsLoadOrderDAGMutation::apply(ScheduleDAGInstrs *DAG) {
 
 std::unique_ptr<ScheduleDAGMutation> llvm::createMipsLoadOrderDAGMutation() {
   return std::make_unique<MipsLoadOrderDAGMutation>();
+}
+
+void MipsUnorderedPrefetchDAGMutation::apply(ScheduleDAGInstrs *DAG) {
+  for (SUnit &SU : DAG->SUnits) {
+    if (!DAG->TII->isPrefetch(*SU.getInstr()))
+      continue;
+    SmallVector<SDep, 4> Preds;
+    for (const SDep &D : SU.Preds)
+      if (D.getKind() == SDep::Order)
+        Preds.push_back(D);
+    for (const SDep &D : Preds)
+      SU.removePred(D);
+    SmallVector<std::pair<SUnit *, SDep>, 4> Succs;
+    for (const SDep &D : SU.Succs)
+      if (D.getKind() == SDep::Order) {
+        SDep Pred = D;
+        Pred.setSUnit(&SU);
+        Succs.push_back({D.getSUnit(), Pred});
+      }
+    for (auto &[Succ, Pred] : Succs)
+      Succ->removePred(Pred);
+  }
+}
+
+std::unique_ptr<ScheduleDAGMutation>
+llvm::createMipsUnorderedPrefetchDAGMutation() {
+  return std::make_unique<MipsUnorderedPrefetchDAGMutation>();
 }

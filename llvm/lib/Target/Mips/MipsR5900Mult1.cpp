@@ -16,6 +16,11 @@
 // in pipe 0. The R5900 issue pass then places them so that their late result
 // write does not stall the instructions in the same pipe.
 //
+// In the same way it moves sums of products that are accumulated in HI and
+// LO (PseudoR5900MULTAcc, PseudoR5900MADDAcc..., from MipsSETargetLowering)
+// to HI1 and LO1 (MULT1, MADD1...) as a whole, such as one of the two sums
+// of an unrolled loop: the two chains then run in parallel.
+//
 //===----------------------------------------------------------------------===//
 
 #include "Mips.h"
@@ -58,10 +63,12 @@ public:
 private:
   const MipsInstrInfo *TII = nullptr;
   const TargetRegisterInfo *TRI = nullptr;
-  const MachineRegisterInfo *MRI = nullptr;
+  MachineRegisterInfo *MRI = nullptr;
   TargetSchedModel SchedModel;
 
   bool usesAC1(const MachineInstr &MI) const;
+  const MCSchedClassDesc *getSchedClass(const MachineInstr &MI) const;
+  bool moveChains(MachineBasicBlock &MBB, SmallVectorImpl<int> &Use);
 
   void addUse(const MCSchedClassDesc *SC, SmallVectorImpl<int> &Use,
               int Scale) const;
@@ -110,6 +117,110 @@ bool MipsR5900Mult1::usesAC1(const MachineInstr &MI) const {
   return false;
 }
 
+const MCSchedClassDesc *
+MipsR5900Mult1::getSchedClass(const MachineInstr &MI) const {
+  return SchedModel.resolveSchedClass(&MI);
+}
+
+/// The resource bound of a block with \p Use, in cycles times 2 so that it
+/// is an integer: the resource groups have 2 units. The issue width is left
+/// out, the R5900 rarely issues two instructions in every cycle.
+static unsigned getBound(const TargetSchedModel &SchedModel,
+                         ArrayRef<int> Use) {
+  unsigned Cycles = 0;
+  for (unsigned Idx = 1; Idx != Use.size(); ++Idx) {
+    unsigned Units = SchedModel.getProcResource(Idx)->NumUnits;
+    Cycles = std::max(Cycles, unsigned(std::max(Use[Idx], 0)) * 2 / Units);
+  }
+  return Cycles;
+}
+
+/// Move whole sums of products in HI and LO to HI1 and LO1, as many as lower
+/// the resource bound (\p Use, updated), every other one. A chain starts at a
+/// PseudoR5900MULTAcc and continues with the PseudoR5900MADDAcc that reads
+/// its accumulator, which nothing else reads (not one that a loop carries).
+bool MipsR5900Mult1::moveChains(MachineBasicBlock &MBB,
+                                SmallVectorImpl<int> &Use) {
+  SmallVector<SmallVector<MachineInstr *, 8>, 4> Chains;
+  for (MachineInstr &MI : MBB) {
+    if (MI.getOpcode() != Mips::PseudoR5900MULTAcc)
+      continue;
+    SmallVector<MachineInstr *, 8> Chain = {&MI};
+    bool OK = true;
+    while (true) {
+      Register Acc = Chain.back()->getOperand(1).getReg();
+      if (MRI->use_nodbg_empty(Acc))
+        break;
+      if (!MRI->hasOneNonDBGUse(Acc)) {
+        OK = false;
+        break;
+      }
+      MachineInstr *Next = &*MRI->use_instr_nodbg_begin(Acc);
+      if (Next->getOpcode() != Mips::PseudoR5900MADDAcc ||
+          Next->getParent() != &MBB) {
+        OK = false;
+        break;
+      }
+      Chain.push_back(Next);
+    }
+    if (OK && Chain.size() >= 2)
+      Chains.push_back(std::move(Chain));
+  }
+  if (Chains.size() < 2)
+    return false;
+
+  // The change of the resource use per moved chain.
+  const MCSchedModel *SM = SchedModel.getMCSchedModel();
+  auto ClassOf = [&](unsigned Opc) {
+    return SM->getSchedClassDesc(TII->get(Opc).getSchedClass());
+  };
+  unsigned NumKinds = Use.size();
+  SmallVector<SmallVector<int, 16>, 4> Deltas;
+  for (auto &Chain : Chains) {
+    SmallVector<int, 16> Delta(NumKinds, 0);
+    for (MachineInstr *MI : Chain) {
+      bool First = MI->getOpcode() == Mips::PseudoR5900MULTAcc;
+      addUse(ClassOf(First ? Mips::PseudoR5900MULT1Acc
+                           : Mips::PseudoR5900MADD1Acc),
+             Delta, 1);
+      addUse(getSchedClass(*MI), Delta, -1);
+    }
+    Deltas.push_back(std::move(Delta));
+  }
+  // K chains moved: every other one, spread over the block.
+  auto Moved = [&](unsigned K, unsigned J) {
+    return (2 * J + 1) * Chains.size() / (2 * K);
+  };
+  auto BoundWith = [&](unsigned K) {
+    SmallVector<int, 16> U(Use.begin(), Use.end());
+    for (unsigned J = 0; J != K; ++J)
+      for (unsigned Idx = 0; Idx != NumKinds; ++Idx)
+        U[Idx] += Deltas[Moved(K, J)][Idx];
+    return getBound(SchedModel, U);
+  };
+  unsigned BestK = 0, Best = BoundWith(0);
+  for (unsigned K = 1; K <= Chains.size() / 2; ++K)
+    if (unsigned Cycles = BoundWith(K); Cycles < Best) {
+      Best = Cycles;
+      BestK = K;
+    }
+  if (!BestK)
+    return false;
+
+  for (unsigned J = 0; J != BestK; ++J) {
+    unsigned C = Moved(BestK, J);
+    for (unsigned Idx = 0; Idx != NumKinds; ++Idx)
+      Use[Idx] += Deltas[C][Idx];
+    for (MachineInstr *MI : Chains[C]) {
+      MRI->setRegClass(MI->getOperand(1).getReg(), &Mips::ACC64_1RegClass);
+      MI->setDesc(TII->get(MI->getOpcode() == Mips::PseudoR5900MULTAcc
+                               ? Mips::PseudoR5900MULT1Acc
+                               : Mips::PseudoR5900MADD1Acc));
+    }
+  }
+  return true;
+}
+
 bool MipsR5900Mult1::runOnBlock(MachineBasicBlock &MBB) {
   SmallVector<MachineInstr *, 16> Mults;
   unsigned NumKinds = SchedModel.getNumProcResourceKinds();
@@ -120,7 +231,7 @@ bool MipsR5900Mult1::runOnBlock(MachineBasicBlock &MBB) {
     // Most copies are coalesced away.
     if (MI.isMetaInstruction() || MI.isCopy() || MI.isPHI())
       continue;
-    addUse(SchedModel.resolveSchedClass(&MI), Use, 1);
+    addUse(getSchedClass(MI), Use, 1);
     // A multiply of the result of another one waits for it anyway.
     if (isCandidate(MI) && none_of(MI.uses(), [&](const MachineOperand &MO) {
           if (!MO.isReg() || !MO.getReg().isVirtual())
@@ -132,8 +243,9 @@ bool MipsR5900Mult1::runOnBlock(MachineBasicBlock &MBB) {
         }))
       Mults.push_back(&MI);
   }
+  bool Changed = moveChains(MBB, Use);
   if (Mults.size() < 2)
-    return false;
+    return Changed;
 
   // The change of the resource use per multiply that is moved.
   const MCSchedModel *SM = SchedModel.getMCSchedModel();
@@ -143,17 +255,12 @@ bool MipsR5900Mult1::runOnBlock(MachineBasicBlock &MBB) {
   addUse(SM->getSchedClassDesc(TII->get(Mips::R5900_MULT).getSchedClass()),
          Delta, -1);
 
-  // The resource bound with K multiplies moved, in cycles times 2 so that it
-  // is an integer: the resource groups have 2 units. The issue width is left
-  // out, the R5900 rarely issues two instructions in every cycle.
+  // The resource bound with K multiplies moved.
   auto Bound = [&](unsigned K) {
-    unsigned Cycles = 0;
-    for (unsigned Idx = 1; Idx != NumKinds; ++Idx) {
-      unsigned Units = SchedModel.getProcResource(Idx)->NumUnits;
-      int Cost = Use[Idx] + int(K) * Delta[Idx];
-      Cycles = std::max(Cycles, unsigned(Cost) * 2 / Units);
-    }
-    return Cycles;
+    SmallVector<int, 16> U(NumKinds);
+    for (unsigned Idx = 0; Idx != NumKinds; ++Idx)
+      U[Idx] = Use[Idx] + int(K) * Delta[Idx];
+    return getBound(SchedModel, U);
   };
   unsigned BestK = 0, Best = Bound(0);
   for (unsigned K = 1; K <= Mults.size(); ++K) {
@@ -164,7 +271,7 @@ bool MipsR5900Mult1::runOnBlock(MachineBasicBlock &MBB) {
     }
   }
   if (!BestK)
-    return false;
+    return Changed;
 
   // Spread the moved multiplies over the block.
   for (unsigned J = 0; J != BestK; ++J) {

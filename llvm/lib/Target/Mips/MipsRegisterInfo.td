@@ -287,6 +287,11 @@ let Namespace = "Mips" in {
   // Used by VADDA, VSUBA, VMULA, VMADD, VMSUB, etc.
   def VU0ACC : MipsReg<0, "acc">, DwarfRegNum<[144]>;
 
+  // R5900 SA, the shift amount of QFSRV (MTSAB, MTSAH, MTSA set it). Only an
+  // implicit operand; not named "sa", which the assembly matcher would then
+  // take for the $sa operands of the shifts.
+  def SAR : MipsReg<0, "r5900sa">;
+
   // R5900 VU0 Q register - 32-bit float result register for division/sqrt
   // Used by VDIV, VSQRT, VRSQRT, VMULQ, etc.
   def VU0Q : MipsReg<0, "Q">, DwarfRegNum<[145]>;
@@ -556,6 +561,9 @@ def HILO128RC : RegisterClass<"Mips", [untyped], 128, (add HILO128)> {
 // that overlaps another one, the part between its uses can move to a VF
 // register (MipsRegisterInfo::getLargestLegalSuperClass).
 def VU0ACCRC : RegisterClass<"Mips", [v4f32], 128, (add VU0ACC)>;
+
+// R5900 SA, for the implicit defs and uses of MTSAB and QFSRV
+def R5900SARC : RegisterClass<"Mips", [i32], 32, (add SAR)>, Unallocatable;
 
 // R5900 VU0 Q register class - 32-bit float result register
 def VU0QRC : RegisterClass<"Mips", [f32], 32, (add VU0Q)>, Unallocatable;

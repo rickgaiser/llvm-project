@@ -177,6 +177,11 @@ def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO],
 def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, R5900WriteMul1HILO,
               ReadDefault, ReadDefault, R5900ReadAcc1, R5900ReadAcc1],
              (instrs MADD1, MADDU1)>;
+def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO],
+             (instrs PseudoR5900MULT1Acc)>;
+def : InstRW<[R5900WriteMul1, R5900WriteMul1HILO, ReadDefault, ReadDefault,
+              R5900ReadAcc1],
+             (instrs PseudoR5900MADD1Acc)>;
 def : InstRW<[R5900WriteDiv1, R5900WriteDiv1HILO],
              (instrs DIV1, DIVU1, PseudoSDIV1, PseudoUDIV1)>;
 def : InstRW<[R5900WriteMoveHILO1], (instrs MFHI1, MFLO1, MTHI1, MTLO1,
@@ -370,7 +375,7 @@ def : InstRW<[R5900WriteMMI], (instrs PADDW, PSUBW, PADDH, PSUBH, PADDB, PSUBB,
                                PPACW, PPACH, PPACB, PCPYLD, PCPYUD, PCPYH,
                                PINTH, PINTEH, PEXEH, PEXEW, PEXCH, PEXCW,
                                PREVH, PEXT5, PPAC5, PROT3W, QFSRV, PMFHI,
-                               PMFLO, PMTHI, PMTLO, PMFHL_LW, PMFHL_UW,
+                               PMFLO, PMTHI, PMTLO, PMFHL_LW, PMFHL_LW128, PMFHL_UW,
                                PMFHL_SLW, PMFHL_LH, PMFHL_SH, PMTHL_LW,
                                PABSW_S32,
                                PMAXW_S32, PMINW_S32, PADDSW_S32, PSUBSW_S32,

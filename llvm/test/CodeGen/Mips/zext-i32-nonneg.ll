@@ -78,8 +78,10 @@ define i64 @clz_zext(i32 signext %a) nounwind {
 ; R5900-NEXT:    addiu $2, $1, 1
 ; R5900-NEXT:    j .LBB3_3
 ; R5900-NEXT:    movn $2, $zero, $3
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB3_2:
 ; R5900-NEXT:    addiu $2, $zero, 32
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB3_3: # %cond.end
 ; R5900-NEXT:    dsll $1, $2, 32
 ; R5900-NEXT:    jr $ra

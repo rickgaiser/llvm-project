@@ -10,12 +10,25 @@
 #include "MipsSEISelLowering.h"
 #include "MipsSubtarget.h"
 #include "llvm/Analysis/IVDescriptors.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
+
+#define DEBUG_TYPE "mips-tti"
+
+// One way of the 16 KB, 2-way instruction cache: a loop body of up to 2048
+// instructions can not evict itself.
+static cl::opt<unsigned> R5900MaxCacheLineUnrollSize(
+    "mips-r5900-cache-line-unroll-size", cl::Hidden, cl::init(2048),
+    cl::desc("Largest unrolled size of an R5900 loop that is unrolled to read "
+             "a cache line of a stream per iteration"));
 
 bool MipsTTIImpl::hasDivRemOp(Type *DataType, bool IsSigned) const {
   EVT VT = TLI->getValueType(DL, DataType);
@@ -34,6 +47,190 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                   C1.NumBaseAdds, C1.ScaleCost, C1.ImmCost, C1.SetupCost) <
          std::tie(C2.Insns, C2NumRegs, C2.AddRecCost, C2.NumIVMuls,
                   C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
+}
+
+// The R5900 data cache has 64-byte lines. A miss costs about 60 cycles
+// (measured), which a prefetch hides if it is issued that long before the
+// first access to the line. A stream that advances less than a line per
+// iteration is prefetched several times per line: only the first prefetch of
+// a line helps, but the others cost less than the misses that the first one
+// saves (measured), and unrolling the loop to a line, which saves them, does
+// not pay for every loop (see getUnrollingPreferences).
+unsigned MipsTTIImpl::getCacheLineSize() const {
+  return ST->isR5900() ? 64 : 0;
+}
+
+unsigned MipsTTIImpl::getPrefetchDistance() const {
+  return ST->isR5900() ? 300 : 0;
+}
+
+unsigned MipsTTIImpl::getMinPrefetchStride(unsigned NumMemAccesses,
+                                           unsigned NumStridedMemAccesses,
+                                           unsigned NumPrefetches,
+                                           bool HasCall) const {
+  return 16;
+}
+
+// PREF also fetches a line that is only written: the data cache allocates a
+// line on a store miss.
+bool MipsTTIImpl::enableWritePrefetching() const { return ST->isR5900(); }
+
+// The resources an iteration of an R5900 loop uses: the load/store pipe (pipe
+// 1, also used by PREF), the COP1 slot (FPU instructions, FPU loads and
+// stores), the COP2 slot (VU0 macro instructions, loads and stores), the FPU
+// operations (pipe 0), the integer multiplies (MAC0 in pipe 0 or MAC1 in pipe
+// 1, see MipsR5900Mult1), and the issue slots, two per cycle. A vector of
+// floats is scalarized, one instruction per element. A multiply whose only user
+// is an add or subtract is a multiply-add.
+MipsTTIImpl::LoopResources MipsTTIImpl::getLoopResources(const Loop *L) const {
+  LoopResources R;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      if (isa<PHINode>(I) || isa<DbgInfoIntrinsic>(I))
+        continue;
+      Type *Ty = I.getType();
+      if (auto *SI = dyn_cast<StoreInst>(&I))
+        Ty = SI->getValueOperand()->getType();
+      else if (isa<FCmpInst>(I))
+        Ty = I.getOperand(0)->getType();
+      bool FP = Ty->getScalarType()->isFloatTy();
+      unsigned N = 1;
+      if (auto *VTy = dyn_cast<FixedVectorType>(Ty); VTy && FP) {
+        // With VU0, a vector of 4 floats is one VU0 macro instruction, in the
+        // COP2 slot (and the load/store pipe for a load or store).
+        if (ST->hasVU0()) {
+          unsigned Vecs = divideCeil(VTy->getNumElements(), 4);
+          if (isa<LoadInst>(I) || isa<StoreInst>(I))
+            R.LS += Vecs;
+          R.C2 += Vecs;
+          R.Issue += Vecs;
+          continue;
+        }
+        N = VTy->getNumElements();
+      }
+      // MMI has no 32-bit vector multiply: a vector multiply, and a sum of
+      // vector products, is scalarized, one multiply(-add) per element.
+      unsigned MulN = 1;
+      if (auto *VTy = dyn_cast<FixedVectorType>(Ty))
+        MulN = VTy->getNumElements();
+      if (isa<LoadInst>(I) || isa<StoreInst>(I)) {
+        R.LS += N;
+        R.Issue += N;
+        R.C1 += FP ? N : 0;
+        continue;
+      }
+      if ((I.getOpcode() == Instruction::Mul ||
+           I.getOpcode() == Instruction::FMul) &&
+          I.hasOneUse() &&
+          is_contained({Instruction::Add, Instruction::Sub, Instruction::FAdd,
+                        Instruction::FSub},
+                       cast<Instruction>(*I.user_begin())->getOpcode()))
+        continue;
+      // A multiply-add into a sum that the loop carries. MipsR5900LoopAcc keeps
+      // such sums in HI/LO and HI1/LO1: with two or more, half of the
+      // multiplies use MAC1, which is in pipe 1 with the loads and stores.
+      if (!FP && I.getOpcode() == Instruction::Add &&
+          any_of(I.users(),
+                 [&](const User *U) {
+                   return isa<PHINode>(U) &&
+                          L->getHeader() == cast<PHINode>(U)->getParent();
+                 }) &&
+          any_of(I.operands(), [](const Value *Op) {
+            const auto *M = dyn_cast<Instruction>(Op);
+            return M && M->getOpcode() == Instruction::Mul && M->hasOneUse();
+          }))
+        R.AccSums += MulN;
+      if (!FP && (I.getOpcode() == Instruction::Mul ||
+                  I.getOpcode() == Instruction::SDiv ||
+                  I.getOpcode() == Instruction::UDiv ||
+                  ((I.getOpcode() == Instruction::Add ||
+                    I.getOpcode() == Instruction::Sub) &&
+                   any_of(I.operands(), [](const Value *Op) {
+                     const auto *M = dyn_cast<Instruction>(Op);
+                     return M && M->getOpcode() == Instruction::Mul &&
+                            M->hasOneUse();
+                   }))))
+        R.Muls += MulN;
+      if (FP && (isa<BinaryOperator>(I) || isa<UnaryOperator>(I) ||
+                 isa<FCmpInst>(I) || isa<CastInst>(I) || isa<SelectInst>(I) ||
+                 isa<CallInst>(I))) {
+        R.C1 += N;
+        R.FPUOps += N;
+        R.Issue += N;
+        continue;
+      }
+      // Address arithmetic folds into the offsets of the loads and stores
+      // and induction variables, and the element moves of a scalarized vector
+      // into the registers of its elements.
+      if (isa<GetElementPtrInst>(I) || isa<ExtractElementInst>(I) ||
+          isa<InsertElementInst>(I) || isa<ShuffleVectorInst>(I) ||
+          isa<BitCastInst>(I))
+        continue;
+      SmallVector<const Value *, 4> Operands(I.operand_values());
+      InstructionCost Cost =
+          getInstructionCost(&I, Operands, TTI::TCK_CodeSize);
+      // The cost is in issue slots: a 128-bit MMI operation takes both slots
+      // of a cycle (MMICycle).
+      R.Issue += Cost.isValid() ? Cost.getValue() : 1;
+    }
+  return R;
+}
+
+// The cycles of Count iterations, bound by their resources, with Prefetches
+// PREFs added.
+unsigned MipsTTIImpl::LoopResources::getBound(unsigned Count,
+                                              unsigned Prefetches) const {
+  // Pipe 1 takes the loads, stores and prefetches, and the multiply-adds of
+  // the sums in MAC1; pipe 0 the FPU operations; the other multiplies go to
+  // either.
+  unsigned MAC1 = AccSums >= 2 ? Muls / 2 : 0;
+  unsigned Pipes = Count * (LS + FPUOps + Muls) + Prefetches;
+  return std::max({Count * (LS + MAC1) + Prefetches, Count * C1, Count * C2,
+                   (Pipes + 1) / 2, (Count * Issue + Prefetches + 1) / 2});
+}
+
+// The data cache serves one miss at a time (a second miss blocks), so the
+// lines of the S streams of an iteration arrive one after another, each after
+// about 60 cycles (measured): a prefetch must lead its access by S * 60
+// cycles, which is that many iterations of the cycles of an iteration, bound
+// by its resources.
+unsigned MipsTTIImpl::getPrefetchIterationsAhead(const Loop *L,
+                                                 ScalarEvolution &SE,
+                                                 unsigned LoopSize) const {
+  if (!ST->isR5900())
+    return BaseT::getPrefetchIterationsAhead(L, SE, LoopSize);
+  constexpr unsigned MissCycles = 60;
+  unsigned Streams = std::max(1u, getNumStreams(L, SE));
+  unsigned Cycles = std::max(1u, getLoopResources(L).getBound(1, Streams));
+  // And at least to the next line: a prefetch of the line that is being
+  // accessed saves nothing.
+  unsigned Stride = getSmallestStreamStride(L, SE);
+  unsigned ToNextLine = Stride ? divideCeil(64, Stride) : 1;
+  return std::max({1u, divideCeil(Streams * MissCycles, Cycles), ToNextLine});
+}
+
+// A prefetch takes an issue slot and the load/store pipe, nothing else. In a
+// loop whose time is bound by another resource it fills a slot that is free
+// anyway: it gains when its line misses and costs nothing when the line is in
+// the cache (measured). In a loop bound by the load/store pipe or the issue
+// width it costs a cycle, which pays only if its line misses: certainly so
+// when the loop accesses more data than the data cache holds (8 KB), as then
+// no line can stay in it. A miss costs about 60 cycles, a prefetch at most one
+// per line.
+uint64_t MipsTTIImpl::getPrefetchMinFootprint(const Loop *L,
+                                              ScalarEvolution &SE,
+                                              unsigned NumPrefetches) const {
+  if (!ST->isR5900())
+    return 0;
+  LoopResources R = getLoopResources(L);
+  LLVM_DEBUG(dbgs() << "R5900 prefetch " << L->getHeader()->getName() << ": LS "
+                    << R.LS << " C1 " << R.C1 << " FPU " << R.FPUOps << " Muls "
+                    << R.Muls << " AccSums " << R.AccSums << " Issue "
+                    << R.Issue << ", bound " << R.getBound(1, 0) << " -> "
+                    << R.getBound(1, NumPrefetches) << "\n");
+  if (R.getBound(1, NumPrefetches) <= R.getBound(1, 0))
+    return 0;
+  return 8192;
 }
 
 void MipsTTIImpl::getUnrollingPreferences(
@@ -57,6 +254,268 @@ void MipsTTIImpl::getUnrollingPreferences(
   UP.OptSizeThreshold = 0;
   UP.PartialOptSizeThreshold = 0;
   UP.BEInsns = 2;
+
+  if (L->getNumBlocks() != 1)
+    return;
+
+  // Unrolling must not need more registers than there are: see
+  // getMaxUnrollCountForRegisters.
+  UP.MaxCount = std::min(UP.MaxCount, getMaxUnrollCountForRegisters(L));
+
+  // A loop that prefetches D bytes ahead, unrolled c times, issues the
+  // prefetches of an iteration after its c accesses: they lead the accesses
+  // by D - (c - 1) * stride. Keep at least half the lead: c * stride <= D / 2.
+  // The prefetches of the source were placed for its loop: leave the count
+  // to the generic heuristic, within their lead.
+  if (unsigned Lead = getPrefetchLead(L, SE)) {
+    UP.MaxCount = std::min(UP.MaxCount, std::max(1u, Lead));
+    return;
+  }
+
+  // A loop that streams through memory with FPU or VU0 loads is unrolled to
+  // read at least a whole data cache line of its widest stream per iteration,
+  // which LoopDataPrefetch then prefetches once, and a loop that already reads
+  // a line per iteration to read two (both measured), also when that is over
+  // the partial threshold. A loop with only other streams is unrolled so only
+  // when it gets prefetches that are not free: a GPR load does not block on a
+  // miss, but the prefetch of each copy of the loop takes an issue slot.
+  unsigned Stride = getLargestLoadStride(L, SE, /*FloatOnly=*/true);
+  bool FloatStream = Stride >= 16;
+  if (!FloatStream)
+    Stride = getLargestLoadStride(L, SE, /*FloatOnly=*/false);
+  LLVM_DEBUG(dbgs() << "R5900 unroll " << L->getHeader()->getName()
+                    << ": stride " << Stride << ", max count " << UP.MaxCount
+                    << "\n");
+  if (Stride < 16)
+    return;
+  unsigned Count = Stride >= 64 ? 2 : 64 / llvm::bit_floor(Stride);
+  Count = std::min(Count, UP.MaxCount);
+  if (Count < 2)
+    return;
+  // Only for a loop whose prefetches, one per stream, are free once it is
+  // unrolled; the others gain nothing from reading whole lines.
+  LoopResources R = getLoopResources(L);
+  uint64_t Bytes = 0;
+  unsigned Streams = getNumStreams(L, SE, &Bytes);
+  if (!Streams)
+    return;
+  // Unless they are free, the prefetches pay if the loop accesses more than
+  // the data cache holds (see getPrefetchMinFootprint); with an unknown trip
+  // count only a copy of the loop gets them.
+  if (R.getBound(Count, Streams) > R.getBound(Count, 0)) {
+    unsigned TripCount = SE.getSmallConstantTripCount(L);
+    if (!TripCount || uint64_t(TripCount) * Bytes <= 8192)
+      return;
+  } else if (!FloatStream) {
+    return;
+  }
+  InstructionCost Size = 0;
+  for (Instruction &I : *L->getHeader()) {
+    SmallVector<const Value *, 4> Operands(I.operand_values());
+    Size += getInstructionCost(&I, Operands, TTI::TCK_CodeSize);
+  }
+  LLVM_DEBUG(dbgs() << "R5900 unroll: count " << Count << ", size " << Size
+                    << "\n");
+  if (!Size.isValid() || Count * Size > R5900MaxCacheLineUnrollSize)
+    return;
+  UP.PartialThreshold =
+      std::max<unsigned>(UP.PartialThreshold, Count * Size.getValue());
+  // Computing the trip count on entry costs a few instructions once; a miss
+  // costs 60 cycles per line.
+  UP.AllowExpensiveTripCount = true;
+}
+
+namespace {
+/// The R5900 registers a value of type Ty takes: FPRs for float and vectors
+/// of float (scalarized), GPRs for integers, pointers and 128-bit MMI vectors.
+struct RegDemand {
+  /// With VU0, a vector of 4 floats is in one VF register.
+  bool VU0 = false;
+  unsigned FPR = 0, GPR = 0, VF = 0;
+  void add(Type *Ty, unsigned N = 1) {
+    if (Ty->isFloatTy())
+      FPR += N;
+    else if (auto *VTy = dyn_cast<FixedVectorType>(Ty))
+      if (VTy->getElementType()->isFloatTy() && VU0)
+        VF += N * divideCeil(VTy->getNumElements(), 4);
+      else if (VTy->getElementType()->isFloatTy())
+        FPR += N * VTy->getNumElements();
+      else
+        GPR +=
+            N * divideCeil(VTy->getPrimitiveSizeInBits().getFixedValue(), 128);
+    else if (Ty->isIntOrPtrTy() || Ty->isDoubleTy())
+      GPR += N * (Ty->isDoubleTy() || Ty->getScalarSizeInBits() > 64 ? 2 : 1);
+  }
+};
+} // namespace
+
+// The largest unroll count of a single-block loop whose values fit in the
+// registers. The values that the loop uses but does not change take a register
+// each, whatever the count. A value carried to the next iteration by a PHI
+// whose next value is computed without it (a value of a software pipeline,
+// such as a load for the next iteration) is live in every unrolled copy at
+// once, so it takes Count registers; a chain such as an induction variable or
+// a sum takes one register however often it is unrolled. Two registers of a
+// file are left for the temporaries.
+unsigned MipsTTIImpl::getMaxUnrollCountForRegisters(const Loop *L) const {
+  const BasicBlock *BB = L->getHeader();
+  RegDemand Fixed, PerCopy;
+  Fixed.VU0 = PerCopy.VU0 = ST->hasVU0();
+  SmallPtrSet<const Value *, 16> Invariants;
+  for (const Instruction &I : *BB)
+    for (const Value *Op : I.operands())
+      if ((isa<Argument>(Op) ||
+           (isa<Instruction>(Op) && !L->contains(cast<Instruction>(Op))) ||
+           isa<ConstantFP>(Op)) &&
+          !isa<PHINode>(I) && Invariants.insert(Op).second)
+        Fixed.add(Op->getType());
+  for (const PHINode &Phi : BB->phis()) {
+    // Whether the next value depends on the PHI: a chain.
+    SmallVector<const Value *, 8> Work{Phi.getIncomingValueForBlock(BB)};
+    SmallPtrSet<const Value *, 16> Seen;
+    bool Chain = false;
+    while (!Work.empty() && !Chain) {
+      const auto *I = dyn_cast<Instruction>(Work.pop_back_val());
+      if (!I || !L->contains(I) || !Seen.insert(I).second)
+        continue;
+      if (I == &Phi) {
+        Chain = true;
+        break;
+      }
+      if (!isa<PHINode>(I))
+        append_range(Work, I->operands());
+    }
+    (Chain ? Fixed : PerCopy).add(Phi.getType());
+  }
+  // VF0 is the constant (0, 0, 0, 1).
+  constexpr unsigned NumFPR = 32, NumGPR = 24, NumVF = 31, Temps = 2;
+  auto Bound = [](unsigned Avail, unsigned Fixed, unsigned PerCopy) {
+    if (!PerCopy)
+      return ~0u;
+    return Avail > Fixed + PerCopy ? (Avail - Fixed) / PerCopy : 1u;
+  };
+  return std::min({Bound(NumFPR - Temps, Fixed.FPR, PerCopy.FPR),
+                   Bound(NumVF - Temps, Fixed.VF, PerCopy.VF),
+                   Bound(NumGPR - Temps, Fixed.GPR, PerCopy.GPR)});
+}
+
+// For a loop with prefetches of its own: the largest unroll count that keeps
+// half the lead of the prefetches over the loads of the same stream, or 0 if
+// the loop has no prefetches.
+unsigned MipsTTIImpl::getPrefetchLead(const Loop *L,
+                                      ScalarEvolution &SE) const {
+  // The lead of a prefetch is over the first access of its stream that it
+  // fetches for, the load with the largest distance to it.
+  unsigned Lead = ~0u;
+  for (const Instruction &I : *L->getHeader()) {
+    const auto *II = dyn_cast<IntrinsicInst>(&I);
+    if (!II || II->getIntrinsicID() != Intrinsic::prefetch)
+      continue;
+    const SCEV *Pref = SE.getSCEV(II->getArgOperand(0));
+    unsigned PrefLead = 0;
+    for (const Instruction &J : *L->getHeader()) {
+      const auto *LI = dyn_cast<LoadInst>(&J);
+      if (!LI)
+        continue;
+      const SCEV *Load =
+          SE.getSCEV(const_cast<Value *>(LI->getPointerOperand()));
+      const auto *AR = dyn_cast<SCEVAddRecExpr>(Load);
+      const auto *D = dyn_cast<SCEVConstant>(SE.getMinusSCEV(Pref, Load));
+      const auto *Step =
+          AR ? dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE)) : nullptr;
+      if (!D || !Step || D->getAPInt().isNonPositive() ||
+          !Step->getAPInt().isStrictlyPositive())
+        continue;
+      PrefLead = std::max<unsigned>(
+          PrefLead, D->getAPInt().getLimitedValue() /
+                        (2 * Step->getAPInt().getLimitedValue()));
+    }
+    if (PrefLead)
+      Lead = std::min(Lead, PrefLead);
+  }
+  return Lead == ~0u ? 0 : Lead;
+}
+
+// The number of streams of the loop: the loads and stores with a constant
+// step of at least 16 bytes, one per base pointer and cache line. Adds the
+// bytes that all strided accesses access per iteration to *Bytes.
+unsigned MipsTTIImpl::getNumStreams(const Loop *L, ScalarEvolution &SE,
+                                    uint64_t *Bytes) const {
+  // All strided accesses take cache lines; those of at least 16 bytes are
+  // the streams that are prefetched.
+  SmallVector<const SCEV *, 8> Lines;
+  unsigned Streams = 0;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      const Value *Ptr = getLoadStorePointerOperand(&I);
+      if (!Ptr)
+        continue;
+      const SCEV *S = SE.getSCEV(const_cast<Value *>(Ptr));
+      const auto *AR = dyn_cast<SCEVAddRecExpr>(S);
+      if (!AR || AR->getLoop() != L)
+        continue;
+      const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+      if (!Step || Step->isZero())
+        continue;
+      if (any_of(Lines, [&](const SCEV *O) {
+            const auto *D = dyn_cast<SCEVConstant>(SE.getMinusSCEV(S, O));
+            return D && D->getAPInt().abs().ult(64);
+          }))
+        continue;
+      Lines.push_back(S);
+      if (Bytes)
+        *Bytes += Step->getAPInt().abs().getLimitedValue();
+      if (Step->getAPInt().abs().uge(16))
+        ++Streams;
+    }
+  return Streams;
+}
+
+// The smallest step, of at least 16 bytes, of the streams of the loop, or 0.
+unsigned MipsTTIImpl::getSmallestStreamStride(const Loop *L,
+                                              ScalarEvolution &SE) const {
+  unsigned Stride = 0;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      const Value *Ptr = getLoadStorePointerOperand(&I);
+      const auto *AR =
+          Ptr ? dyn_cast<SCEVAddRecExpr>(SE.getSCEV(const_cast<Value *>(Ptr)))
+              : nullptr;
+      if (!AR || AR->getLoop() != L)
+        continue;
+      const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+      if (!Step || Step->getAPInt().abs().ult(16) ||
+          Step->getAPInt().abs().uge(1u << 16))
+        continue;
+      unsigned S = Step->getAPInt().abs().getZExtValue();
+      Stride = Stride ? std::min(Stride, S) : S;
+    }
+  return Stride;
+}
+
+// The largest constant step, in bytes, of the address of a load in the loop,
+// or of an FPU or VU0 load with FloatOnly, or 0 if there is none. These loads
+// block on a miss for its whole time; a load into a GPR does not (EE Core
+// User's Manual 6.3.2), so a miss of it is in part hidden by the work up to the
+// first use of its value.
+unsigned MipsTTIImpl::getLargestLoadStride(const Loop *L, ScalarEvolution &SE,
+                                           bool FloatOnly) const {
+  unsigned Stride = 0;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      auto *LI = dyn_cast<LoadInst>(&I);
+      if (!LI || (FloatOnly && !LI->getType()->getScalarType()->isFloatTy()))
+        continue;
+      const auto *AR =
+          dyn_cast<SCEVAddRecExpr>(SE.getSCEV(LI->getPointerOperand()));
+      if (!AR || AR->getLoop() != L)
+        continue;
+      const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+      if (Step && Step->getAPInt().abs().ult(1u << 16))
+        Stride =
+            std::max<unsigned>(Stride, Step->getAPInt().abs().getZExtValue());
+    }
+  return Stride;
 }
 
 //===----------------------------------------------------------------------===//
@@ -339,6 +798,24 @@ InstructionCost MipsTTIImpl::getArithmeticInstrCost(
       // PMFLO, PMFHI, PCPYLD and PCPYUD for the products in order.
       if (isPMULTHType(Ty) && Args.size() == 2 && all_of(Args, isPMULTHOperand))
         return 5 * MMICycle;
+      // A multiply by a splat constant of the form +-2^a +- 2^b is shifts
+      // and an add or subtract (performR5900MulConstCombine).
+      if ((EltBits == 32 || EltBits == 16) && Op2Info.isUniform() &&
+          Op2Info.isConstant()) {
+        const APInt *C = nullptr;
+        if (Args.size() == 2 && match(Args[1], PatternMatch::m_APInt(C))) {
+          R5900MulConst D;
+          if (decomposeR5900MulConst(C->trunc(EltBits), D))
+            return LT->first * std::max(1u, D.NumOps) * MMICycle;
+        }
+      }
+      // A v4i32 multiply of values that fit in 16 bits is the rd of PMULTH
+      // (the products of the low halves of the words), one every 2 cycles.
+      if (EltBits == 32 && Args.size() == 2 &&
+          all_of(Args, [&](const Value *V) {
+            return ComputeNumSignBits(V, getDataLayout()) > 16;
+          }))
+        return LT->first * MMICycle;
       break;
     default:
       break;
@@ -437,7 +914,10 @@ InstructionCost MipsTTIImpl::getMemoryOpCost(unsigned Opcode, Type *Src,
       return (2 * NumElts + 5) * MMICycle;
     if (Alignment >= Align(16) || isAlignedWhenWidened(I, Src, DL))
       return *Parts;
-    return *Parts * (Alignment >= Align(8) ? 5 : 7) * MMICycle;
+    // The vector also crosses between the GPRs and VU0 (qmtc2/qmfc2): about
+    // 6 cycles of latency (measured), which an in-order core waits for.
+    constexpr unsigned CrossCycles = 6;
+    return *Parts * ((Alignment >= Align(8) ? 5 : 7) * MMICycle + CrossCycles);
   }
 
   // A smaller integer vector, such as v8i8, is promoted to a 128-bit MMI type
@@ -613,6 +1093,14 @@ MipsTTIImpl::getIntrinsicInstrCost(const IntrinsicCostAttributes &ICA,
       // paddsb/h/w, psubsb/h/w, paddub/h/w, psubub/h/w
       if (EltBits != 64)
         return LT->first * MMICycle;
+      break;
+    case Intrinsic::bswap:
+      // psrlh, psllh and por; for words two psrlw, two psllw, two pand with a
+      // constant mask and three por.
+      if (EltBits == 16)
+        return 3 * LT->first * MMICycle;
+      if (EltBits == 32)
+        return 9 * LT->first * MMICycle;
       break;
     default:
       break;

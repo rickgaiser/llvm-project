@@ -174,6 +174,11 @@ public:
   /// (like a call or something with unmodeled side effects).
   virtual bool isGlobalMemoryObject(const MachineInstr *MI) const;
 
+  /// Returns true if \p MI only prefetches data into a cache. It is marked as
+  /// loading and storing so that it is not removed, but no other instruction
+  /// can observe its access, so it needs no order among the loads and stores.
+  virtual bool isPrefetch(const MachineInstr &MI) const { return false; }
+
   /// Return true if the instruction is trivially rematerializable, meaning it
   /// has no side effects and requires no operands that aren't always available.
   /// This means the only allowed uses are constants and unallocatable physical

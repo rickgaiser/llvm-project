@@ -149,6 +149,16 @@ using TargetRegisterClass = MCRegisterClass;
                                      MachineBasicBlock *BB) const;
   };
 
+  /// R5900: a multiply of an MMI vector by the splat constant \p C as
+  /// shifts and an add or subtract, \p C = S0 * 2^Shift0 + S1 * 2^Shift1
+  /// (S0, S1 in {-1, 0, 1}); false if \p C has no such form. \p NumOps is
+  /// the number of MMI operations it takes.
+  struct R5900MulConst {
+    int S0 = 0, S1 = 0;
+    unsigned Shift0 = 0, Shift1 = 0, NumOps = 0;
+  };
+  bool decomposeR5900MulConst(const APInt &C, R5900MulConst &D);
+
 } // end namespace llvm
 
 #endif // LLVM_LIB_TARGET_MIPS_MIPSSEISELLOWERING_H

@@ -255,6 +255,8 @@ void MipsSubtarget::getSMSMutations(
   Mutations.push_back(createSingleRegChainStartMutation(
       {&Mips::VU0ACCRCRegClass, &Mips::VU0QVRegClass, &Mips::HILO128RCRegClass,
        &Mips::ACC64RegClass}));
+  // The prefetches that LoopDataPrefetch adds.
+  Mutations.push_back(createMipsUnorderedPrefetchDAGMutation());
 }
 
 void MipsSubtarget::getCriticalPathRCs(RegClassVector &CriticalPathRCs) const {

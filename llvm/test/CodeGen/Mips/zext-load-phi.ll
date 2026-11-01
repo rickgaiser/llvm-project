@@ -50,6 +50,7 @@ define zeroext i8 @phi_load_i8(i32 signext %a) nounwind {
 ; R5900-NEXT:    addu $1, $1, $2
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    lbu $2, 0($1)
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB0_2: # %slow
 ; R5900-NEXT:    addiu $sp, $sp, -16
 ; R5900-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
@@ -116,6 +117,7 @@ define zeroext i16 @phi_load_i16(i32 signext %a) nounwind {
 ; R5900-NEXT:    addu $1, $2, $1
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    lhu $2, 0($1)
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB1_2: # %slow
 ; R5900-NEXT:    addiu $sp, $sp, -16
 ; R5900-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill
@@ -186,6 +188,7 @@ define signext i8 @phi_load_i8_signext(i32 signext %a) nounwind {
 ; R5900-NEXT:    sll $1, $2, 24
 ; R5900-NEXT:    jr $ra
 ; R5900-NEXT:    sra $2, $1, 24
+; R5900-NEXT:    .p2align 3
 ; R5900-NEXT:  .LBB2_3: # %slow
 ; R5900-NEXT:    addiu $sp, $sp, -16
 ; R5900-NEXT:    sd $ra, 8($sp) # 8-byte Folded Spill

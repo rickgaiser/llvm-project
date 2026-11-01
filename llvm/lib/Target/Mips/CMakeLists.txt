@@ -83,6 +83,10 @@ add_llvm_target(MipsCodeGen
   MipsR5900IssueModel.cpp
   MipsR5900IssuePass.cpp
   MipsR5900VU0MatVec.cpp
+  MipsR5900AlignVersion.cpp
+  MipsR5900DeadDefs.cpp
+  MipsR5900SAHazard.cpp
+  MipsR5900Realign.cpp
 
   LINK_COMPONENTS
   Analysis

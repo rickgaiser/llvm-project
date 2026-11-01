@@ -98,6 +98,7 @@ define i32 @test_one(float %a, float %b) {
 ; CHECK-NEXT:  .LBB5_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    or $2, $2, $3
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB5_3:
 ; CHECK-NEXT:    c.lt.s $f13, $f12
 ; CHECK-NEXT:    bc1f .LBB5_2
@@ -229,6 +230,7 @@ define i32 @test_ord(float %a, float %b) {
 ; CHECK-NEXT:  .LBB12_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    and $2, $2, $3
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB12_3:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
 ; CHECK-NEXT:    bc1f .LBB12_2
@@ -256,6 +258,7 @@ define i32 @test_uno(float %a, float %b) {
 ; CHECK-NEXT:  .LBB13_2:
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    or $2, $2, $3
+; CHECK-NEXT:    .p2align 3
 ; CHECK-NEXT:  .LBB13_3:
 ; CHECK-NEXT:    c.eq.s $f12, $f12
 ; CHECK-NEXT:    bc1t .LBB13_2
