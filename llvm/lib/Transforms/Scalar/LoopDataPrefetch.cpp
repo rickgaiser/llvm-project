@@ -56,6 +56,7 @@ public:
 
 private:
   bool runOnLoop(Loop *L, bool Versioned = false);
+  bool isStreamCopy(Loop *L, StoreInst *SI);
   bool versionOnFootprint(Loop *L, uint64_t BytesPerIter, uint64_t MinBytes);
 
   /// Check if the stride of the accesses is large enough to
@@ -343,6 +344,20 @@ struct Prefetch {
   }
 };
 
+/// Whether \p SI stores what the loop loaded from a stream with the same
+/// step: a copy of one array into another.
+bool LoopDataPrefetch::isStreamCopy(Loop *L, StoreInst *SI) {
+  auto *LI = dyn_cast<LoadInst>(SI->getValueOperand());
+  if (!LI || !L->contains(LI))
+    return false;
+  const auto *S =
+      dyn_cast<SCEVAddRecExpr>(SE->getSCEV(SI->getPointerOperand()));
+  const auto *Ld =
+      dyn_cast<SCEVAddRecExpr>(SE->getSCEV(LI->getPointerOperand()));
+  return S && Ld && S->getLoop() == L && Ld->getLoop() == L &&
+         S->getStepRecurrence(*SE) == Ld->getStepRecurrence(*SE);
+}
+
 bool LoopDataPrefetch::runOnLoop(Loop *L, bool Versioned) {
   bool MadeChange = false;
 
@@ -407,7 +422,8 @@ bool LoopDataPrefetch::runOnLoop(Loop *L, bool Versioned) {
         MemI = LMemI;
         PtrValue = LMemI->getPointerOperand();
       } else if (StoreInst *SMemI = dyn_cast<StoreInst>(&I)) {
-        if (!doPrefetchWrites()) {
+        if (!doPrefetchWrites() ||
+            (!TTI->shouldPrefetchCopyStores() && isStreamCopy(L, SMemI))) {
           if (!L->isLoopInvariant(SMemI->getPointerOperand()))
             if (const auto *AR = dyn_cast<SCEVAddRecExpr>(
                     SE->getSCEV(SMemI->getPointerOperand())))

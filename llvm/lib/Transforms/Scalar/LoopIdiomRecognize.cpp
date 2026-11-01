@@ -528,7 +528,8 @@ LoopIdiomRecognize::isLegalStore(StoreInst *SI) {
   }
 
   // Otherwise, see if the store can be turned into a memcpy.
-  if (HasMemcpy && !DisableLIRP::Memcpy) {
+  if (HasMemcpy && !DisableLIRP::Memcpy &&
+      TTI->isLoopMemcpyIdiomProfitable(CurLoop)) {
     // Check to see if the stride matches the size of the store.  If so, then we
     // know that every byte is touched in the loop.
     unsigned StoreSize = DL->getTypeStoreSize(SI->getValueOperand()->getType());

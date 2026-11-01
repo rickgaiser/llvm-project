@@ -734,7 +734,9 @@ public:
                                            unsigned NumPrefetches) const {
     return 0;
   }
+  virtual bool isLoopMemcpyIdiomProfitable(const Loop *L) const { return true; }
   virtual bool enableWritePrefetching() const { return false; }
+  virtual bool shouldPrefetchCopyStores() const { return true; }
   virtual bool shouldPrefetchAddressSpace(unsigned AS) const { return !AS; }
 
   virtual InstructionCost getPartialReductionCost(

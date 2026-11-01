@@ -71,6 +71,21 @@ unsigned MipsTTIImpl::getMinPrefetchStride(unsigned NumMemAccesses,
   return 16;
 }
 
+// R5900: the destination of a stream copy is not prefetched: its PREF waits
+// behind the miss of the source and fetches the line again (64 KB copy: 2 %
+// faster, as fast as the libkernel memcpy). Loops that compute what they
+// store, or store table lookups, are faster with the write prefetch (up to
+// 14 %).
+bool MipsTTIImpl::shouldPrefetchCopyStores() const { return !ST->isR5900(); }
+
+// R5900: a copy loop stays a loop, which the vectorizer makes into 16-byte
+// lq/sq with prefetches: 1.8 cycles per byte for 64 KB, the speed of the
+// libkernel memcpy of the PS2SDK and 1.5x faster than its C library's
+// (measured). Not when optimizing for size.
+bool MipsTTIImpl::isLoopMemcpyIdiomProfitable(const Loop *L) const {
+  return !ST->isR5900() || L->getHeader()->getParent()->hasOptSize();
+}
+
 // PREF also fetches a line that is only written: the data cache allocates a
 // line on a store miss.
 bool MipsTTIImpl::enableWritePrefetching() const { return ST->isR5900(); }

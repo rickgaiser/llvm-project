@@ -64,6 +64,8 @@ public:
                                 unsigned NumPrefetches,
                                 bool HasCall) const override;
   bool enableWritePrefetching() const override;
+  bool shouldPrefetchCopyStores() const override;
+  bool isLoopMemcpyIdiomProfitable(const Loop *L) const override;
   unsigned getPrefetchIterationsAhead(const Loop *L, ScalarEvolution &SE,
                                       unsigned LoopSize) const override;
   uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,

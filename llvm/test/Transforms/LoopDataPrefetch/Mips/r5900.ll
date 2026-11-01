@@ -2373,3 +2373,229 @@ exit:
 }
 
 
+; A copy: only the source is prefetched. The PREF of the destination would
+; wait behind the miss of the source.
+define void @copy(ptr noalias %src, ptr noalias %dst) {
+; R5900-LABEL: define void @copy(
+; R5900-SAME: ptr noalias [[SRC:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; R5900-NEXT:  [[ENTRY:.*]]:
+; R5900-NEXT:    br label %[[LOOP:.*]]
+; R5900:       [[LOOP]]:
+; R5900-NEXT:    [[INDVAR:%.*]] = phi i64 [ [[INDVAR_NEXT:%.*]], %[[LOOP]] ], [ 0, %[[ENTRY]] ]
+; R5900-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; R5900-NEXT:    [[TMP0:%.*]] = shl nuw nsw i64 [[INDVAR]], 6
+; R5900-NEXT:    [[TMP1:%.*]] = add i64 [[TMP0]], 768
+; R5900-NEXT:    [[SCEVGEP:%.*]] = getelementptr i8, ptr [[SRC]], i64 [[TMP1]]
+; R5900-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; R5900-NEXT:    [[S0:%.*]] = getelementptr i8, ptr [[SRC]], i32 [[OFF]]
+; R5900-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; R5900-NEXT:    [[S1:%.*]] = getelementptr i8, ptr [[S0]], i32 16
+; R5900-NEXT:    [[D1:%.*]] = getelementptr i8, ptr [[D0]], i32 16
+; R5900-NEXT:    [[S2:%.*]] = getelementptr i8, ptr [[S0]], i32 32
+; R5900-NEXT:    [[D2:%.*]] = getelementptr i8, ptr [[D0]], i32 32
+; R5900-NEXT:    [[S3:%.*]] = getelementptr i8, ptr [[S0]], i32 48
+; R5900-NEXT:    [[D3:%.*]] = getelementptr i8, ptr [[D0]], i32 48
+; R5900-NEXT:    call void @llvm.prefetch.p0(ptr [[SCEVGEP]], i32 0, i32 3, i32 1)
+; R5900-NEXT:    [[V0:%.*]] = load <4 x i32>, ptr [[S0]], align 16
+; R5900-NEXT:    [[V1:%.*]] = load <4 x i32>, ptr [[S1]], align 16
+; R5900-NEXT:    [[V2:%.*]] = load <4 x i32>, ptr [[S2]], align 16
+; R5900-NEXT:    [[V3:%.*]] = load <4 x i32>, ptr [[S3]], align 16
+; R5900-NEXT:    store <4 x i32> [[V0]], ptr [[D0]], align 16
+; R5900-NEXT:    store <4 x i32> [[V1]], ptr [[D1]], align 16
+; R5900-NEXT:    store <4 x i32> [[V2]], ptr [[D2]], align 16
+; R5900-NEXT:    store <4 x i32> [[V3]], ptr [[D3]], align 16
+; R5900-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; R5900-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; R5900-NEXT:    [[INDVAR_NEXT]] = add i64 [[INDVAR]], 1
+; R5900-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; R5900:       [[EXIT]]:
+; R5900-NEXT:    ret void
+;
+; MIPS3-LABEL: define void @copy(
+; MIPS3-SAME: ptr noalias [[SRC:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; MIPS3-NEXT:  [[ENTRY:.*]]:
+; MIPS3-NEXT:    br label %[[LOOP:.*]]
+; MIPS3:       [[LOOP]]:
+; MIPS3-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; MIPS3-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; MIPS3-NEXT:    [[S0:%.*]] = getelementptr i8, ptr [[SRC]], i32 [[OFF]]
+; MIPS3-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; MIPS3-NEXT:    [[S1:%.*]] = getelementptr i8, ptr [[S0]], i32 16
+; MIPS3-NEXT:    [[D1:%.*]] = getelementptr i8, ptr [[D0]], i32 16
+; MIPS3-NEXT:    [[S2:%.*]] = getelementptr i8, ptr [[S0]], i32 32
+; MIPS3-NEXT:    [[D2:%.*]] = getelementptr i8, ptr [[D0]], i32 32
+; MIPS3-NEXT:    [[S3:%.*]] = getelementptr i8, ptr [[S0]], i32 48
+; MIPS3-NEXT:    [[D3:%.*]] = getelementptr i8, ptr [[D0]], i32 48
+; MIPS3-NEXT:    [[V0:%.*]] = load <4 x i32>, ptr [[S0]], align 16
+; MIPS3-NEXT:    [[V1:%.*]] = load <4 x i32>, ptr [[S1]], align 16
+; MIPS3-NEXT:    [[V2:%.*]] = load <4 x i32>, ptr [[S2]], align 16
+; MIPS3-NEXT:    [[V3:%.*]] = load <4 x i32>, ptr [[S3]], align 16
+; MIPS3-NEXT:    store <4 x i32> [[V0]], ptr [[D0]], align 16
+; MIPS3-NEXT:    store <4 x i32> [[V1]], ptr [[D1]], align 16
+; MIPS3-NEXT:    store <4 x i32> [[V2]], ptr [[D2]], align 16
+; MIPS3-NEXT:    store <4 x i32> [[V3]], ptr [[D3]], align 16
+; MIPS3-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; MIPS3-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; MIPS3-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; MIPS3:       [[EXIT]]:
+; MIPS3-NEXT:    ret void
+;
+; NOWRITES-LABEL: define void @copy(
+; NOWRITES-SAME: ptr noalias [[SRC:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; NOWRITES-NEXT:  [[ENTRY:.*]]:
+; NOWRITES-NEXT:    br label %[[LOOP:.*]]
+; NOWRITES:       [[LOOP]]:
+; NOWRITES-NEXT:    [[INDVAR:%.*]] = phi i64 [ [[INDVAR_NEXT:%.*]], %[[LOOP]] ], [ 0, %[[ENTRY]] ]
+; NOWRITES-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; NOWRITES-NEXT:    [[TMP0:%.*]] = shl nuw nsw i64 [[INDVAR]], 6
+; NOWRITES-NEXT:    [[TMP1:%.*]] = add i64 [[TMP0]], 768
+; NOWRITES-NEXT:    [[SCEVGEP:%.*]] = getelementptr i8, ptr [[SRC]], i64 [[TMP1]]
+; NOWRITES-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; NOWRITES-NEXT:    [[S0:%.*]] = getelementptr i8, ptr [[SRC]], i32 [[OFF]]
+; NOWRITES-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; NOWRITES-NEXT:    [[S1:%.*]] = getelementptr i8, ptr [[S0]], i32 16
+; NOWRITES-NEXT:    [[D1:%.*]] = getelementptr i8, ptr [[D0]], i32 16
+; NOWRITES-NEXT:    [[S2:%.*]] = getelementptr i8, ptr [[S0]], i32 32
+; NOWRITES-NEXT:    [[D2:%.*]] = getelementptr i8, ptr [[D0]], i32 32
+; NOWRITES-NEXT:    [[S3:%.*]] = getelementptr i8, ptr [[S0]], i32 48
+; NOWRITES-NEXT:    [[D3:%.*]] = getelementptr i8, ptr [[D0]], i32 48
+; NOWRITES-NEXT:    call void @llvm.prefetch.p0(ptr [[SCEVGEP]], i32 0, i32 3, i32 1)
+; NOWRITES-NEXT:    [[V0:%.*]] = load <4 x i32>, ptr [[S0]], align 16
+; NOWRITES-NEXT:    [[V1:%.*]] = load <4 x i32>, ptr [[S1]], align 16
+; NOWRITES-NEXT:    [[V2:%.*]] = load <4 x i32>, ptr [[S2]], align 16
+; NOWRITES-NEXT:    [[V3:%.*]] = load <4 x i32>, ptr [[S3]], align 16
+; NOWRITES-NEXT:    store <4 x i32> [[V0]], ptr [[D0]], align 16
+; NOWRITES-NEXT:    store <4 x i32> [[V1]], ptr [[D1]], align 16
+; NOWRITES-NEXT:    store <4 x i32> [[V2]], ptr [[D2]], align 16
+; NOWRITES-NEXT:    store <4 x i32> [[V3]], ptr [[D3]], align 16
+; NOWRITES-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; NOWRITES-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; NOWRITES-NEXT:    [[INDVAR_NEXT]] = add i64 [[INDVAR]], 1
+; NOWRITES-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; NOWRITES:       [[EXIT]]:
+; NOWRITES-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %off = shl i32 %i, 6
+  %s0 = getelementptr i8, ptr %src, i32 %off
+  %d0 = getelementptr i8, ptr %dst, i32 %off
+  %s1 = getelementptr i8, ptr %s0, i32 16
+  %d1 = getelementptr i8, ptr %d0, i32 16
+  %s2 = getelementptr i8, ptr %s0, i32 32
+  %d2 = getelementptr i8, ptr %d0, i32 32
+  %s3 = getelementptr i8, ptr %s0, i32 48
+  %d3 = getelementptr i8, ptr %d0, i32 48
+  %v0 = load <4 x i32>, ptr %s0, align 16
+  %v1 = load <4 x i32>, ptr %s1, align 16
+  %v2 = load <4 x i32>, ptr %s2, align 16
+  %v3 = load <4 x i32>, ptr %s3, align 16
+  store <4 x i32> %v0, ptr %d0, align 16
+  store <4 x i32> %v1, ptr %d1, align 16
+  store <4 x i32> %v2, ptr %d2, align 16
+  store <4 x i32> %v3, ptr %d3, align 16
+  %i.next = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i.next, 1024
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}
+
+; A store of a table lookup is not a stream copy: it is prefetched.
+define void @lookup(ptr noalias %idx, ptr noalias %tab, ptr noalias %dst) {
+; R5900-LABEL: define void @lookup(
+; R5900-SAME: ptr noalias [[IDX:%.*]], ptr noalias [[TAB:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; R5900-NEXT:  [[ENTRY:.*]]:
+; R5900-NEXT:    br label %[[LOOP:.*]]
+; R5900:       [[LOOP]]:
+; R5900-NEXT:    [[INDVAR:%.*]] = phi i64 [ [[INDVAR_NEXT:%.*]], %[[LOOP]] ], [ 0, %[[ENTRY]] ]
+; R5900-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; R5900-NEXT:    [[TMP0:%.*]] = shl nuw nsw i64 [[INDVAR]], 6
+; R5900-NEXT:    [[TMP1:%.*]] = add i64 [[TMP0]], 1536
+; R5900-NEXT:    [[SCEVGEP1:%.*]] = getelementptr i8, ptr [[DST]], i64 [[TMP1]]
+; R5900-NEXT:    [[TMP2:%.*]] = shl nuw nsw i64 [[INDVAR]], 6
+; R5900-NEXT:    [[TMP3:%.*]] = add i64 [[TMP2]], 1536
+; R5900-NEXT:    [[SCEVGEP:%.*]] = getelementptr i8, ptr [[IDX]], i64 [[TMP3]]
+; R5900-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; R5900-NEXT:    [[IA:%.*]] = getelementptr i8, ptr [[IDX]], i32 [[OFF]]
+; R5900-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; R5900-NEXT:    call void @llvm.prefetch.p0(ptr [[SCEVGEP]], i32 0, i32 3, i32 1)
+; R5900-NEXT:    [[K:%.*]] = load i32, ptr [[IA]], align 4
+; R5900-NEXT:    [[TA:%.*]] = getelementptr i32, ptr [[TAB]], i32 [[K]]
+; R5900-NEXT:    [[V:%.*]] = load i32, ptr [[TA]], align 4
+; R5900-NEXT:    call void @llvm.prefetch.p0(ptr [[SCEVGEP1]], i32 1, i32 3, i32 1)
+; R5900-NEXT:    store i32 [[V]], ptr [[D0]], align 4
+; R5900-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; R5900-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; R5900-NEXT:    [[INDVAR_NEXT]] = add i64 [[INDVAR]], 1
+; R5900-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; R5900:       [[EXIT]]:
+; R5900-NEXT:    ret void
+;
+; MIPS3-LABEL: define void @lookup(
+; MIPS3-SAME: ptr noalias [[IDX:%.*]], ptr noalias [[TAB:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; MIPS3-NEXT:  [[ENTRY:.*]]:
+; MIPS3-NEXT:    br label %[[LOOP:.*]]
+; MIPS3:       [[LOOP]]:
+; MIPS3-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; MIPS3-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; MIPS3-NEXT:    [[IA:%.*]] = getelementptr i8, ptr [[IDX]], i32 [[OFF]]
+; MIPS3-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; MIPS3-NEXT:    [[K:%.*]] = load i32, ptr [[IA]], align 4
+; MIPS3-NEXT:    [[TA:%.*]] = getelementptr i32, ptr [[TAB]], i32 [[K]]
+; MIPS3-NEXT:    [[V:%.*]] = load i32, ptr [[TA]], align 4
+; MIPS3-NEXT:    store i32 [[V]], ptr [[D0]], align 4
+; MIPS3-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; MIPS3-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; MIPS3-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; MIPS3:       [[EXIT]]:
+; MIPS3-NEXT:    ret void
+;
+; NOWRITES-LABEL: define void @lookup(
+; NOWRITES-SAME: ptr noalias [[IDX:%.*]], ptr noalias [[TAB:%.*]], ptr noalias [[DST:%.*]]) #[[ATTR0]] {
+; NOWRITES-NEXT:  [[ENTRY:.*]]:
+; NOWRITES-NEXT:    br label %[[LOOP:.*]]
+; NOWRITES:       [[LOOP]]:
+; NOWRITES-NEXT:    [[INDVAR:%.*]] = phi i64 [ [[INDVAR_NEXT:%.*]], %[[LOOP]] ], [ 0, %[[ENTRY]] ]
+; NOWRITES-NEXT:    [[I:%.*]] = phi i32 [ 0, %[[ENTRY]] ], [ [[I_NEXT:%.*]], %[[LOOP]] ]
+; NOWRITES-NEXT:    [[TMP0:%.*]] = shl nuw nsw i64 [[INDVAR]], 6
+; NOWRITES-NEXT:    [[TMP1:%.*]] = add i64 [[TMP0]], 1536
+; NOWRITES-NEXT:    [[SCEVGEP:%.*]] = getelementptr i8, ptr [[IDX]], i64 [[TMP1]]
+; NOWRITES-NEXT:    [[OFF:%.*]] = shl i32 [[I]], 6
+; NOWRITES-NEXT:    [[IA:%.*]] = getelementptr i8, ptr [[IDX]], i32 [[OFF]]
+; NOWRITES-NEXT:    [[D0:%.*]] = getelementptr i8, ptr [[DST]], i32 [[OFF]]
+; NOWRITES-NEXT:    call void @llvm.prefetch.p0(ptr [[SCEVGEP]], i32 0, i32 3, i32 1)
+; NOWRITES-NEXT:    [[K:%.*]] = load i32, ptr [[IA]], align 4
+; NOWRITES-NEXT:    [[TA:%.*]] = getelementptr i32, ptr [[TAB]], i32 [[K]]
+; NOWRITES-NEXT:    [[V:%.*]] = load i32, ptr [[TA]], align 4
+; NOWRITES-NEXT:    store i32 [[V]], ptr [[D0]], align 4
+; NOWRITES-NEXT:    [[I_NEXT]] = add nuw nsw i32 [[I]], 1
+; NOWRITES-NEXT:    [[DONE:%.*]] = icmp eq i32 [[I_NEXT]], 1024
+; NOWRITES-NEXT:    [[INDVAR_NEXT]] = add i64 [[INDVAR]], 1
+; NOWRITES-NEXT:    br i1 [[DONE]], label %[[EXIT:.*]], label %[[LOOP]]
+; NOWRITES:       [[EXIT]]:
+; NOWRITES-NEXT:    ret void
+;
+entry:
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i.next, %loop ]
+  %off = shl i32 %i, 6
+  %ia = getelementptr i8, ptr %idx, i32 %off
+  %d0 = getelementptr i8, ptr %dst, i32 %off
+  %k = load i32, ptr %ia, align 4
+  %ta = getelementptr i32, ptr %tab, i32 %k
+  %v = load i32, ptr %ta, align 4
+  store i32 %v, ptr %d0, align 4
+  %i.next = add nuw nsw i32 %i, 1
+  %done = icmp eq i32 %i.next, 1024
+  br i1 %done, label %exit, label %loop
+
+exit:
+  ret void
+}

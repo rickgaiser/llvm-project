@@ -943,6 +943,14 @@ TargetTransformInfo::getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
   return TTIImpl->getPrefetchMinFootprint(L, SE, NumPrefetches);
 }
 
+bool TargetTransformInfo::isLoopMemcpyIdiomProfitable(const Loop *L) const {
+  return TTIImpl->isLoopMemcpyIdiomProfitable(L);
+}
+
+bool TargetTransformInfo::shouldPrefetchCopyStores() const {
+  return TTIImpl->shouldPrefetchCopyStores();
+}
+
 bool TargetTransformInfo::enableWritePrefetching() const {
   return TTIImpl->enableWritePrefetching();
 }

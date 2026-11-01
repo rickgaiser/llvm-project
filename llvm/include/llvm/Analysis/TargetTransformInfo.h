@@ -1553,8 +1553,18 @@ public:
   LLVM_ABI uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
                                             unsigned NumPrefetches) const;
 
+  /// \return True if a loop that copies memory, \p L, should become a call
+  /// to memcpy (LoopIdiomRecognize). The default; false for a target whose
+  /// own copy loops are faster than its C library's memcpy.
+  LLVM_ABI bool isLoopMemcpyIdiomProfitable(const Loop *L) const;
+
   /// \return True if prefetching should also be done for writes.
   LLVM_ABI bool enableWritePrefetching() const;
+
+  /// \return True if, with write prefetching, the stores of a stream copy (of
+  /// a value the loop loaded from a stream with the same step) should be
+  /// prefetched too. The default.
+  LLVM_ABI bool shouldPrefetchCopyStores() const;
 
   /// \return if target want to issue a prefetch in address space \p AS.
   LLVM_ABI bool shouldPrefetchAddressSpace(unsigned AS) const;
