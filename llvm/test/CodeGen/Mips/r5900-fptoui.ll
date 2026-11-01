@@ -28,3 +28,103 @@ define i32 @fptoui(float %x) {
   %r = fptoui float %x to i32
   ret i32 %r
 }
+
+; A value known to be below 2^31 converts the same with fptosi (fptoui is poison
+; for a negative one): a single cvt.w.s.
+define i32 @fptoui_min_mul(float %x) {
+; CHECK-LABEL: fptoui_min_mul:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    lui $1, %hi(.LCPI1_0)
+; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI1_0)($1)
+; CHECK-NEXT:    lui $1, %hi(.LCPI1_1)
+; CHECK-NEXT:    min.s $f0, $f12, $f0
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI1_1)($1)
+; CHECK-NEXT:    mul.s $f0, $f0, $f1
+; CHECK-NEXT:    cvt.w.s $f0, $f0
+; CHECK-NEXT:    mfc1 $2, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %m = call nnan ninf float @llvm.minnum.f32(float %x, float 1.0)
+  %s = fmul nnan ninf float %m, 128.0
+  %r = fptoui float %s to i32
+  ret i32 %r
+}
+
+define i32 @fptoui_min_add(float %x, float %y) {
+; CHECK-LABEL: fptoui_min_add:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    lui $1, %hi(.LCPI2_0)
+; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI2_0)($1)
+; CHECK-NEXT:    min.s $f1, $f12, $f0
+; CHECK-NEXT:    min.s $f0, $f13, $f0
+; CHECK-NEXT:    add.s $f0, $f1, $f0
+; CHECK-NEXT:    cvt.w.s $f0, $f0
+; CHECK-NEXT:    mfc1 $2, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %a = call nnan ninf float @llvm.minnum.f32(float %x, float 1.0e9)
+  %b = call nnan ninf float @llvm.minnum.f32(float %y, float 1.0e9)
+  %s = fadd nnan ninf float %a, %b
+  %r = fptoui float %s to i32
+  ret i32 %r
+}
+
+; 2^31 and more needs the expansion.
+define i32 @fptoui_min_large(float %x) {
+; CHECK-LABEL: fptoui_min_large:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    lui $1, %hi(.LCPI3_0)
+; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI3_0)($1)
+; CHECK-NEXT:    min.s $f1, $f12, $f0
+; CHECK-NEXT:    c.lt.s $f1, $f0
+; CHECK-NEXT:    bc1t .LBB3_2
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.1:
+; CHECK-NEXT:    sub.s $f0, $f1, $f0
+; CHECK-NEXT:    lui $2, 32768
+; CHECK-NEXT:    cvt.w.s $f0, $f0
+; CHECK-NEXT:    mfc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    xor $2, $1, $2
+; CHECK-NEXT:  .LBB3_2:
+; CHECK-NEXT:    cvt.w.s $f0, $f1
+; CHECK-NEXT:    mfc1 $2, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %m = call nnan ninf float @llvm.minnum.f32(float %x, float 2147483648.0)
+  %r = fptoui float %m to i32
+  ret i32 %r
+}
+
+; A negative factor gives no upper bound.
+define i32 @fptoui_min_mul_neg(float %x) {
+; CHECK-LABEL: fptoui_min_mul_neg:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    lui $1, %hi(.LCPI4_0)
+; CHECK-NEXT:    lwc1 $f0, %lo(.LCPI4_0)($1)
+; CHECK-NEXT:    lui $1, %hi(.LCPI4_1)
+; CHECK-NEXT:    min.s $f0, $f12, $f0
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI4_1)($1)
+; CHECK-NEXT:    lui $1, %hi(.LCPI4_2)
+; CHECK-NEXT:    mul.s $f0, $f0, $f1
+; CHECK-NEXT:    lwc1 $f1, %lo(.LCPI4_2)($1)
+; CHECK-NEXT:    c.lt.s $f0, $f1
+; CHECK-NEXT:    bc1t .LBB4_2
+; CHECK-NEXT:    nop
+; CHECK-NEXT:  # %bb.1:
+; CHECK-NEXT:    sub.s $f0, $f0, $f1
+; CHECK-NEXT:    lui $2, 32768
+; CHECK-NEXT:    cvt.w.s $f0, $f0
+; CHECK-NEXT:    mfc1 $1, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    xor $2, $1, $2
+; CHECK-NEXT:  .LBB4_2:
+; CHECK-NEXT:    cvt.w.s $f0, $f0
+; CHECK-NEXT:    mfc1 $2, $f0
+; CHECK-NEXT:    jr $ra
+; CHECK-NEXT:    nop
+  %m = call nnan ninf float @llvm.minnum.f32(float %x, float 1.0)
+  %s = fmul nnan ninf float %m, -128.0
+  %r = fptoui float %s to i32
+  ret i32 %r
+}

@@ -276,8 +276,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
       setOperationAction(ISD::FP_TO_FP16, VT, Custom);
     }
 
-    setTargetDAGCombine(
-        {ISD::AND, ISD::OR, ISD::SRA, ISD::VSELECT, ISD::XOR, ISD::FP_TO_UINT});
+    setTargetDAGCombine({ISD::AND, ISD::OR, ISD::SRA, ISD::VSELECT, ISD::XOR});
   }
 
   // R5900 VU0 (COP2) support for v4f32 vectors
@@ -426,7 +425,7 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::STORE,              MVT::i32, Custom);
   }
 
-  setTargetDAGCombine(ISD::MUL);
+  setTargetDAGCombine({ISD::MUL, ISD::FP_TO_UINT});
 
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::Other, Custom);
@@ -1727,19 +1726,85 @@ static SDValue performXORCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
-// Convert (fp_to_uint (fp16_to_fp x)) into (fp_to_sint (fp16_to_fp x)).
+/// An upper bound of the floating-point value V, if one follows from its
+/// operations: a constant, fminnum with a constant, fmul by a constant that is
+/// not negative, fadd, and fp16_to_fp (every f16 value is <= 65504). The bound
+/// is rounded up.
+static std::optional<APFloat> getFPUpperBound(SDValue V, unsigned Depth = 0) {
+  auto RoundUp = [](APFloat X) {
+    bool LosesInfo;
+    X.convert(APFloat::IEEEdouble(), APFloat::rmTowardPositive, &LosesInfo);
+    return X;
+  };
+  if (auto *C = dyn_cast<ConstantFPSDNode>(V))
+    return C->getValueAPF().isNaN() ? std::nullopt
+                                    : std::optional(RoundUp(C->getValueAPF()));
+  if (V.getOpcode() == ISD::FP16_TO_FP)
+    return APFloat(65504.0);
+  if (Depth >= 6)
+    return std::nullopt;
+  switch (V.getOpcode()) {
+  case ISD::FMINNUM:
+  case ISD::FMINNUM_IEEE:
+  case ISD::FMINIMUM:
+  case ISD::FMINIMUMNUM: {
+    // The minimum is at most either operand (fminnum returns the other operand
+    // for a NaN one).
+    auto A = getFPUpperBound(V.getOperand(0), Depth + 1);
+    auto B = getFPUpperBound(V.getOperand(1), Depth + 1);
+    if (A && B)
+      return minnum(*A, *B);
+    return A ? A : B;
+  }
+  case ISD::FMUL: {
+    for (unsigned I = 0; I < 2; ++I) {
+      auto *C = dyn_cast<ConstantFPSDNode>(V.getOperand(I));
+      if (!C || C->getValueAPF().isNegative() || C->getValueAPF().isNaN() ||
+          C->getValueAPF().isInfinity())
+        continue;
+      auto A = getFPUpperBound(V.getOperand(1 - I), Depth + 1);
+      if (!A || A->isNegative())
+        return std::nullopt;
+      APFloat R = *A;
+      R.multiply(RoundUp(C->getValueAPF()), APFloat::rmTowardPositive);
+      return R;
+    }
+    return std::nullopt;
+  }
+  case ISD::FADD: {
+    auto A = getFPUpperBound(V.getOperand(0), Depth + 1);
+    auto B = getFPUpperBound(V.getOperand(1), Depth + 1);
+    if (!A || !B)
+      return std::nullopt;
+    A->add(*B, APFloat::rmTowardPositive);
+    return A;
+  }
+  default:
+    return std::nullopt;
+  }
+}
+
+// Convert (fp_to_uint x) into (fp_to_sint x) when x is known to be below
+// 2^(N-1), such as (fp_to_uint (fminnum y, 1.0) * 128.0) or one of an f16
+// value, as in TargetLowering::expandFP_TO_UINT: a smaller value that is not
+// below 0 converts the same either way, and the result of fptoui is poison when
+// the value does not fit in the destination type (e.g. because it is
+// negative). fp_to_sint is one conversion; fp_to_uint is expanded to a compare
+// and branch around two of them.
 static SDValue performFP_TO_UINTCombine(SDNode *N, SelectionDAG &DAG) {
   SDValue Src = N->getOperand(0);
   EVT VT = N->getValueType(0);
-
-  // Use a trick from TargetLowering::expandFP_TO_UINT: we know that every
-  // integer value that can be represented by f16 is <= 65504, i.e. a signed
-  // integer of 17 bits or more can represent all values and fptoui and fptosi
-  // are equivalent.
-  //
-  // NOTE: the result of fptoui is poison when the value does not fit in the
-  // destination type (e.g. because it is negative).
-  if (Src.getOpcode() != ISD::FP16_TO_FP || VT.getScalarSizeInBits() < 17)
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
+  if (VT.isVector() || !TLI.isOperationLegalOrCustom(ISD::FP_TO_SINT, VT))
+    return SDValue();
+  auto Bound = getFPUpperBound(Src);
+  if (!Bound || Bound->isInfinity())
+    return SDValue();
+  APFloat Limit(APFloat::IEEEdouble());
+  Limit.convertFromAPInt(APInt::getOneBitSet(VT.getScalarSizeInBits() + 1,
+                                             VT.getScalarSizeInBits() - 1),
+                         /*IsSigned=*/false, APFloat::rmNearestTiesToEven);
+  if (Bound->compare(Limit) != APFloat::cmpLessThan)
     return SDValue();
   return DAG.getNode(ISD::FP_TO_SINT, SDLoc(N), VT, Src);
 }
