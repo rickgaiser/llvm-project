@@ -94,9 +94,9 @@ define <4 x half> @insert_v4f16_idx(<4 x half> %v, half %e, i32 %idx) nounwind {
 ; MIPS32-NEXT:    insert.h $w0[0], $1
 ; MIPS32-NEXT:    neg $1, $2
 ; MIPS32-NEXT:    sld.b $w0, $w0[$1]
+; MIPS32-NEXT:    copy_s.w $1, $w0[1]
+; MIPS32-NEXT:    sw $1, 4($4)
 ; MIPS32-NEXT:    copy_s.w $1, $w0[0]
-; MIPS32-NEXT:    copy_s.w $2, $w0[1]
-; MIPS32-NEXT:    sw $2, 4($4)
 ; MIPS32-NEXT:    sw $1, 0($4)
 ; MIPS32-NEXT:    move $sp, $fp
 ; MIPS32-NEXT:    lw $fp, 24($sp) # 4-byte Folded Reload

@@ -552,10 +552,10 @@ define void @bsel_v2f64(ptr %d, ptr %a, ptr %b, ptr %c) nounwind {
 define void @bseli_v4f32(ptr %d, ptr %a, ptr %b, ptr %c) nounwind {
 ; CHECK-LABEL: bseli_v4f32:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    ld.w $w0, 0($5)
-; CHECK-NEXT:    ld.w $w1, 0($6)
-; CHECK-NEXT:    fclt.w $w1, $w1, $w0
-; CHECK-NEXT:    and.v $w0, $w1, $w0
+; CHECK-NEXT:    ld.w $w0, 0($6)
+; CHECK-NEXT:    ld.w $w1, 0($5)
+; CHECK-NEXT:    fclt.w $w0, $w0, $w1
+; CHECK-NEXT:    and.v $w0, $w0, $w1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    st.w $w0, 0($4)
   %1 = load <4 x float>, ptr %a
@@ -570,10 +570,10 @@ define void @bseli_v4f32(ptr %d, ptr %a, ptr %b, ptr %c) nounwind {
 define void @bseli_v2f64(ptr %d, ptr %a, ptr %b, ptr %c) nounwind {
 ; CHECK-LABEL: bseli_v2f64:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    ld.d $w0, 0($5)
-; CHECK-NEXT:    ld.d $w1, 0($6)
-; CHECK-NEXT:    fclt.d $w1, $w1, $w0
-; CHECK-NEXT:    and.v $w0, $w1, $w0
+; CHECK-NEXT:    ld.d $w0, 0($6)
+; CHECK-NEXT:    ld.d $w1, 0($5)
+; CHECK-NEXT:    fclt.d $w0, $w0, $w1
+; CHECK-NEXT:    and.v $w0, $w0, $w1
 ; CHECK-NEXT:    jr $ra
 ; CHECK-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x double>, ptr %a

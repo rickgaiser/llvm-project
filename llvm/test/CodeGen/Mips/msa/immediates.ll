@@ -87,9 +87,9 @@ define void @binsli_b(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsli_b:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.b $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.b $w0, 0($2)
 ; MSA64N32-NEXT:    ld.b $w1, 0($1)
 ; MSA64N32-NEXT:    binsli.b $w1, $w0, 3
 ; MSA64N32-NEXT:    jr $ra
@@ -113,9 +113,9 @@ define void @binsri_b(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsri_b:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.b $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.b $w0, 0($2)
 ; MSA64N32-NEXT:    ld.b $w1, 0($1)
 ; MSA64N32-NEXT:    binsri.b $w1, $w0, 5
 ; MSA64N32-NEXT:    jr $ra
@@ -139,9 +139,9 @@ define void @bmnzi_b(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: bmnzi_b:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.b $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.b $w0, 0($2)
 ; MSA64N32-NEXT:    ld.b $w1, 0($1)
 ; MSA64N32-NEXT:    bmnzi.b $w1, $w0, 25
 ; MSA64N32-NEXT:    jr $ra
@@ -157,21 +157,21 @@ entry:
 define void @bmzi_b(ptr %ptr, ptr %ptr2) {
 ; MSA-LABEL: bmzi_b:
 ; MSA:       # %bb.0: # %entry
-; MSA-NEXT:    ld.b $w0, 0($4)
-; MSA-NEXT:    ld.b $w1, 0($5)
-; MSA-NEXT:    bmnzi.b $w1, $w0, 25
+; MSA-NEXT:    ld.b $w0, 0($5)
+; MSA-NEXT:    ld.b $w1, 0($4)
+; MSA-NEXT:    bmnzi.b $w0, $w1, 25
 ; MSA-NEXT:    jr $ra
-; MSA-NEXT:    st.b $w1, 0($4)
+; MSA-NEXT:    st.b $w0, 0($4)
 ;
 ; MSA64N32-LABEL: bmzi_b:
 ; MSA64N32:       # %bb.0: # %entry
 ; MSA64N32-NEXT:    sll $1, $5, 0
-; MSA64N32-NEXT:    sll $2, $4, 0
-; MSA64N32-NEXT:    ld.b $w0, 0($2)
+; MSA64N32-NEXT:    ld.b $w0, 0($1)
+; MSA64N32-NEXT:    sll $1, $4, 0
 ; MSA64N32-NEXT:    ld.b $w1, 0($1)
-; MSA64N32-NEXT:    bmnzi.b $w1, $w0, 25
+; MSA64N32-NEXT:    bmnzi.b $w0, $w1, 25
 ; MSA64N32-NEXT:    jr $ra
-; MSA64N32-NEXT:    st.b $w1, 0($2)
+; MSA64N32-NEXT:    st.b $w0, 0($1)
 entry:
   %a = load <16 x i8>, ptr %ptr, align 16
   %b = load <16 x i8>, ptr %ptr2, align 16
@@ -694,9 +694,9 @@ define void @binsli_w(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsli_w:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.w $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.w $w0, 0($2)
 ; MSA64N32-NEXT:    ld.w $w1, 0($1)
 ; MSA64N32-NEXT:    binsli.w $w1, $w0, 25
 ; MSA64N32-NEXT:    jr $ra
@@ -720,9 +720,9 @@ define void @binsri_w(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsri_w:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.w $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.w $w0, 0($2)
 ; MSA64N32-NEXT:    ld.w $w1, 0($1)
 ; MSA64N32-NEXT:    binsri.w $w1, $w0, 25
 ; MSA64N32-NEXT:    jr $ra
@@ -1183,9 +1183,9 @@ define void @binsli_h(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsli_h:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.h $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.h $w0, 0($2)
 ; MSA64N32-NEXT:    ld.h $w1, 0($1)
 ; MSA64N32-NEXT:    binsli.h $w1, $w0, 8
 ; MSA64N32-NEXT:    jr $ra
@@ -1209,9 +1209,9 @@ define void @binsri_h(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsri_h:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.h $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.h $w0, 0($2)
 ; MSA64N32-NEXT:    ld.h $w1, 0($1)
 ; MSA64N32-NEXT:    binsri.h $w1, $w0, 14
 ; MSA64N32-NEXT:    jr $ra
@@ -1839,9 +1839,9 @@ define void @binsli_d(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsli_d:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.d $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.d $w0, 0($2)
 ; MSA64N32-NEXT:    ld.d $w1, 0($1)
 ; MSA64N32-NEXT:    binsli.d $w1, $w0, 4
 ; MSA64N32-NEXT:    jr $ra
@@ -1865,9 +1865,9 @@ define void @binsri_d(ptr %ptr, ptr %ptr2) {
 ;
 ; MSA64N32-LABEL: binsri_d:
 ; MSA64N32:       # %bb.0: # %entry
+; MSA64N32-NEXT:    sll $1, $5, 0
+; MSA64N32-NEXT:    ld.d $w0, 0($1)
 ; MSA64N32-NEXT:    sll $1, $4, 0
-; MSA64N32-NEXT:    sll $2, $5, 0
-; MSA64N32-NEXT:    ld.d $w0, 0($2)
 ; MSA64N32-NEXT:    ld.d $w1, 0($1)
 ; MSA64N32-NEXT:    binsri.d $w1, $w0, 5
 ; MSA64N32-NEXT:    jr $ra
