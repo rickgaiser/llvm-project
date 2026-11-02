@@ -184,21 +184,21 @@ define void @transpose8x8(ptr align 64 %out, <8 x i8> %v0, <8 x i8> %v1, <8 x i8
 ; CHECK-LABEL: define void @transpose8x8(
 ; CHECK-SAME: ptr align 64 [[OUT:%.*]], <8 x i8> [[V0:%.*]], <8 x i8> [[V1:%.*]], <8 x i8> [[V2:%.*]], <8 x i8> [[V3:%.*]], <8 x i8> [[V4:%.*]], <8 x i8> [[V5:%.*]], <8 x i8> [[V6:%.*]], <8 x i8> [[V7:%.*]]) #[[ATTR0]] {
 ; CHECK-NEXT:    [[P00:%.*]] = getelementptr i8, ptr [[OUT]], i32 0
+; CHECK-NEXT:    [[TMP3:%.*]] = zext <8 x i8> [[V0]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP1:%.*]] = zext <8 x i8> [[V1]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP2:%.*]] = shl <8 x i16> [[TMP1]], splat (i16 8)
-; CHECK-NEXT:    [[TMP3:%.*]] = zext <8 x i8> [[V0]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP4:%.*]] = or <8 x i16> [[TMP3]], [[TMP2]]
+; CHECK-NEXT:    [[TMP7:%.*]] = zext <8 x i8> [[V2]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP5:%.*]] = zext <8 x i8> [[V3]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP6:%.*]] = shl <8 x i16> [[TMP5]], splat (i16 8)
-; CHECK-NEXT:    [[TMP7:%.*]] = zext <8 x i8> [[V2]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP8:%.*]] = or <8 x i16> [[TMP7]], [[TMP6]]
+; CHECK-NEXT:    [[TMP11:%.*]] = zext <8 x i8> [[V4]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP9:%.*]] = zext <8 x i8> [[V5]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP10:%.*]] = shl <8 x i16> [[TMP9]], splat (i16 8)
-; CHECK-NEXT:    [[TMP11:%.*]] = zext <8 x i8> [[V4]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP12:%.*]] = or <8 x i16> [[TMP11]], [[TMP10]]
+; CHECK-NEXT:    [[TMP15:%.*]] = zext <8 x i8> [[V6]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP13:%.*]] = zext <8 x i8> [[V7]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP14:%.*]] = shl <8 x i16> [[TMP13]], splat (i16 8)
-; CHECK-NEXT:    [[TMP15:%.*]] = zext <8 x i8> [[V6]] to <8 x i16>
 ; CHECK-NEXT:    [[TMP16:%.*]] = or <8 x i16> [[TMP15]], [[TMP14]]
 ; CHECK-NEXT:    [[TMP17:%.*]] = shufflevector <8 x i16> [[TMP4]], <8 x i16> [[TMP8]], <16 x i32> <i32 0, i32 8, i32 1, i32 9, i32 2, i32 10, i32 3, i32 11, i32 4, i32 12, i32 5, i32 13, i32 6, i32 14, i32 7, i32 15>
 ; CHECK-NEXT:    [[TMP18:%.*]] = bitcast <16 x i16> [[TMP17]] to <8 x i32>
