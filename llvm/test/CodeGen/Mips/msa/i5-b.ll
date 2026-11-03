@@ -107,9 +107,9 @@ define void @llvm_mips_binsli_b_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_b_ARG2)($1)
+; CHECK-NEXT:    ld.b $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_b_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsli_b_ARG2)($1)
-; CHECK-NEXT:    ld.b $w0, 0($3)
 ; CHECK-NEXT:    ld.b $w1, 0($2)
 ; CHECK-NEXT:    binsli.b $w1, $w0, 6
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsli_b_RES)($1)
@@ -134,9 +134,9 @@ define void @llvm_mips_binsli_h_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_h_ARG2)($1)
+; CHECK-NEXT:    ld.h $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_h_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsli_h_ARG2)($1)
-; CHECK-NEXT:    ld.h $w0, 0($3)
 ; CHECK-NEXT:    ld.h $w1, 0($2)
 ; CHECK-NEXT:    binsli.h $w1, $w0, 7
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsli_h_RES)($1)
@@ -161,9 +161,9 @@ define void @llvm_mips_binsli_w_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_w_ARG2)($1)
+; CHECK-NEXT:    ld.w $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_w_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsli_w_ARG2)($1)
-; CHECK-NEXT:    ld.w $w0, 0($3)
 ; CHECK-NEXT:    ld.w $w1, 0($2)
 ; CHECK-NEXT:    binsli.w $w1, $w0, 7
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsli_w_RES)($1)
@@ -188,9 +188,9 @@ define void @llvm_mips_binsli_d_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_d_ARG2)($1)
+; CHECK-NEXT:    ld.d $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsli_d_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsli_d_ARG2)($1)
-; CHECK-NEXT:    ld.d $w0, 0($3)
 ; CHECK-NEXT:    ld.d $w1, 0($2)
 ; CHECK-NEXT:    binsli.d $w1, $w0, 61
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsli_d_RES)($1)
@@ -219,9 +219,9 @@ define void @llvm_mips_binsri_b_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_b_ARG2)($1)
+; CHECK-NEXT:    ld.b $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_b_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsri_b_ARG2)($1)
-; CHECK-NEXT:    ld.b $w0, 0($3)
 ; CHECK-NEXT:    ld.b $w1, 0($2)
 ; CHECK-NEXT:    binsri.b $w1, $w0, 6
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsri_b_RES)($1)
@@ -246,9 +246,9 @@ define void @llvm_mips_binsri_h_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_h_ARG2)($1)
+; CHECK-NEXT:    ld.h $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_h_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsri_h_ARG2)($1)
-; CHECK-NEXT:    ld.h $w0, 0($3)
 ; CHECK-NEXT:    ld.h $w1, 0($2)
 ; CHECK-NEXT:    binsri.h $w1, $w0, 7
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsri_h_RES)($1)
@@ -273,9 +273,9 @@ define void @llvm_mips_binsri_w_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_w_ARG2)($1)
+; CHECK-NEXT:    ld.w $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_w_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsri_w_ARG2)($1)
-; CHECK-NEXT:    ld.w $w0, 0($3)
 ; CHECK-NEXT:    ld.w $w1, 0($2)
 ; CHECK-NEXT:    binsri.w $w1, $w0, 7
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsri_w_RES)($1)
@@ -300,9 +300,9 @@ define void @llvm_mips_binsri_d_test() nounwind {
 ; CHECK-NEXT:    lui $2, %hi(_gp_disp)
 ; CHECK-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; CHECK-NEXT:    addu $1, $2, $25
+; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_d_ARG2)($1)
+; CHECK-NEXT:    ld.d $w0, 0($2)
 ; CHECK-NEXT:    lw $2, %got(llvm_mips_binsri_d_ARG1)($1)
-; CHECK-NEXT:    lw $3, %got(llvm_mips_binsri_d_ARG2)($1)
-; CHECK-NEXT:    ld.d $w0, 0($3)
 ; CHECK-NEXT:    ld.d $w1, 0($2)
 ; CHECK-NEXT:    binsri.d $w1, $w0, 7
 ; CHECK-NEXT:    lw $1, %got(llvm_mips_binsri_d_RES)($1)

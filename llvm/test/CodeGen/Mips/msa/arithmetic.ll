@@ -276,18 +276,18 @@ define void @sub_v2i64_i(ptr %c, ptr %a) nounwind {
 define void @sub_v2i64_i_negated(ptr %c, ptr %a) nounwind {
 ; MIPS-LABEL: sub_v2i64_i_negated:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.b $w0, -1
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    addv.d $w0, $w1, $w0
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ldi.b $w1, -1
+; MIPS-NEXT:    shf.w $w1, $w1, 177
+; MIPS-NEXT:    addv.d $w0, $w0, $w1
 ; MIPS-NEXT:    jr $ra
 ; MIPS-NEXT:    st.d $w0, 0($4)
 ;
 ; MIPSEL-LABEL: sub_v2i64_i_negated:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.b $w0, -1
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    addv.d $w0, $w1, $w0
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ldi.b $w1, -1
+; MIPSEL-NEXT:    addv.d $w0, $w0, $w1
 ; MIPSEL-NEXT:    jr $ra
 ; MIPSEL-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x i64>, ptr %a

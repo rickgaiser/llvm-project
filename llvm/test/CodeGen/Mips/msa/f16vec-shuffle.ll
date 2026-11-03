@@ -62,9 +62,9 @@ define <8 x half> @splat_v8f16(<8 x half> %a) {
 define void @reverse_v8f16(ptr %dst, ptr %src) {
 ; MIPS32-LABEL: reverse_v8f16:
 ; MIPS32:       # %bb.0:
+; MIPS32-NEXT:    ld.h $w0, 0($5)
 ; MIPS32-NEXT:    lui $1, %hi($CPI1_0)
 ; MIPS32-NEXT:    addiu $1, $1, %lo($CPI1_0)
-; MIPS32-NEXT:    ld.h $w0, 0($5)
 ; MIPS32-NEXT:    ld.h $w1, 0($1)
 ; MIPS32-NEXT:    vshf.h $w1, $w0, $w0
 ; MIPS32-NEXT:    jr $ra
@@ -72,13 +72,13 @@ define void @reverse_v8f16(ptr %dst, ptr %src) {
 ;
 ; MIPS64-LABEL: reverse_v8f16:
 ; MIPS64:       # %bb.0:
+; MIPS64-NEXT:    ld.h $w0, 0($5)
 ; MIPS64-NEXT:    lui $1, %highest(.LCPI1_0)
 ; MIPS64-NEXT:    daddiu $1, $1, %higher(.LCPI1_0)
 ; MIPS64-NEXT:    dsll $1, $1, 16
 ; MIPS64-NEXT:    daddiu $1, $1, %hi(.LCPI1_0)
 ; MIPS64-NEXT:    dsll $1, $1, 16
 ; MIPS64-NEXT:    daddiu $1, $1, %lo(.LCPI1_0)
-; MIPS64-NEXT:    ld.h $w0, 0($5)
 ; MIPS64-NEXT:    ld.h $w1, 0($1)
 ; MIPS64-NEXT:    vshf.h $w1, $w0, $w0
 ; MIPS64-NEXT:    jr $ra
@@ -105,10 +105,10 @@ define void @swap_v8f16(ptr %dst, ptr %src) {
 define void @shuffle_v8f16(ptr %dst, ptr %src1, ptr %src2) {
 ; MIPS32-LABEL: shuffle_v8f16:
 ; MIPS32:       # %bb.0:
-; MIPS32-NEXT:    lui $1, %hi($CPI3_0)
-; MIPS32-NEXT:    addiu $1, $1, %lo($CPI3_0)
 ; MIPS32-NEXT:    ld.h $w0, 0($5)
 ; MIPS32-NEXT:    ld.h $w1, 0($6)
+; MIPS32-NEXT:    lui $1, %hi($CPI3_0)
+; MIPS32-NEXT:    addiu $1, $1, %lo($CPI3_0)
 ; MIPS32-NEXT:    ld.h $w2, 0($1)
 ; MIPS32-NEXT:    vshf.h $w2, $w1, $w0
 ; MIPS32-NEXT:    jr $ra
@@ -116,14 +116,14 @@ define void @shuffle_v8f16(ptr %dst, ptr %src1, ptr %src2) {
 ;
 ; MIPS64-LABEL: shuffle_v8f16:
 ; MIPS64:       # %bb.0:
+; MIPS64-NEXT:    ld.h $w0, 0($5)
+; MIPS64-NEXT:    ld.h $w1, 0($6)
 ; MIPS64-NEXT:    lui $1, %highest(.LCPI3_0)
 ; MIPS64-NEXT:    daddiu $1, $1, %higher(.LCPI3_0)
 ; MIPS64-NEXT:    dsll $1, $1, 16
 ; MIPS64-NEXT:    daddiu $1, $1, %hi(.LCPI3_0)
 ; MIPS64-NEXT:    dsll $1, $1, 16
 ; MIPS64-NEXT:    daddiu $1, $1, %lo(.LCPI3_0)
-; MIPS64-NEXT:    ld.h $w0, 0($5)
-; MIPS64-NEXT:    ld.h $w1, 0($6)
 ; MIPS64-NEXT:    ld.h $w2, 0($1)
 ; MIPS64-NEXT:    vshf.h $w2, $w1, $w0
 ; MIPS64-NEXT:    jr $ra
@@ -152,9 +152,9 @@ define <4 x half> @splat_v4f16(<4 x half> %a) {
 ; MIPS32BE-NEXT:    ld.h $w0, 0($sp)
 ; MIPS32BE-NEXT:    splati.h $w0, $w0[0]
 ; MIPS32BE-NEXT:    shf.h $w0, $w0, 177
+; MIPS32BE-NEXT:    copy_s.w $1, $w0[1]
+; MIPS32BE-NEXT:    sw $1, 4($4)
 ; MIPS32BE-NEXT:    copy_s.w $1, $w0[0]
-; MIPS32BE-NEXT:    copy_s.w $2, $w0[1]
-; MIPS32BE-NEXT:    sw $2, 4($4)
 ; MIPS32BE-NEXT:    sw $1, 0($4)
 ; MIPS32BE-NEXT:    move $sp, $fp
 ; MIPS32BE-NEXT:    lw $fp, 24($sp) # 4-byte Folded Reload
@@ -177,9 +177,9 @@ define <4 x half> @splat_v4f16(<4 x half> %a) {
 ; MIPS32LE-NEXT:    sw $6, 0($sp)
 ; MIPS32LE-NEXT:    ld.h $w0, 0($sp)
 ; MIPS32LE-NEXT:    splati.h $w0, $w0[0]
+; MIPS32LE-NEXT:    copy_s.w $1, $w0[1]
+; MIPS32LE-NEXT:    sw $1, 4($4)
 ; MIPS32LE-NEXT:    copy_s.w $1, $w0[0]
-; MIPS32LE-NEXT:    copy_s.w $2, $w0[1]
-; MIPS32LE-NEXT:    sw $2, 4($4)
 ; MIPS32LE-NEXT:    sw $1, 0($4)
 ; MIPS32LE-NEXT:    move $sp, $fp
 ; MIPS32LE-NEXT:    lw $fp, 24($sp) # 4-byte Folded Reload
@@ -233,9 +233,9 @@ define void @reverse_v4f16(ptr %dst, ptr %src) {
 ; MIPS32BE-NEXT:    ld.h $w0, 0($sp)
 ; MIPS32BE-NEXT:    shf.h $w0, $w0, 27
 ; MIPS32BE-NEXT:    shf.h $w0, $w0, 177
+; MIPS32BE-NEXT:    copy_s.w $1, $w0[0]
+; MIPS32BE-NEXT:    sw $1, 0($4)
 ; MIPS32BE-NEXT:    copy_s.w $1, $w0[1]
-; MIPS32BE-NEXT:    copy_s.w $2, $w0[0]
-; MIPS32BE-NEXT:    sw $2, 0($4)
 ; MIPS32BE-NEXT:    sw $1, 4($4)
 ; MIPS32BE-NEXT:    move $sp, $fp
 ; MIPS32BE-NEXT:    lw $fp, 24($sp) # 4-byte Folded Reload
@@ -261,9 +261,9 @@ define void @reverse_v4f16(ptr %dst, ptr %src) {
 ; MIPS32LE-NEXT:    sw $1, 0($sp)
 ; MIPS32LE-NEXT:    ld.h $w0, 0($sp)
 ; MIPS32LE-NEXT:    shf.h $w0, $w0, 27
+; MIPS32LE-NEXT:    copy_s.w $1, $w0[0]
+; MIPS32LE-NEXT:    sw $1, 0($4)
 ; MIPS32LE-NEXT:    copy_s.w $1, $w0[1]
-; MIPS32LE-NEXT:    copy_s.w $2, $w0[0]
-; MIPS32LE-NEXT:    sw $2, 0($4)
 ; MIPS32LE-NEXT:    sw $1, 4($4)
 ; MIPS32LE-NEXT:    move $sp, $fp
 ; MIPS32LE-NEXT:    lw $fp, 24($sp) # 4-byte Folded Reload

@@ -414,9 +414,9 @@ define void @const_v4i32() nounwind {
 ; O32-BE-NEXT:    st.w $w0, 0($2)
 ; O32-BE-NEXT:    ldi.h $w0, 1
 ; O32-BE-NEXT:    st.w $w0, 0($2)
+; O32-BE-NEXT:    ori $3, $zero, 2
+; O32-BE-NEXT:    fill.w $w0, $3
 ; O32-BE-NEXT:    ori $3, $zero, 1
-; O32-BE-NEXT:    ori $4, $zero, 2
-; O32-BE-NEXT:    fill.w $w0, $4
 ; O32-BE-NEXT:    insert.w $w0[1], $3
 ; O32-BE-NEXT:    splati.d $w0, $w0[0]
 ; O32-BE-NEXT:    st.w $w0, 0($2)
@@ -444,9 +444,9 @@ define void @const_v4i32() nounwind {
 ; O32-LE-NEXT:    st.w $w0, 0($2)
 ; O32-LE-NEXT:    ldi.h $w0, 1
 ; O32-LE-NEXT:    st.w $w0, 0($2)
+; O32-LE-NEXT:    ori $3, $zero, 1
+; O32-LE-NEXT:    fill.w $w0, $3
 ; O32-LE-NEXT:    ori $3, $zero, 2
-; O32-LE-NEXT:    ori $4, $zero, 1
-; O32-LE-NEXT:    fill.w $w0, $4
 ; O32-LE-NEXT:    insert.w $w0[1], $3
 ; O32-LE-NEXT:    splati.d $w0, $w0[0]
 ; O32-LE-NEXT:    st.w $w0, 0($2)
@@ -683,10 +683,9 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; O32-NEXT:    insert.b $w0[4], $2
 ; O32-NEXT:    lw $2, 20($sp)
 ; O32-NEXT:    insert.b $w0[5], $2
+; O32-NEXT:    lw $2, 24($sp)
+; O32-NEXT:    insert.b $w0[6], $2
 ; O32-NEXT:    lw $2, 28($sp)
-; O32-NEXT:    lw $3, 24($sp)
-; O32-NEXT:    lw $1, %got(v16i8)($1)
-; O32-NEXT:    insert.b $w0[6], $3
 ; O32-NEXT:    insert.b $w0[7], $2
 ; O32-NEXT:    insert.b $w0[8], $2
 ; O32-NEXT:    insert.b $w0[9], $2
@@ -696,6 +695,7 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; O32-NEXT:    insert.b $w0[13], $2
 ; O32-NEXT:    insert.b $w0[14], $2
 ; O32-NEXT:    insert.b $w0[15], $2
+; O32-NEXT:    lw $1, %got(v16i8)($1)
 ; O32-NEXT:    jr $ra
 ; O32-NEXT:    st.b $w0, 0($1)
 ;
@@ -709,7 +709,6 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; N32-NEXT:    insert.b $w0[2], $6
 ; N32-NEXT:    insert.b $w0[3], $7
 ; N32-NEXT:    insert.b $w0[4], $8
-; N32-NEXT:    lw $1, %got_disp(v16i8)($1)
 ; N32-NEXT:    insert.b $w0[5], $9
 ; N32-NEXT:    insert.b $w0[6], $10
 ; N32-NEXT:    insert.b $w0[7], $11
@@ -721,6 +720,7 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; N32-NEXT:    insert.b $w0[13], $11
 ; N32-NEXT:    insert.b $w0[14], $11
 ; N32-NEXT:    insert.b $w0[15], $11
+; N32-NEXT:    lw $1, %got_disp(v16i8)($1)
 ; N32-NEXT:    jr $ra
 ; N32-NEXT:    st.b $w0, 0($1)
 ;
@@ -734,7 +734,6 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; N64-NEXT:    insert.b $w0[2], $6
 ; N64-NEXT:    insert.b $w0[3], $7
 ; N64-NEXT:    insert.b $w0[4], $8
-; N64-NEXT:    ld $1, %got_disp(v16i8)($1)
 ; N64-NEXT:    insert.b $w0[5], $9
 ; N64-NEXT:    insert.b $w0[6], $10
 ; N64-NEXT:    insert.b $w0[7], $11
@@ -746,6 +745,7 @@ define void @nonconst_v16i8(i8 signext %a, i8 signext %b, i8 signext %c, i8 sign
 ; N64-NEXT:    insert.b $w0[13], $11
 ; N64-NEXT:    insert.b $w0[14], $11
 ; N64-NEXT:    insert.b $w0[15], $11
+; N64-NEXT:    ld $1, %got_disp(v16i8)($1)
 ; N64-NEXT:    jr $ra
 ; N64-NEXT:    st.b $w0, 0($1)
   %1 = insertelement <16 x i8> undef, i8 %a, i32 0
@@ -782,11 +782,11 @@ define void @nonconst_v8i16(i16 signext %a, i16 signext %b, i16 signext %c, i16 
 ; O32-NEXT:    insert.h $w0[4], $2
 ; O32-NEXT:    lw $2, 20($sp)
 ; O32-NEXT:    insert.h $w0[5], $2
-; O32-NEXT:    lw $1, %got(v8i16)($1)
+; O32-NEXT:    lw $2, 24($sp)
+; O32-NEXT:    insert.h $w0[6], $2
 ; O32-NEXT:    lw $2, 28($sp)
-; O32-NEXT:    lw $3, 24($sp)
-; O32-NEXT:    insert.h $w0[6], $3
 ; O32-NEXT:    insert.h $w0[7], $2
+; O32-NEXT:    lw $1, %got(v8i16)($1)
 ; O32-NEXT:    jr $ra
 ; O32-NEXT:    st.h $w0, 0($1)
 ;
@@ -800,10 +800,10 @@ define void @nonconst_v8i16(i16 signext %a, i16 signext %b, i16 signext %c, i16 
 ; N32-NEXT:    insert.h $w0[2], $6
 ; N32-NEXT:    insert.h $w0[3], $7
 ; N32-NEXT:    insert.h $w0[4], $8
-; N32-NEXT:    lw $1, %got_disp(v8i16)($1)
 ; N32-NEXT:    insert.h $w0[5], $9
 ; N32-NEXT:    insert.h $w0[6], $10
 ; N32-NEXT:    insert.h $w0[7], $11
+; N32-NEXT:    lw $1, %got_disp(v8i16)($1)
 ; N32-NEXT:    jr $ra
 ; N32-NEXT:    st.h $w0, 0($1)
 ;
@@ -817,10 +817,10 @@ define void @nonconst_v8i16(i16 signext %a, i16 signext %b, i16 signext %c, i16 
 ; N64-NEXT:    insert.h $w0[2], $6
 ; N64-NEXT:    insert.h $w0[3], $7
 ; N64-NEXT:    insert.h $w0[4], $8
-; N64-NEXT:    ld $1, %got_disp(v8i16)($1)
 ; N64-NEXT:    insert.h $w0[5], $9
 ; N64-NEXT:    insert.h $w0[6], $10
 ; N64-NEXT:    insert.h $w0[7], $11
+; N64-NEXT:    ld $1, %got_disp(v8i16)($1)
 ; N64-NEXT:    jr $ra
 ; N64-NEXT:    st.h $w0, 0($1)
   %1 = insertelement <8 x i16> undef, i16 %a, i32 0
@@ -1440,37 +1440,37 @@ define i64 @extract_sext_v2i64_vidx() nounwind {
 ; O32-BE-NEXT:    lui $2, %hi(_gp_disp)
 ; O32-BE-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; O32-BE-NEXT:    addu $1, $2, $25
-; O32-BE-NEXT:    lw $2, %got(i32)($1)
-; O32-BE-NEXT:    lw $2, 0($2)
-; O32-BE-NEXT:    sll $2, $2, 1
-; O32-BE-NEXT:    ori $3, $2, 1
-; O32-BE-NEXT:    lw $1, %got(v2i64)($1)
-; O32-BE-NEXT:    ld.d $w0, 0($1)
+; O32-BE-NEXT:    lw $2, %got(v2i64)($1)
+; O32-BE-NEXT:    ld.d $w0, 0($2)
 ; O32-BE-NEXT:    addv.d $w0, $w0, $w0
 ; O32-BE-NEXT:    shf.w $w0, $w0, 177
-; O32-BE-NEXT:    splat.w $w1, $w0[$3]
-; O32-BE-NEXT:    mfc1 $3, $f1
-; O32-BE-NEXT:    splat.w $w0, $w0[$2]
-; O32-BE-NEXT:    jr $ra
+; O32-BE-NEXT:    lw $1, %got(i32)($1)
+; O32-BE-NEXT:    lw $1, 0($1)
+; O32-BE-NEXT:    sll $1, $1, 1
+; O32-BE-NEXT:    ori $2, $1, 1
+; O32-BE-NEXT:    splat.w $w1, $w0[$2]
+; O32-BE-NEXT:    splat.w $w0, $w0[$1]
 ; O32-BE-NEXT:    mfc1 $2, $f0
+; O32-BE-NEXT:    jr $ra
+; O32-BE-NEXT:    mfc1 $3, $f1
 ;
 ; O32-LE-LABEL: extract_sext_v2i64_vidx:
 ; O32-LE:       # %bb.0:
 ; O32-LE-NEXT:    lui $2, %hi(_gp_disp)
 ; O32-LE-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; O32-LE-NEXT:    addu $1, $2, $25
-; O32-LE-NEXT:    lw $2, %got(i32)($1)
-; O32-LE-NEXT:    lw $2, 0($2)
-; O32-LE-NEXT:    sll $2, $2, 1
-; O32-LE-NEXT:    ori $3, $2, 1
-; O32-LE-NEXT:    lw $1, %got(v2i64)($1)
-; O32-LE-NEXT:    ld.d $w0, 0($1)
+; O32-LE-NEXT:    lw $2, %got(v2i64)($1)
+; O32-LE-NEXT:    ld.d $w0, 0($2)
 ; O32-LE-NEXT:    addv.d $w0, $w0, $w0
-; O32-LE-NEXT:    splat.w $w1, $w0[$3]
-; O32-LE-NEXT:    mfc1 $3, $f1
-; O32-LE-NEXT:    splat.w $w0, $w0[$2]
-; O32-LE-NEXT:    jr $ra
+; O32-LE-NEXT:    lw $1, %got(i32)($1)
+; O32-LE-NEXT:    lw $1, 0($1)
+; O32-LE-NEXT:    sll $1, $1, 1
+; O32-LE-NEXT:    ori $2, $1, 1
+; O32-LE-NEXT:    splat.w $w1, $w0[$2]
+; O32-LE-NEXT:    splat.w $w0, $w0[$1]
 ; O32-LE-NEXT:    mfc1 $2, $f0
+; O32-LE-NEXT:    jr $ra
+; O32-LE-NEXT:    mfc1 $3, $f1
 ;
 ; N32-LABEL: extract_sext_v2i64_vidx:
 ; N32:       # %bb.0:
@@ -1667,37 +1667,37 @@ define i64 @extract_zext_v2i64_vidx() nounwind {
 ; O32-BE-NEXT:    lui $2, %hi(_gp_disp)
 ; O32-BE-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; O32-BE-NEXT:    addu $1, $2, $25
-; O32-BE-NEXT:    lw $2, %got(i32)($1)
-; O32-BE-NEXT:    lw $2, 0($2)
-; O32-BE-NEXT:    sll $2, $2, 1
-; O32-BE-NEXT:    ori $3, $2, 1
-; O32-BE-NEXT:    lw $1, %got(v2i64)($1)
-; O32-BE-NEXT:    ld.d $w0, 0($1)
+; O32-BE-NEXT:    lw $2, %got(v2i64)($1)
+; O32-BE-NEXT:    ld.d $w0, 0($2)
 ; O32-BE-NEXT:    addv.d $w0, $w0, $w0
 ; O32-BE-NEXT:    shf.w $w0, $w0, 177
-; O32-BE-NEXT:    splat.w $w1, $w0[$3]
-; O32-BE-NEXT:    mfc1 $3, $f1
-; O32-BE-NEXT:    splat.w $w0, $w0[$2]
-; O32-BE-NEXT:    jr $ra
+; O32-BE-NEXT:    lw $1, %got(i32)($1)
+; O32-BE-NEXT:    lw $1, 0($1)
+; O32-BE-NEXT:    sll $1, $1, 1
+; O32-BE-NEXT:    ori $2, $1, 1
+; O32-BE-NEXT:    splat.w $w1, $w0[$2]
+; O32-BE-NEXT:    splat.w $w0, $w0[$1]
 ; O32-BE-NEXT:    mfc1 $2, $f0
+; O32-BE-NEXT:    jr $ra
+; O32-BE-NEXT:    mfc1 $3, $f1
 ;
 ; O32-LE-LABEL: extract_zext_v2i64_vidx:
 ; O32-LE:       # %bb.0:
 ; O32-LE-NEXT:    lui $2, %hi(_gp_disp)
 ; O32-LE-NEXT:    addiu $2, $2, %lo(_gp_disp)
 ; O32-LE-NEXT:    addu $1, $2, $25
-; O32-LE-NEXT:    lw $2, %got(i32)($1)
-; O32-LE-NEXT:    lw $2, 0($2)
-; O32-LE-NEXT:    sll $2, $2, 1
-; O32-LE-NEXT:    ori $3, $2, 1
-; O32-LE-NEXT:    lw $1, %got(v2i64)($1)
-; O32-LE-NEXT:    ld.d $w0, 0($1)
+; O32-LE-NEXT:    lw $2, %got(v2i64)($1)
+; O32-LE-NEXT:    ld.d $w0, 0($2)
 ; O32-LE-NEXT:    addv.d $w0, $w0, $w0
-; O32-LE-NEXT:    splat.w $w1, $w0[$3]
-; O32-LE-NEXT:    mfc1 $3, $f1
-; O32-LE-NEXT:    splat.w $w0, $w0[$2]
-; O32-LE-NEXT:    jr $ra
+; O32-LE-NEXT:    lw $1, %got(i32)($1)
+; O32-LE-NEXT:    lw $1, 0($1)
+; O32-LE-NEXT:    sll $1, $1, 1
+; O32-LE-NEXT:    ori $2, $1, 1
+; O32-LE-NEXT:    splat.w $w1, $w0[$2]
+; O32-LE-NEXT:    splat.w $w0, $w0[$1]
 ; O32-LE-NEXT:    mfc1 $2, $f0
+; O32-LE-NEXT:    jr $ra
+; O32-LE-NEXT:    mfc1 $3, $f1
 ;
 ; N32-LABEL: extract_zext_v2i64_vidx:
 ; N32:       # %bb.0:

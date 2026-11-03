@@ -106,18 +106,18 @@ define void @and_v4i32_i(ptr %c, ptr %a) nounwind {
 define void @and_v2i64_i(ptr %c, ptr %a) nounwind {
 ; MIPS-LABEL: and_v2i64_i:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.d $w0, 1
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    and.v $w0, $w1, $w0
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ldi.d $w1, 1
+; MIPS-NEXT:    shf.w $w1, $w1, 177
+; MIPS-NEXT:    and.v $w0, $w0, $w1
 ; MIPS-NEXT:    jr $ra
 ; MIPS-NEXT:    st.d $w0, 0($4)
 ;
 ; MIPSEL-LABEL: and_v2i64_i:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.d $w0, 1
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    and.v $w0, $w1, $w0
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ldi.d $w1, 1
+; MIPSEL-NEXT:    and.v $w0, $w0, $w1
 ; MIPSEL-NEXT:    jr $ra
 ; MIPSEL-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x i64>, ptr %a
@@ -230,18 +230,18 @@ define void @or_v4i32_i(ptr %c, ptr %a) nounwind {
 define void @or_v2i64_i(ptr %c, ptr %a) nounwind {
 ; MIPS-LABEL: or_v2i64_i:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.d $w0, 3
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    or.v $w0, $w1, $w0
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ldi.d $w1, 3
+; MIPS-NEXT:    shf.w $w1, $w1, 177
+; MIPS-NEXT:    or.v $w0, $w0, $w1
 ; MIPS-NEXT:    jr $ra
 ; MIPS-NEXT:    st.d $w0, 0($4)
 ;
 ; MIPSEL-LABEL: or_v2i64_i:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.d $w0, 3
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    or.v $w0, $w1, $w0
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ldi.d $w1, 3
+; MIPSEL-NEXT:    or.v $w0, $w0, $w1
 ; MIPSEL-NEXT:    jr $ra
 ; MIPSEL-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x i64>, ptr %a
@@ -361,18 +361,18 @@ define void @nor_v4i32_i(ptr %c, ptr %a) nounwind {
 define void @nor_v2i64_i(ptr %c, ptr %a) nounwind {
 ; MIPS-LABEL: nor_v2i64_i:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.d $w0, 1
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    nor.v $w0, $w1, $w0
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ldi.d $w1, 1
+; MIPS-NEXT:    shf.w $w1, $w1, 177
+; MIPS-NEXT:    nor.v $w0, $w0, $w1
 ; MIPS-NEXT:    jr $ra
 ; MIPS-NEXT:    st.d $w0, 0($4)
 ;
 ; MIPSEL-LABEL: nor_v2i64_i:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.d $w0, 1
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    nor.v $w0, $w1, $w0
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ldi.d $w1, 1
+; MIPSEL-NEXT:    nor.v $w0, $w0, $w1
 ; MIPSEL-NEXT:    jr $ra
 ; MIPSEL-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x i64>, ptr %a
@@ -486,18 +486,18 @@ define void @xor_v4i32_i(ptr %c, ptr %a) nounwind {
 define void @xor_v2i64_i(ptr %c, ptr %a) nounwind {
 ; MIPS-LABEL: xor_v2i64_i:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.d $w0, 3
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    xor.v $w0, $w1, $w0
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ldi.d $w1, 3
+; MIPS-NEXT:    shf.w $w1, $w1, 177
+; MIPS-NEXT:    xor.v $w0, $w0, $w1
 ; MIPS-NEXT:    jr $ra
 ; MIPS-NEXT:    st.d $w0, 0($4)
 ;
 ; MIPSEL-LABEL: xor_v2i64_i:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.d $w0, 3
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    xor.v $w0, $w1, $w0
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ldi.d $w1, 3
+; MIPSEL-NEXT:    xor.v $w0, $w0, $w1
 ; MIPSEL-NEXT:    jr $ra
 ; MIPSEL-NEXT:    st.d $w0, 0($4)
   %1 = load <2 x i64>, ptr %a
@@ -1036,22 +1036,22 @@ define void @bsel_v4i32(ptr %c, ptr %a, ptr %b) nounwind {
 define void @bsel_v2i64(ptr %c, ptr %a, ptr %b) nounwind {
 ; MIPS-LABEL: bsel_v2i64:
 ; MIPS:       # %bb.0:
-; MIPS-NEXT:    ldi.d $w0, 6
-; MIPS-NEXT:    shf.w $w0, $w0, 177
-; MIPS-NEXT:    ld.d $w1, 0($5)
-; MIPS-NEXT:    ld.d $w2, 0($6)
-; MIPS-NEXT:    bsel.v $w0, $w2, $w1
+; MIPS-NEXT:    ld.d $w0, 0($5)
+; MIPS-NEXT:    ld.d $w1, 0($6)
+; MIPS-NEXT:    ldi.d $w2, 6
+; MIPS-NEXT:    shf.w $w2, $w2, 177
+; MIPS-NEXT:    bsel.v $w2, $w1, $w0
 ; MIPS-NEXT:    jr $ra
-; MIPS-NEXT:    st.d $w0, 0($4)
+; MIPS-NEXT:    st.d $w2, 0($4)
 ;
 ; MIPSEL-LABEL: bsel_v2i64:
 ; MIPSEL:       # %bb.0:
-; MIPSEL-NEXT:    ldi.d $w0, 6
-; MIPSEL-NEXT:    ld.d $w1, 0($5)
-; MIPSEL-NEXT:    ld.d $w2, 0($6)
-; MIPSEL-NEXT:    bsel.v $w0, $w2, $w1
+; MIPSEL-NEXT:    ld.d $w0, 0($5)
+; MIPSEL-NEXT:    ld.d $w1, 0($6)
+; MIPSEL-NEXT:    ldi.d $w2, 6
+; MIPSEL-NEXT:    bsel.v $w2, $w1, $w0
 ; MIPSEL-NEXT:    jr $ra
-; MIPSEL-NEXT:    st.d $w0, 0($4)
+; MIPSEL-NEXT:    st.d $w2, 0($4)
   %1 = load <2 x i64>, ptr %a
   %2 = load <2 x i64>, ptr %b
   %3 = and <2 x i64> %1, <i64 6, i64 6>
