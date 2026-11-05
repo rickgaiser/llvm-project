@@ -746,33 +746,36 @@ bool MipsBranchExpansion::handleMFLOSlot(Pred Predicate, Safe SafeInSlot) {
       Iter IInSlot;
       bool LastInstInFunction =
           std::next(I) == FI->end() && std::next(FI) == MFp->end();
-      // We need process several situations:
-      // mflo is last instruction, do not process;
-      // mflo + div, add two nop between them;
+      // How many more instructions have to follow before a div or mult:
+      // mflo + div, add two nops between them;
       // mflo + none-div + none-div, do not process;
-      // mflo + none-div + div, add nop between none-div and div.
-      if (!LastInstInFunction) {
-        std::pair<Iter, bool> Res = getNextMachineInstr(std::next(I), &*FI);
-        LastInstInFunction |= Res.second;
-        IInSlot = Res.first;
-        if (LastInstInFunction)
-          continue;
-        if (!SafeInSlot(*IInSlot, *I)) {
-          Changed = true;
-          TII->insertNop(*(I->getParent()), std::next(I), I->getDebugLoc())
-              ->bundleWithPred();
-          NumInsertedNops++;
-          if (IsMFLOMFHI(I->getOpcode())) {
-            TII->insertNop(*(I->getParent()), std::next(I), I->getDebugLoc())
-                ->bundleWithPred();
-            NumInsertedNops++;
-          }
-          if (hasPendingMFLO)
-            hasPendingMFLO = false;
-        } else if (hasPendingMFLO)
-          hasPendingMFLO = false;
-        else if (IsMFLOMFHI(I->getOpcode()))
-          hasPendingMFLO = true;
+      // mflo + none-div + div, add a nop between none-div and div;
+      // mflo + branch with a div in its delay slot, add a nop before the
+      // branch. A branch and its delay slot are enough for what follows them.
+      unsigned Needed = Predicate(*I) ? 2 : 1;
+      hasPendingMFLO = false;
+      if (LastInstInFunction)
+        continue;
+      std::pair<Iter, bool> Res = getNextMachineInstr(std::next(I), &*FI);
+      if (Res.second)
+        continue;
+      IInSlot = Res.first;
+
+      unsigned Nops = 0;
+      bool IsPair = IInSlot->isBundledWithSucc();
+      if (!SafeInSlot(*IInSlot, *I))
+        Nops = Needed;
+      else if (IsPair && Needed == 2 &&
+               !SafeInSlot(*std::next(IInSlot.getInstrIterator()), *I))
+        Nops = 1;
+      else if (Needed == 2 && !IsPair)
+        hasPendingMFLO = true;
+
+      for (unsigned N = 0; N != Nops; ++N) {
+        TII->insertNop(*(I->getParent()), std::next(I), I->getDebugLoc())
+            ->bundleWithPred();
+        NumInsertedNops++;
+        Changed = true;
       }
     }
   }

@@ -25,8 +25,11 @@
    instr == Mips::PseudoDSDIV || instr == Mips::UDIV ||                        \
    instr == Mips::PseudoUDIV || instr == Mips::DUDIV ||                        \
    instr == Mips::PseudoDUDIV || instr == Mips::MULT ||                        \
-   instr == Mips::PseudoMULT || instr == Mips::DMULT ||                        \
-   instr == Mips::PseudoDMULT)
+   instr == Mips::PseudoMULT || instr == Mips::MULTu ||                        \
+   instr == Mips::PseudoMULTu || instr == Mips::DMULT ||                       \
+   instr == Mips::PseudoDMULT || instr == Mips::DMULTu ||                      \
+   instr == Mips::PseudoDMULTu || instr == Mips::MTHI ||                       \
+   instr == Mips::MTLO)
 
 namespace llvm {
 class FunctionPass;
