@@ -44,7 +44,8 @@ struct MipsRelocationEntry {
 
 class MipsELFObjectWriter : public MCELFObjectTargetWriter {
 public:
-  MipsELFObjectWriter(uint8_t OSABI, bool HasRelocationAddend, bool Is64);
+  MipsELFObjectWriter(uint8_t OSABI, bool HasRelocationAddend, bool Is64,
+                      bool SplitHi16);
 
   ~MipsELFObjectWriter() override = default;
 
@@ -52,6 +53,9 @@ public:
                         bool IsPCRel) const override;
   bool needsRelocateWithSymbol(const MCValue &, unsigned Type) const override;
   void sortRelocs(std::vector<ELFRelocationEntry> &Relocs) override;
+
+private:
+  bool SplitHi16;
 };
 
 } // end anonymous namespace
@@ -88,11 +92,15 @@ static unsigned getMatchingLoType(const ELFRelocationEntry &Reloc) {
 // Determine whether a relocation X is a low-part and matches the high-part R
 // perfectly by symbol and addend.
 namespace llvm {
-cl::opt<bool> MipsSplitHi16Opt(
+static cl::opt<bool> MipsSplitHi16Opt(
     "mips-split-hi16",
     cl::desc("MIPS: emit one lui %hi per use and keep each HI16 right before "
-             "its LO16 (PS2 IOP modules)"),
+             "its LO16 (default: only for the R3000A, for PS2 IOP modules)"),
     cl::init(false), cl::Hidden);
+
+bool mipsSplitHi16(bool IsR3000A) {
+  return MipsSplitHi16Opt.getNumOccurrences() ? MipsSplitHi16Opt : IsR3000A;
+}
 } // namespace llvm
 
 static bool isMatchingReloc(unsigned MatchingType, const ELFRelocationEntry &R,
@@ -101,8 +109,10 @@ static bool isMatchingReloc(unsigned MatchingType, const ELFRelocationEntry &R,
 }
 
 MipsELFObjectWriter::MipsELFObjectWriter(uint8_t OSABI,
-                                         bool HasRelocationAddend, bool Is64)
-    : MCELFObjectTargetWriter(Is64, OSABI, ELF::EM_MIPS, HasRelocationAddend) {}
+                                         bool HasRelocationAddend, bool Is64,
+                                         bool SplitHi16)
+    : MCELFObjectTargetWriter(Is64, OSABI, ELF::EM_MIPS, HasRelocationAddend),
+      SplitHi16(SplitHi16) {}
 
 unsigned MipsELFObjectWriter::getRelocType(const MCFixup &Fixup,
                                            const MCValue &Target,
@@ -360,7 +370,7 @@ void MipsELFObjectWriter::sortRelocs(std::vector<ELFRelocationEntry> &Relocs) {
     // With one lui per use, a HI16 pairs with the first unclaimed LO16 for the
     // same symbol after it, whatever the addends are. Put it right before
     // that LO16, as IRX1 needs.
-    if (MipsSplitHi16Opt) {
+    if (SplitHi16) {
       auto Pair = Sorted.end();
       for (auto J = std::next(I); J != Sorted.end(); ++J)
         if (J->R.Type == MatchingType && J->R.Symbol == R.Symbol &&
@@ -569,10 +579,10 @@ bool MipsELFObjectWriter::needsRelocateWithSymbol(const MCValue &V,
 }
 
 std::unique_ptr<MCObjectTargetWriter>
-llvm::createMipsELFObjectWriter(const Triple &TT, bool IsN32) {
+llvm::createMipsELFObjectWriter(const Triple &TT, bool IsN32, bool SplitHi16) {
   uint8_t OSABI = MCELFObjectTargetWriter::getOSABI(TT.getOS());
   bool IsN64 = TT.isArch64Bit() && !IsN32;
   bool HasRelocationAddend = TT.isArch64Bit();
   return std::make_unique<MipsELFObjectWriter>(OSABI, HasRelocationAddend,
-                                                IsN64);
+                                                IsN64, SplitHi16);
 }

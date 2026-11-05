@@ -54,7 +54,12 @@ MCStreamer *createMipsWinCOFFStreamer(MCContext &C,
 
 /// Construct a Mips ELF object writer.
 std::unique_ptr<MCObjectTargetWriter>
-createMipsELFObjectWriter(const Triple &TT, bool IsN32);
+createMipsELFObjectWriter(const Triple &TT, bool IsN32, bool SplitHi16);
+
+/// Whether each %hi use gets its own lui, with its HI16 relocation right before
+/// the LO16: -mips-split-hi16, by default for the R3000A.
+bool mipsSplitHi16(bool IsR3000A);
+
 /// Construct a Mips Win COFF object writer.
 std::unique_ptr<MCObjectTargetWriter> createMipsWinCOFFObjectWriter();
 

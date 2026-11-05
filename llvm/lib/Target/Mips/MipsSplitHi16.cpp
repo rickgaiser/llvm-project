@@ -10,13 +10,13 @@
 // store of the same symbol, which leaves more R_MIPS_LO16 than R_MIPS_HI16
 // relocations in the object. The PS2 IOP module format (IRX1) pairs each HI16
 // with the single LO16 that follows it, so a shared lui cannot be relocated
-// correctly. With -mips-split-hi16 this pass clones the lui in front of each
-// of its users, so every HI16 has exactly one LO16. Each lui also gets an
-// implicit use of $zero so that MachineLateInstrsCleanup does not delete a
-// lui as a duplicate once register allocation gives two of them the same
-// register. A second pass after register allocation moves each lui down to
-// the instruction that reads it, so the HI16 and LO16 relocations end up next
-// to each other.
+// correctly. On the R3000A, or with -mips-split-hi16, this pass clones the lui
+// in front of each of its users, so every HI16 has exactly one LO16. Each lui
+// also gets an implicit use of $zero so that MachineLateInstrsCleanup does not
+// delete a lui as a duplicate once register allocation gives two of them the
+// same register. A second pass after register allocation moves each lui down
+// to the instruction that reads it, so the HI16 and LO16 relocations end up
+// next to each other.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,15 +29,10 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetRegisterInfo.h"
-#include "llvm/Support/CommandLine.h"
 
 #define DEBUG_TYPE "mips-split-hi16"
 
 using namespace llvm;
-
-namespace llvm {
-extern cl::opt<bool> MipsSplitHi16Opt;
-} // namespace llvm
 
 namespace {
 
@@ -104,7 +99,7 @@ static bool shareGlobalBase(MachineInstr &Lui, MachineRegisterInfo &MRI,
 }
 
 bool MipsSplitHi16::runOnMachineFunction(MachineFunction &MF) {
-  if (!MipsSplitHi16Opt)
+  if (!mipsSplitHi16(MF.getSubtarget<MipsSubtarget>().isR3000A()))
     return false;
 
   const MipsSubtarget &STI = MF.getSubtarget<MipsSubtarget>();
@@ -176,7 +171,7 @@ INITIALIZE_PASS(MipsSinkHi16, "mips-sink-hi16", "Mips sink HI16", false, false)
 char MipsSinkHi16::ID = 0;
 
 bool MipsSinkHi16::runOnMachineFunction(MachineFunction &MF) {
-  if (!MipsSplitHi16Opt)
+  if (!mipsSplitHi16(MF.getSubtarget<MipsSubtarget>().isR3000A()))
     return false;
 
   const TargetRegisterInfo *TRI = MF.getSubtarget().getRegisterInfo();

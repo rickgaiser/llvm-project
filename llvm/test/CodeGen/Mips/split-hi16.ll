@@ -2,6 +2,8 @@
 ; RUN:     -mattr=+soft-float < %s | FileCheck %s --check-prefix=SHARED
 ; RUN: llc -mtriple=mipsel-unknown-elf -mcpu=mips1 -relocation-model=static \
 ; RUN:     -mattr=+soft-float -mips-split-hi16 < %s | FileCheck %s --check-prefix=SPLIT
+; RUN: llc -mtriple=mipsel-unknown-elf -mcpu=r3000a -relocation-model=static \
+; RUN:     -mattr=+soft-float -mips-split-hi16=false < %s | FileCheck %s --check-prefix=SHARED
 
 ; Without the option one lui feeds every access to @g. With it, each access
 ; has its own lui straight in front of it, so every R_MIPS_HI16 has exactly
