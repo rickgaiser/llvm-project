@@ -125,7 +125,7 @@ class EntryLowering {
   void dropIgnoredFields(const Slot &S);
   void hoistToEntry(BasicBlock *Entry);
   void addAliasScopes(ArrayRef<Value *> In, ArrayRef<Value *> Out);
-  void buildGather(IRBuilder<> &B, Value *Top, Value *Out, Value *NQ,
+  void buildGather(IRBuilder<> &B, Value *Top, Value *Out, Value *NQ, int Adc,
                    uint64_t TabAt, uint64_t IdxAt, unsigned NOut);
 
 public:
@@ -456,11 +456,16 @@ void EntryLowering::addAliasScopes(ArrayRef<Value *> In,
 /// its place in the table), the vertex's outputs are copied into the GIF
 /// packet after the tag at \p Out. \p NQ is the number of index quadwords;
 /// indices after the last one of the packet copy into the room behind it.
-/// \p B is at the end of the vertex loop and is left at the end of the
-/// gather.
+/// \p Adc >= 0 ("vu-gather-adc": vu::clipped_triangle): output \p Adc is
+/// XYZ2 (or XYZF2, XYZ3, XYZF3) with its own vertex's ADC (bit 15 of w); an
+/// index gets ADC when it or one of the two before has it, so that the
+/// triangle of the strip that ends at it is not drawn (the strips restart
+/// by repeated vertices, so the ADC of a vertex before a restart only falls
+/// on degenerate triangles). \p B is at the end of the vertex loop and is
+/// left at the end of the gather.
 void EntryLowering::buildGather(IRBuilder<> &B, Value *Top, Value *Out,
-                                Value *NQ, uint64_t TabAt, uint64_t IdxAt,
-                                unsigned NOut) {
+                                Value *NQ, int Adc, uint64_t TabAt,
+                                uint64_t IdxAt, unsigned NOut) {
   BasicBlock *Start = B.GetInsertBlock();
   BasicBlock *Loop = BasicBlock::Create(Ctx, "vu.gather", &F);
   BasicBlock *Kick = BasicBlock::Create(Ctx, "vu.kick", &F);
@@ -502,6 +507,16 @@ void EntryLowering::buildGather(IRBuilder<> &B, Value *Top, Value *Out,
   K->addIncoming(B.getInt16(0), Start);
   PIdx->addIncoming(Idx, Start);
   PPkt->addIncoming(Pkt, Start);
+  // the ADC bits of the two indices before (vu-gather-adc)
+  PHINode *A1 = nullptr, *A2 = nullptr;
+  Value *Prev1 = nullptr, *Prev2 = nullptr;
+  if (Adc >= 0) {
+    A1 = B.CreatePHI(I16, 2, "adc1");
+    A2 = B.CreatePHI(I16, 2, "adc2");
+    A1->addIncoming(B.getInt16(0), Start);
+    A2->addIncoming(B.getInt16(0), Start);
+    Prev1 = A1, Prev2 = A2;
+  }
   for (unsigned Field = 0; Field != 4; ++Field) {
     LoadInst *V = B.CreateLoad(I16, Ptr(PIdx, 4 * Field, InTy), "v");
     Scope(V, Read, Write);
@@ -514,6 +529,23 @@ void EntryLowering::buildGather(IRBuilder<> &B, Value *Top, Value *Out,
           Q, Ptr(B.CreateAdd(PPkt, B.getInt16(Field * NOut + R)), 0, OutTy));
       Scope(S, Write, Read);
     }
+    if (Adc >= 0) {
+      // w's low 16 bits (ILW, ISW): only its bit 15 is read by the GIF
+      Value *R = B.getInt16(Adc);
+      LoadInst *W = B.CreateLoad(I16, Ptr(B.CreateAdd(At, R), 12, InTy), "w");
+      Scope(W, Read, Write);
+      Value *Flag = B.CreateAnd(W, B.getInt16(0x8000), "adc");
+      Value *Any = B.CreateOr(Flag, B.CreateOr(Prev1, Prev2));
+      StoreInst *S = B.CreateStore(
+          Any,
+          Ptr(B.CreateAdd(PPkt, B.getInt16(Field * NOut + Adc)), 12, OutTy));
+      Scope(S, Write, Read);
+      Prev2 = Prev1, Prev1 = Flag;
+    }
+  }
+  if (Adc >= 0) {
+    A1->addIncoming(Prev1, Loop);
+    A2->addIncoming(Prev2, Loop);
   }
   Value *KNext = B.CreateAdd(K, B.getInt16(1), "k.next");
   K->addIncoming(KNext, Loop);
@@ -869,7 +901,14 @@ bool EntryLowering::run(std::string &Header) {
       B.CreateIntrinsic(Intrinsic::vu_xgkick, {}, {Empty});
       B.CreateIntrinsic(Intrinsic::vu_sq, {}, {Tag, Out});
       B.CreateIntrinsic(Intrinsic::vu_isw, {}, {TagX, Out, B.getInt32(0)});
-      buildGather(B, Top, Out, NQ, TabAt, IdxAt, Outputs.size());
+      int Adc = -1;
+      if (F.hasFnAttribute("vu-gather-adc"))
+        for (auto [K, S] : enumerate(Outputs))
+          if (S.Code == 0x4 || S.Code == 0x5 || S.Code == 0xC || S.Code == 0xD)
+            Adc = int(K);
+      if (F.hasFnAttribute("vu-gather-adc") && Adc < 0)
+        error("vu::clipped_triangle: the program has no XYZ output");
+      buildGather(B, Top, Out, NQ, Adc, TabAt, IdxAt, Outputs.size());
     }
     if (Vertex) {
       // The batch ends; MSCNT starts the next one.

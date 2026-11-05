@@ -774,6 +774,18 @@ void Adapter::lowerVUFunctions() {
             {Vec4(CI->getArgOperand(0)),
              B.CreateInsertElement(PoisonValue::get(F4), CI->getArgOperand(1),
                                    uint64_t(3))});
+      } else if (Name == "fcand_tri" && CI->arg_size() == 0) {
+        // vu::clipped_triangle(): the triangle of a strip that ends at this
+        // vertex. Strips: the last three judgements. Indexed, the vertices
+        // are judged in the order of the inputs: this one's, and the gather
+        // ORs the ADC of XYZ2 over the index and the two before
+        // (vu-gather-adc, VUEntryLowering).
+        bool Ix = Indexed && Vertex;
+        if (Ix)
+          Entry->addFnAttr("vu-gather-adc");
+        R = B.CreateZExt(B.CreateIntrinsic(B.getInt16Ty(), Intrinsic::vu_fcand,
+                                           {B.getInt32(Ix ? 0x3F : 0x3FFFF)}),
+                         CI->getType());
       } else if (Name == "fcand" && CI->arg_size() == 1) {
         auto *Mask = dyn_cast<ConstantInt>(CI->getArgOperand(0));
         if (!Mask || !isUInt<24>(Mask->getZExtValue())) {
