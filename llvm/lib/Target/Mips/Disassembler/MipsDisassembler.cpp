@@ -2128,6 +2128,15 @@ DecodeStatus MipsDisassembler::getInstruction(MCInst &Instr, uint64_t &Size,
       return Result;
   }
 
+  // Before COP3: pref takes the opcode of lwc3.
+  if (STI.hasFeature(Mips::FeatureR3000A)) {
+    LLVM_DEBUG(dbgs() << "Trying R3000A table (32-bit opcodes):\n");
+    Result = decodeInstruction(DecoderTableR3000A32, Instr, Insn, Address, this,
+                               STI);
+    if (Result != MCDisassembler::Fail)
+      return Result;
+  }
+
   if (hasCOP3()) {
     LLVM_DEBUG(dbgs() << "Trying COP3_ table (32-bit opcodes):\n");
     Result =
