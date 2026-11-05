@@ -73,6 +73,9 @@ public:
   uint64_t getPrefetchMinFootprint(const Loop *L, ScalarEvolution &SE,
                                    unsigned NumPrefetches) const override;
 
+  TTI::AddressingModeKind
+  getPreferredAddressingMode(const Loop *L, ScalarEvolution *SE) const override;
+
   void getUnrollingPreferences(Loop *L, ScalarEvolution &SE,
                                TTI::UnrollingPreferences &UP,
                                OptimizationRemarkEmitter *ORE) const override;

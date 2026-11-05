@@ -49,6 +49,16 @@ bool MipsTTIImpl::isLSRCostLess(const TargetTransformInfo::LSRCost &C1,
                   C2.NumBaseAdds, C2.ScaleCost, C2.ImmCost, C2.SetupCost);
 }
 
+// A pointer incremented before its last use in the loop needs a second register
+// and a move back on every iteration: on the single-issue R3000A a cycle.
+TTI::AddressingModeKind
+MipsTTIImpl::getPreferredAddressingMode(const Loop *L,
+                                        ScalarEvolution *SE) const {
+  if (ST->isR3000A())
+    return TTI::AMK_PostIndexed;
+  return BaseT::getPreferredAddressingMode(L, SE);
+}
+
 // The R5900 data cache has 64-byte lines. A miss costs about 60 cycles
 // (measured), which a prefetch hides if it is issued that long before the
 // first access to the line. A stream that advances less than a line per

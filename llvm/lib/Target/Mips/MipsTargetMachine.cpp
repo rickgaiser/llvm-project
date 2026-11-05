@@ -77,6 +77,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMipsTarget() {
   initializeMicroMipsSizeReducePass(*PR);
   initializeMipsPreLegalizerCombinerPass(*PR);
   initializeMipsPostLegalizerCombinerPass(*PR);
+  initializeMipsSinkLoopIncPass(*PR);
   initializeMipsSplitHi16Pass(*PR);
   initializeMipsSinkHi16Pass(*PR);
   initializeMipsMulMulBugFixPass(*PR);
@@ -333,8 +334,10 @@ void MipsPassConfig::addMachineLateOptimization() {
 void MipsPassConfig::addPreRegAlloc() {
   addPass(createMipsOptimizePICCallPass());
   addPass(createMipsSplitHi16Pass());
-  if (getOptLevel() != CodeGenOptLevel::None)
+  if (getOptLevel() != CodeGenOptLevel::None) {
     addPass(createMipsOptimizeZeroExtPass());
+    addPass(createMipsSinkLoopIncPass());
+  }
   // R5900: drop the MTSABs that repeat the shift amount of the one before.
   if (getOptLevel() != CodeGenOptLevel::None)
     addPass(createMipsR5900SARedundantPass());
