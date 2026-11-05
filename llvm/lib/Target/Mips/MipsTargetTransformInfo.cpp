@@ -262,6 +262,26 @@ void MipsTTIImpl::getUnrollingPreferences(
     Loop *L, ScalarEvolution &SE, TTI::UnrollingPreferences &UP,
     OptimizationRemarkEmitter *ORE) const {
   BaseT::getUnrollingPreferences(L, SE, UP, ORE);
+
+  // The R3000A issues one instruction per cycle, so the increments and the
+  // branch of a short loop are a large part of it. Never at -Os: the IOP has
+  // little memory.
+  if (ST->isR3000A() && !UP.Partial) {
+    if (L->getNumBlocks() != 1)
+      return;
+    for (Instruction &I : *L->getHeader())
+      if (const auto *CB = dyn_cast<CallBase>(&I))
+        if (!CB->getCalledFunction() ||
+            isLoweredToCall(CB->getCalledFunction()))
+          return;
+    UP.Partial = UP.Runtime = UP.UpperBound = true;
+    UP.PartialThreshold = 60;
+    UP.MaxCount = 4;
+    UP.OptSizeThreshold = 0;
+    UP.PartialOptSizeThreshold = 0;
+    UP.BEInsns = 2;
+    return;
+  }
   if (!ST->isR5900() || UP.Partial)
     return;
 
