@@ -5346,6 +5346,104 @@ void MipsTargetLowering::HandleByVal(CCState *State, unsigned &Size,
   State->addInRegsParamInfo(FirstReg, FirstReg + NumRegs);
 }
 
+/// Whether \p Reg is a constant, set with one instruction.
+static bool isConstantReg(const MachineRegisterInfo &MRI, Register Reg) {
+  if (Reg == Mips::R0)
+    return true;
+  const MachineInstr *Def = Reg.isVirtual() ? MRI.getVRegDef(Reg) : nullptr;
+  if (!Def)
+    return false;
+  switch (Def->getOpcode()) {
+  case Mips::LUi:
+    return Def->getOperand(1).isImm();
+  case Mips::ADDiu:
+  case Mips::ORi:
+    return Def->getOperand(1).getReg() == Mips::R0 &&
+           Def->getOperand(2).isImm();
+  case TargetOpcode::COPY:
+    return Def->getOperand(1).getReg() == Mips::R0;
+  }
+  return false;
+}
+
+/// A select on a comparison of a and b, or on the sign of a, needs no value of
+/// that comparison, the branch can do it: without conditional moves this saves
+/// instructions. SLTiu x, 1 is x == 0 and SLTu $0, x is x != 0, with x the XOR
+/// of a and b, or a alone. RHS is left empty for the branches with one operand.
+static void foldSelectCompare(MachineRegisterInfo &MRI,
+                              const TargetInstrInfo &TII, MachineBasicBlock &BB,
+                              const DebugLoc &DL, Register &LHS, Register &RHS,
+                              unsigned &Opc) {
+  if (!LHS.isVirtual())
+    return;
+  const MachineInstr *Set = MRI.getVRegDef(LHS);
+  if (!Set)
+    return;
+  if (Set->getOpcode() == Mips::SLTi && Set->getOperand(2).isImm() &&
+      Set->getOperand(2).getImm() == 0) {
+    LHS = Set->getOperand(1).getReg();
+    RHS = Register();
+    Opc = Mips::BLTZ;
+    return;
+  }
+  if (Set->getOpcode() == Mips::SLT &&
+      Set->getOperand(1).getReg().isVirtual()) {
+    const MachineInstr *Def = MRI.getVRegDef(Set->getOperand(1).getReg());
+    if (Def && Def->getOpcode() == Mips::ADDiu &&
+        Def->getOperand(1).getReg() == Mips::R0 && Def->getOperand(2).isImm() &&
+        Def->getOperand(2).getImm() == -1) {
+      LHS = Set->getOperand(2).getReg();
+      RHS = Register();
+      Opc = Mips::BGEZ;
+    }
+    return;
+  }
+  Register X;
+  bool IsEq;
+  if (Set->getOpcode() == Mips::SLTiu && Set->getOperand(2).isImm() &&
+      Set->getOperand(2).getImm() == 1) {
+    X = Set->getOperand(1).getReg();
+    IsEq = true;
+  } else if (Set->getOpcode() == Mips::SLTu &&
+             Set->getOperand(1).getReg() == Mips::R0) {
+    X = Set->getOperand(2).getReg();
+    IsEq = false;
+  } else {
+    return;
+  }
+  LHS = X;
+  RHS = Mips::R0;
+  Opc = IsEq ? Mips::BEQ : Mips::BNE;
+  const MachineInstr *Xor = X.isVirtual() ? MRI.getVRegDef(X) : nullptr;
+  if (!Xor)
+    return;
+  if (Xor->getOpcode() == Mips::XOR) {
+    LHS = Xor->getOperand(1).getReg();
+    RHS = Xor->getOperand(2).getReg();
+  } else if (Xor->getOpcode() == Mips::XORi && Xor->getOperand(2).isImm()) {
+    // The constant moves out of a loop, the XORi could not.
+    LHS = Xor->getOperand(1).getReg();
+    RHS = MRI.createVirtualRegister(&Mips::GPR32RegClass);
+    BuildMI(&BB, DL, TII.get(Mips::ORi), RHS)
+        .addReg(Mips::R0)
+        .addImm(Xor->getOperand(2).getImm());
+  }
+}
+
+static unsigned invertBranch(unsigned Opc) {
+  switch (Opc) {
+  case Mips::BEQ:
+    return Mips::BNE;
+  case Mips::BNE:
+    return Mips::BEQ;
+  case Mips::BGEZ:
+    return Mips::BLTZ;
+  case Mips::BLTZ:
+    return Mips::BGEZ;
+  }
+  llvm_unreachable("Not a branch of foldSelectCompare");
+}
+
 MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
                                                         MachineBasicBlock *BB,
                                                         bool isFPCmp,
@@ -5409,6 +5507,7 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
   BB->addSuccessor(copy0MBB);
   BB->addSuccessor(sinkMBB);
 
+  bool SwapValues = false;
   if (isFPCmp) {
     // bc1[tf] cc, sinkMBB
     BuildMI(BB, DL, TII->get(Opc))
@@ -5416,10 +5515,25 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
         .addMBB(sinkMBB);
   } else {
     // bne rs, $0, sinkMBB
-    BuildMI(BB, DL, TII->get(Opc))
-        .addReg(MI.getOperand(1).getReg())
-        .addReg(Mips::R0)
-        .addMBB(sinkMBB);
+    Register LHS = MI.getOperand(1).getReg(), RHS = Mips::R0;
+    unsigned BranchOpc = Opc;
+    if (Subtarget.isR3000A() && Opc == Mips::BNE) {
+      MachineRegisterInfo &MRI = F->getRegInfo();
+      foldSelectCompare(MRI, *TII, *BB, DL, LHS, RHS, BranchOpc);
+      // With the constant in the block that is branched over, the other value
+      // stays in its register and that block is one instruction, not a jump.
+      if (Selects.size() == 1 &&
+          isConstantReg(MRI, MI.getOperand(2).getReg()) &&
+          !isConstantReg(MRI, MI.getOperand(3).getReg())) {
+        BranchOpc = invertBranch(BranchOpc);
+        SwapValues = true;
+      }
+    }
+    MachineInstrBuilder Branch =
+        BuildMI(BB, DL, TII->get(BranchOpc)).addReg(LHS);
+    if (RHS.isValid())
+      Branch.addReg(RHS);
+    Branch.addMBB(sinkMBB);
   }
 
   //  copy0MBB:
@@ -5438,9 +5552,9 @@ MachineBasicBlock *MipsTargetLowering::emitPseudoSELECT(MachineInstr &MI,
   MachineBasicBlock::iterator InsertPt = BB->begin();
   for (MachineInstr *Sel : Selects)
     BuildMI(*BB, InsertPt, DL, TII->get(Mips::PHI), Sel->getOperand(0).getReg())
-        .addReg(Sel->getOperand(2).getReg())
+        .addReg(Sel->getOperand(SwapValues ? 3 : 2).getReg())
         .addMBB(thisMBB)
-        .addReg(Sel->getOperand(3).getReg())
+        .addReg(Sel->getOperand(SwapValues ? 2 : 3).getReg())
         .addMBB(copy0MBB);
 
   for (MachineInstr *Sel : Selects)
