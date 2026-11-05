@@ -421,7 +421,13 @@ public:
 
 ScheduleDAGInstrs *
 MipsTargetMachine::createMachineScheduler(MachineSchedContext *C) const {
-  if (!C->MF->getSubtarget<MipsSubtarget>().isR5900())
+  const MipsSubtarget &STI = C->MF->getSubtarget<MipsSubtarget>();
+  if (STI.isR3000A()) {
+    ScheduleDAGMILive *DAG = createSchedLive(C);
+    DAG->addMutation(createMipsAccOrderDAGMutation());
+    return DAG;
+  }
+  if (!STI.isR5900())
     return createSchedLive(C);
   ScheduleDAGMILive *DAG = createSchedLive<MipsR5900SchedStrategy>(C);
   DAG->addMutation(createSingleRegClassOrderMutation());

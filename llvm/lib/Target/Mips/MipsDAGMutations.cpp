@@ -20,9 +20,15 @@
 // otherwise not move a store into a later stage than the prefetch of the same
 // array.
 //
+// There is one HI/LO pair. The accumulator order mutation makes a multiply or
+// divide wait until the result before it has been read: the scheduler would
+// otherwise start it early for its latency, and the old result would have to go
+// through the stack.
+//
 //===----------------------------------------------------------------------===//
 
 #include "MipsDAGMutations.h"
+#include "MCTargetDesc/MipsMCTargetDesc.h"
 #include "MipsRegisterInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -37,6 +43,11 @@ using namespace llvm;
 #define DEBUG_TYPE "mips-dag-mutations"
 
 namespace {
+
+class MipsAccOrderDAGMutation : public ScheduleDAGMutation {
+public:
+  void apply(ScheduleDAGInstrs *DAG) override;
+};
 
 class MipsLoadOrderDAGMutation : public ScheduleDAGMutation {
 public:
@@ -92,6 +103,33 @@ void MipsLoadOrderDAGMutation::apply(ScheduleDAGInstrs *DAG) {
 
 std::unique_ptr<ScheduleDAGMutation> llvm::createMipsLoadOrderDAGMutation() {
   return std::make_unique<MipsLoadOrderDAGMutation>();
+}
+
+void MipsAccOrderDAGMutation::apply(ScheduleDAGInstrs *DAG) {
+  struct Def {
+    SUnit *SU;
+    Register Reg;
+  };
+  SmallVector<Def, 4> Defs;
+  DenseMap<Register, SmallVector<SUnit *, 2>> Readers;
+  for (SUnit &SU : DAG->SUnits)
+    for (const MachineOperand &MO : SU.getInstr()->operands()) {
+      if (!MO.isReg() || !MO.getReg().isVirtual() ||
+          DAG->MRI.getRegClass(MO.getReg()) != &Mips::ACC64RegClass)
+        continue;
+      if (MO.isDef())
+        Defs.push_back({&SU, MO.getReg()});
+      else
+        Readers[MO.getReg()].push_back(&SU);
+    }
+  for (unsigned I = 1, E = Defs.size(); I < E; ++I)
+    for (SUnit *Reader : Readers.lookup(Defs[I - 1].Reg))
+      if (Reader != Defs[I].SU && DAG->canAddEdge(Defs[I].SU, Reader))
+        DAG->addEdge(Defs[I].SU, SDep(Reader, SDep::Artificial));
+}
+
+std::unique_ptr<ScheduleDAGMutation> llvm::createMipsAccOrderDAGMutation() {
+  return std::make_unique<MipsAccOrderDAGMutation>();
 }
 
 void MipsUnorderedPrefetchDAGMutation::apply(ScheduleDAGInstrs *DAG) {

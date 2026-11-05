@@ -72,42 +72,20 @@ e:
 define i64 @mult_after_two_reads(i32 %x, i32 %y, i32 %z) {
 ; CHECK-LABEL: mult_after_two_reads:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    addiu $sp, $sp, -24
-; CHECK-NEXT:    .cfi_def_cfa_offset 24
 ; CHECK-NEXT:    multu $4, $5
-; CHECK-NEXT:    mflo $1
-; CHECK-NEXT:    sw $1, 16($sp) # 8-byte Folded Spill
-; CHECK-NEXT:    mfhi $1
-; CHECK-NEXT:    sw $1, 20($sp) # 8-byte Folded Spill
-; CHECK-NEXT:    mflo $1
-; CHECK-NEXT:    addu $2, $1, $6
-; CHECK-NEXT:    nop
-; CHECK-NEXT:    multu $2, $5
 ; CHECK-NEXT:    mflo $2
-; CHECK-NEXT:    sw $2, 8($sp) # 8-byte Folded Spill
-; CHECK-NEXT:    mfhi $2
-; CHECK-NEXT:    sw $2, 12($sp) # 8-byte Folded Spill
-; CHECK-NEXT:    lw $2, 16($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    lw $3, 8($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    mtlo $2
-; CHECK-NEXT:    lw $2, 20($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    nop
-; CHECK-NEXT:    mthi $2
-; CHECK-NEXT:    mfhi $2
+; CHECK-NEXT:    addu $3, $2, $6
+; CHECK-NEXT:    mfhi $1
 ; CHECK-NEXT:    nop
 ; CHECK-NEXT:    nop
-; CHECK-NEXT:    mtlo $3
-; CHECK-NEXT:    lw $3, 12($sp) # 8-byte Folded Reload
-; CHECK-NEXT:    nop
-; CHECK-NEXT:    mthi $3
-; CHECK-NEXT:    mfhi $4
+; CHECK-NEXT:    multu $3, $5
 ; CHECK-NEXT:    mflo $3
-; CHECK-NEXT:    addu $4, $4, $2
-; CHECK-NEXT:    addu $2, $3, $1
-; CHECK-NEXT:    sltu $1, $2, $3
-; CHECK-NEXT:    addu $3, $4, $1
+; CHECK-NEXT:    addu $2, $3, $2
+; CHECK-NEXT:    mfhi $4
+; CHECK-NEXT:    addu $1, $4, $1
+; CHECK-NEXT:    sltu $3, $2, $3
 ; CHECK-NEXT:    jr $ra
-; CHECK-NEXT:    addiu $sp, $sp, 24
+; CHECK-NEXT:    addu $3, $1, $3
   %a = zext i32 %x to i64
   %b = zext i32 %y to i64
   %m = mul i64 %a, %b
