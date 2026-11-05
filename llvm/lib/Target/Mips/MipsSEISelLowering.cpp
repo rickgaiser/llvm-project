@@ -1266,6 +1266,21 @@ static SDValue genConstMult(SDValue X, APInt C, const SDLoc &DL, EVT VT,
   return DAG.getNode(ISD::SUB, DL, VT, Op0, Op1);
 }
 
+/// The R3000A stops a multiply early by the size of rs alone (measured: 8, 11
+/// or 15 cycles to the result for rs of up to 12 bits, up to 21 bits, or more),
+/// so the operand known to be the smaller belongs in rs. Size means sign bits
+/// for mult and leading zeros for multu: as unsigned, -1 is the largest value.
+static bool shouldSwapMultOperands(SelectionDAG &DAG, SDValue LHS, SDValue RHS,
+                                   bool IsUnsigned,
+                                   const MipsSubtarget &Subtarget) {
+  if (!Subtarget.isR3000A())
+    return false;
+  if (IsUnsigned)
+    return DAG.computeKnownBits(RHS).countMinLeadingZeros() >
+           DAG.computeKnownBits(LHS).countMinLeadingZeros();
+  return DAG.ComputeNumSignBits(RHS) > DAG.ComputeNumSignBits(LHS);
+}
+
 static SDValue performMULCombine(SDNode *N, SelectionDAG &DAG,
                                  const TargetLowering::DAGCombinerInfo &DCI,
                                  const MipsSETargetLowering *TL,
@@ -1278,6 +1293,13 @@ static SDValue performMULCombine(SDNode *N, SelectionDAG &DAG,
       return genConstMult(N->getOperand(0), C->getAPIntValue(), SDLoc(N), VT,
                           TL->getScalarShiftAmountTy(DAG.getDataLayout(), VT),
                           DAG);
+
+  // Constants stay on the right, where the generic combiner wants them.
+  if (VT == MVT::i32 && !isa<ConstantSDNode>(N->getOperand(1)) &&
+      shouldSwapMultOperands(DAG, N->getOperand(0), N->getOperand(1),
+                             /*IsUnsigned=*/false, Subtarget))
+    return DAG.getNode(ISD::MUL, SDLoc(N), VT, N->getOperand(1),
+                       N->getOperand(0));
 
   return SDValue(N, 0);
 }
@@ -3844,8 +3866,12 @@ SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,
 
   EVT Ty = Op.getOperand(0).getValueType();
   SDLoc DL(Op);
-  SDValue Mult = DAG.getNode(NewOpc, DL, MVT::Untyped,
-                             Op.getOperand(0), Op.getOperand(1));
+  SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1);
+  if ((NewOpc == MipsISD::Mult || NewOpc == MipsISD::Multu) &&
+      shouldSwapMultOperands(DAG, LHS, RHS, NewOpc == MipsISD::Multu,
+                             Subtarget))
+    std::swap(LHS, RHS);
+  SDValue Mult = DAG.getNode(NewOpc, DL, MVT::Untyped, LHS, RHS);
   SDValue Lo, Hi;
 
   if (HasLo)
